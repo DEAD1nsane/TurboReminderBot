@@ -104,7 +104,7 @@ app.post('/webhook', async (req, res) => {
 
         if (text.startsWith('/tz') || text.startsWith('/start')) {
             const tzInput = text.replace(/\/tz|\/start/, '').trim();
-            if (!tzInput) {
+            if (!tzInput || tzInput === 'tz') {
                 await sendTelegramMessage(chatId, '⚙️ Please set your timezone so your reminders work accurately.\n\nExample: `/tz America/Chicago` or `/tz America/New_York`');
             } else {
                 try {
@@ -133,14 +133,23 @@ app.post('/webhook', async (req, res) => {
         let results = [];
 
         if (!userTz) {
-            // Force user to set timezone first
             results.push({
                 type: 'article',
                 id: 'set_tz_required',
                 title: '⚠️ Setup Required: Set Your Timezone',
-                description: 'Click to learn how to register your timezone first.',
+                description: 'Tap here to open a direct message with the bot.',
                 input_message_content: {
-                    message_text: '⚠️ You must set your timezone before creating reminders! Open a direct message with the bot and send `/tz <Your_Timezone>` (e.g. `/tz America/Chicago`).'
+                    message_text: '⚠️ You must set your timezone before creating reminders!'
+                },
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            {
+                                text: '⚙️ Set Timezone Now',
+                                url: 'https://t.me/TurbosRbot?start=tz'
+                            }
+                        ]
+                    ]
                 }
             });
         } else {
