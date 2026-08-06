@@ -79,12 +79,17 @@ function parseFlexibleDate(text, timeZone) {
         const minutes = (timePart.match(/(\d+)m/i) || [])[1] ? parseInt(RegExp.$1, 10) : 0;
         const seconds = (timePart.match(/(\d+)s/i) || [])[1] ? parseInt(RegExp.$1, 10) : 0;
 
-        if (days > 0 || hours > 0 || minutes > 0 || seconds > 0) {
+        if (days > 0 || hours > 0 || minutes > 0 || (seconds > 0 && days === 0 && hours === 0 && minutes === 0)) {
             let dt = nowInZone;
             if (days) dt = dt.plus({ days });
             if (hours) dt = dt.plus({ hours });
             if (minutes) dt = dt.plus({ minutes });
             if (seconds) dt = dt.plus({ seconds });
+
+            // Ensure minimum 1 minute
+            if (dt <= nowInZone.plus({ minutes: 1 })) {
+                return null;
+            }
             return dt.toJSDate();
         }
     }
@@ -106,7 +111,14 @@ function parseFlexibleDate(text, timeZone) {
         return dt.toJSDate();
     }
 
-    return chrono.parseDate(clean, nowInZone.toJSDate(), { forwardDate: true });
+    const parsed = chrono.parseDate(clean, nowInZone.toJSDate(), { forwardDate: true });
+    if (parsed) {
+        const dt = DateTime.fromJSDate(parsed);
+        if (dt <= nowInZone.plus({ minutes: 1 })) {
+            return null;
+        }
+    }
+    return parsed;
 }
 
 async function sendTelegramMessage(chatId, text, replyMarkup = null) {
@@ -236,7 +248,7 @@ setInterval(async () => {
     } catch (err) {
         console.error('Error checking scheduled reminders:', err);
     }
-}, 10000);
+}, 1000);
 
 app.post('/webhook', async (req, res) => {
     try {
@@ -325,6 +337,16 @@ app.post('/webhook', async (req, res) => {
                             message_text: `🔔 Reminder set for: ${queryText} (${dt.toFormat('ff')})`
                         }
                     });
+                } else {
+                    results.push({
+                        type: 'article',
+                        id: 'invalid_time',
+                        title: '⚠️ Reminders must be at least 1 minute in the future',
+                        description: 'Please specify a valid future time.',
+                        input_message_content: {
+                            message_text: '❌ Reminders must be set for at least 1 minute from now.'
+                        }
+                    });
                 }
             }
 
@@ -348,7 +370,7 @@ app.post('/webhook', async (req, res) => {
             const resultId = chosenResult.result_id;
             const parts = resultId.split(':');
 
-            if (parts.length >= 2 && parts[0] !== 'set_tz_required') {
+            if (parts.length >= 2 && parts[0] !== 'set_tz_required' && parts[0] !== 'invalid_time') {
                 const timestamp = parseInt(parts[1], 10);
                 const text = parts.slice(2).join(':') || 'Reminder';
                 const remindAt = new Date(timestamp);
