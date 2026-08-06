@@ -12,11 +12,12 @@ app.post('/webhook', async (req, res) => {
     const inlineQuery = req.body.inline_query;
     if (inlineQuery) {
         const queryId = inlineQuery.id;
-        const queryText = inlineQuery.query.trim();
+        const queryText = inlineQuery.query.trim().toLowerCase();
 
         let results = [];
 
-        if (!queryText || queryText.toLowerCase() === 'reminder') {
+        // Show preset durations if query is empty or starts with "reminder"
+        if (!queryText || queryText === 'reminder') {
             const presets = [
                 { id: '1', title: '5 Minutes', time: 'in 5 minutes' },
                 { id: '2', title: '15 Minutes', time: 'in 15 minutes' },
@@ -38,10 +39,13 @@ app.post('/webhook', async (req, res) => {
                 };
             });
         } else {
-            const parsedDate = chrono.parseDate(queryText, new Date());
+            // Strip "reminder" prefix if typed (e.g. "reminder 2 hours" -> "2 hours")
+            const cleanText = queryText.replace(/^reminder\s*/, '');
+            const parsedDate = chrono.parseDate(cleanText, new Date());
+            
             let resultText = parsedDate 
                 ? `Parsed Time: ${DateTime.fromJSDate(parsedDate).toFormat('ff')}`
-                : `Could not parse time from: "${queryText}"`;
+                : `Could not parse time from: "${cleanText}"`;
 
             results.push({
                 type: 'article',
