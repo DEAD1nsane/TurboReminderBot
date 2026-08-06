@@ -39,9 +39,9 @@ async function initDb() {
 }
 initDb();
 
-// Health check endpoint for Railway
+// Root healthcheck endpoint
 app.get('/', (req, res) => {
-    res.send('Bot is running!');
+    res.status(200).send('OK');
 });
 
 async function getUserTimezone(userId) {
@@ -370,6 +370,6 @@ app.post('/webhook', async (req, res) => {
     res.sendStatus(200);
 });
 
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server listening on port ${PORT}`);
 });
