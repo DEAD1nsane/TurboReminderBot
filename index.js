@@ -70,7 +70,6 @@ function parseFlexibleDate(text, timeZone) {
     const nowInZone = DateTime.now().setZone(timeZone);
     const jsDate = nowInZone.toJSDate();
 
-    // 1. Check for compound shorthand like "12h28m shuffle monthly"
     const compoundRegex = /^((?:\d+d)?\s*(?:\d+h)?\s*(?:\d+m)?\s*(?:\d+s)?)\s+(.+)$/i;
     const match = clean.match(compoundRegex);
 
@@ -91,7 +90,6 @@ function parseFlexibleDate(text, timeZone) {
         }
     }
 
-    // 2. Fall back to chrono-node for 12h/24h absolute times (e.g., "11pm", "23:00", "tomorrow at 7pm")
     return chrono.parseDate(clean, jsDate, { forwardDate: true });
 }
 
@@ -313,27 +311,6 @@ app.post('/webhook', async (req, res) => {
                     });
                 }
             }
-
-            const presets = [
-                { id: 'in_5m', title: '5 Minutes', time: 'in 5 minutes' },
-                { id: 'in_15m', title: '15 Minutes', time: 'in 15 minutes' },
-                { id: 'in_1h', title: '1 Hour', time: 'in 1 hour' },
-                { id: 'in_1d', title: '1 Day', time: 'in 1 day' }
-            ];
-
-            presets.forEach(p => {
-                const parsedDate = chrono.parseDate(p.time, new Date());
-                const dt = DateTime.fromJSDate(parsedDate).setZone(userTz);
-                results.push({
-                    type: 'article',
-                    id: `${p.id}:${parsedDate.getTime()}:Reminder`,
-                    title: `Quick Preset: ${p.title}`,
-                    description: `${dt.toFormat('ff')}`,
-                    input_message_content: {
-                        message_text: `🔔 Reminder set for ${p.title} (${dt.toFormat('ff')})`
-                    }
-                });
-            });
 
             try {
                 await fetch(`https://api.telegram.org/bot${TOKEN}/answerInlineQuery`, {
