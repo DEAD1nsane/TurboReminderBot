@@ -39,6 +39,11 @@ async function initDb() {
 }
 initDb();
 
+// Health check endpoint for Railway
+app.get('/', (req, res) => {
+    res.send('Bot is running!');
+});
+
 async function getUserTimezone(userId) {
     if (!process.env.DATABASE_URL) return null;
     try {
