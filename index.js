@@ -67,12 +67,14 @@ async function getUserTimezone(userId) {
 
 function parseFlexibleDate(text, timeZone) {
     let clean = text.trim().replace(/^reminder\s*/i, '');
-    
-    // Match leading shorthand pattern like "12h28m" or "1d 2h"
+    const nowInZone = DateTime.now().setZone(timeZone);
+    const jsDate = nowInZone.toJSDate();
+
+    // 1. Check for compound shorthand like "12h28m shuffle monthly"
     const compoundRegex = /^((?:\d+d)?\s*(?:\d+h)?\s*(?:\d+m)?\s*(?:\d+s)?)\s+(.+)$/i;
     const match = clean.match(compoundRegex);
 
-    if (match) {
+    if (match && match[1].trim().length > 0) {
         const timePart = match[1];
         const days = (timePart.match(/(\d+)d/i) || [])[1] ? parseInt(RegExp.$1, 10) : 0;
         const hours = (timePart.match(/(\d+)h/i) || [])[1] ? parseInt(RegExp.$1, 10) : 0;
@@ -80,7 +82,7 @@ function parseFlexibleDate(text, timeZone) {
         const seconds = (timePart.match(/(\d+)s/i) || [])[1] ? parseInt(RegExp.$1, 10) : 0;
 
         if (days > 0 || hours > 0 || minutes > 0 || seconds > 0) {
-            let dt = DateTime.now().setZone(timeZone);
+            let dt = nowInZone;
             if (days) dt = dt.plus({ days });
             if (hours) dt = dt.plus({ hours });
             if (minutes) dt = dt.plus({ minutes });
@@ -89,8 +91,8 @@ function parseFlexibleDate(text, timeZone) {
         }
     }
 
-    const nowInZone = DateTime.now().setZone(timeZone).toJSDate();
-    return chrono.parseDate(clean, nowInZone);
+    // 2. Fall back to chrono-node for 12h/24h absolute times (e.g., "11pm", "23:00", "tomorrow at 7pm")
+    return chrono.parseDate(clean, jsDate, { forwardDate: true });
 }
 
 async function sendTelegramMessage(chatId, text, replyMarkup = null) {
@@ -300,16 +302,13 @@ app.post('/webhook', async (req, res) => {
                 const parsedDate = parseFlexibleDate(queryText, userTz);
                 if (parsedDate) {
                     const dt = DateTime.fromJSDate(parsedDate).setZone(userTz);
-                    const match = queryText.match(/^((?:\d+d)?\s*(?:\d+h)?\s*(?:\d+m)?\s*(?:\d+s)?)\s+(.+)$/i);
-                    const cleanText = match ? match[2] : queryText;
-
                     results.push({
                         type: 'article',
-                        id: `custom:${parsedDate.getTime()}:${cleanText}`,
-                        title: `🔔 Remind: "${cleanText}"`,
+                        id: `custom:${parsedDate.getTime()}:${queryText}`,
+                        title: `🔔 Remind: "${queryText}"`,
                         description: `Scheduled for: ${dt.toFormat('ff')}`,
                         input_message_content: {
-                            message_text: `🔔 Reminder set for: **${cleanText}** (${dt.toFormat('ff')})`
+                            message_text: `🔔 Reminder set for: **${queryText}** (${dt.toFormat('ff')})`
                         }
                     });
                 }
