@@ -20,7 +20,6 @@ const pool = new Pool({
     keepAlive: true
 });
 
-
 pool.on('error', (err) => {
     console.error('Unexpected Postgres pool error:', err);
 });
