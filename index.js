@@ -66,17 +66,44 @@ function parseFlexibleDate(text, timeZone) {
     return chrono.parseDate(clean, nowInZone);
 }
 
-async function sendTelegramMessage(chatId, text) {
+async function sendTelegramMessage(chatId, text, replyMarkup = null) {
     const url = `https://api.telegram.org/bot${TOKEN}/sendMessage`;
+    const payload = { chat_id: chatId, text: text };
+    if (replyMarkup) payload.reply_markup = replyMarkup;
+
     try {
         await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chat_id: chatId, text: text })
+            body: JSON.stringify(payload)
         });
     } catch (err) {
         console.error('Error sending reminder message:', err);
     }
+}
+
+async function sendTimezoneMenu(chatId) {
+    const text = '⚙️ **Select your Timezone from the buttons below:**';
+    const keyboard = {
+        inline_keyboard: [
+            [
+                { text: '🇺🇸 Eastern (ET)', callback_data: 'settz:America/New_York' },
+                { text: '🇺🇸 Central (CT)', callback_data: 'settz:America/Chicago' }
+            ],
+            [
+                { text: '🇺🇸 Mountain (MT)', callback_data: 'settz:America/Denver' },
+                { text: '🇺🇸 Pacific (PT)', callback_data: 'settz:America/Los_Angeles' }
+            ],
+            [
+                { text: '🇺🇸 Alaska (AKT)', callback_data: 'settz:America/Anchorage' },
+                { text: '🇺🇸 Hawaii (HAT)', callback_data: 'Pacific/Honolulu' }
+            ],
+            [
+                { text: '🌐 UTC', callback_data: 'settz:UTC' }
+            ]
+        ]
+    };
+    await sendTelegramMessage(chatId, text, keyboard);
 }
 
 setInterval(async () => {
@@ -96,30 +123,33 @@ app.post('/webhook', async (req, res) => {
     const message = req.body.message;
     const inlineQuery = req.body.inline_query;
     const chosenResult = req.body.chosen_inline_result;
+    const callbackQuery = req.body.callback_query;
 
     if (message && message.text) {
         const text = message.text.trim();
-        const userId = message.from.id;
         const chatId = message.chat.id;
 
         if (text.startsWith('/tz') || text.startsWith('/start')) {
-            const tzInput = text.replace(/\/tz|\/start/, '').trim();
-            if (!tzInput || tzInput === 'tz') {
-                await sendTelegramMessage(chatId, '⚙️ Please set your timezone so your reminders work accurately.\n\nExample: `/tz America/Chicago` or `/tz America/New_York`');
-            } else {
+            await sendTimezoneMenu(chatId);
+        }
+    }
+
+    if (callbackQuery) {
+        const userId = callbackQuery.from.id;
+        const chatId = callbackQuery.message.chat.id;
+        const data = callbackQuery.data;
+
+        if (data && data.startsWith('settz:')) {
+            const tz = data.replace('settz:', '');
+            if (process.env.DATABASE_URL) {
                 try {
-                    const validTz = DateTime.now().setZone(tzInput).isValid;
-                    if (validTz && process.env.DATABASE_URL) {
-                        await pool.query(
-                            'INSERT INTO user_settings (user_id, timezone) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET timezone = $2',
-                            [userId, tzInput]
-                        );
-                        await sendTelegramMessage(chatId, `✅ Timezone saved as **${tzInput}**! You can now use inline reminders.`);
-                    } else {
-                        await sendTelegramMessage(chatId, '❌ Invalid timezone. Please use IANA format (e.g. `America/Chicago`, `America/New_York`, `America/Los_Angeles`).');
-                    }
-                } catch (e) {
-                    await sendTelegramMessage(chatId, '❌ Invalid timezone string.');
+                    await pool.query(
+                        'INSERT INTO user_settings (user_id, timezone) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET timezone = $2',
+                        [userId, tz]
+                    );
+                    await sendTelegramMessage(chatId, `✅ Timezone saved as **${tz}**! You can now use inline reminders.`);
+                } catch (err) {
+                    console.error('Error saving user timezone:', err);
                 }
             }
         }
@@ -137,7 +167,7 @@ app.post('/webhook', async (req, res) => {
                 type: 'article',
                 id: 'set_tz_required',
                 title: '⚠️ Setup Required: Set Your Timezone',
-                description: 'Tap here to open a direct message with the bot.',
+                description: 'Tap here to pick your timezone from a button list.',
                 input_message_content: {
                     message_text: '⚠️ You must set your timezone before creating reminders!'
                 },
