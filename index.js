@@ -156,13 +156,13 @@ async function editTelegramMessage(chatId, messageId, text, replyMarkup = null) 
     }
 }
 
-async function answerCallbackQuery(callbackQueryId, text = '') {
+async function answerCallbackQuery(callbackQueryId, text = '', showAlert = false) {
     const url = `https://api.telegram.org/bot${TOKEN}/answerCallbackQuery`;
     try {
         await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ callback_query_id: callbackQueryId, text: text })
+            body: JSON.stringify({ callback_query_id: callbackQueryId, text: text, show_alert: showAlert })
         });
     } catch (err) {
         console.error('Error answering callback query:', err);
@@ -236,12 +236,37 @@ function getSubMenuKeyboard(region) {
     return { inline_keyboard: buttons };
 }
 
+async function getRemindersKeyboard(userId, userTz) {
+    try {
+        const res = await pool.query('SELECT id, text, remind_at FROM reminders WHERE user_id = $1 AND sent = FALSE ORDER BY remind_at ASC', [userId]);
+        if (res.rows.length === 0) {
+            return { inline_keyboard: [[{ text: '📭 No active reminders found', callback_data: 'noop' }]] };
+        }
+
+        let buttons = [];
+        res.rows.forEach(r => {
+            const dt = DateTime.fromJSDate(new Date(r.remind_at)).setZone(userTz);
+            const shortTime = dt.toFormat('MM/dd HH:mm');
+            const snippet = r.text.length > 20 ? r.text.substring(0, 20) + '...' : r.text;
+            buttons.push([
+                { text: `⏰ ${shortTime} - ${snippet}`, callback_data: `view:${r.id}` },
+                { text: '❌ Delete', callback_data: `del:${r.id}` }
+            ]);
+        });
+        return { inline_keyboard: buttons };
+    } catch (err) {
+        console.error('Error fetching reminders for keyboard:', err);
+        return { inline_keyboard: [[{ text: '⚠️ Error loading reminders', callback_data: 'noop' }]] };
+    }
+}
+
 setInterval(async () => {
     if (!process.env.DATABASE_URL) return;
     try {
-        const res = await pool.query('SELECT * FROM reminders WHERE remind_at <= NOW() AND sent = FALSE');
+        const res = await pool.query('SELECT * FROM reminders WHERE remind_at <= CURRENT_TIMESTAMP AND sent = FALSE');
         for (const reminder of res.rows) {
-            await sendTelegramMessage(reminder.chat_id || reminder.user_id, `⏰ REMINDER: ${reminder.text}`);
+            const targetChat = reminder.chat_id || reminder.user_id;
+            await sendTelegramMessage(targetChat, `⏰ REMINDER: ${reminder.text}`);
             await pool.query('UPDATE reminders SET sent = TRUE WHERE id = $1', [reminder.id]);
         }
     } catch (err) {
@@ -260,8 +285,12 @@ app.post('/webhook', async (req, res) => {
             const text = message.text.trim();
             const userId = message.from.id;
             const chatId = message.chat.id;
+            const userTz = await getUserTimezone(userId);
 
-            if (text.startsWith('/tz') || text.startsWith('/start')) {
+            if (text.startsWith('/reminders') || text.startsWith('/list')) {
+                const markup = await getRemindersKeyboard(userId, userTz);
+                await sendTelegramMessage(chatId, '📋 **Your Active Reminders:**\nTap a reminder to view details or delete it.', markup);
+            } else if (text.startsWith('/tz') || text.startsWith('/start')) {
                 const tzInput = text.replace(/\/tz|\/start/, '').trim();
                 if (!tzInput || tzInput === 'tz') {
                     await sendTelegramMessage(chatId, '⚙️ Select your region below, or type /tz Continent/City (e.g. /tz Europe/London):', getRegionMenuKeyboard());
@@ -289,10 +318,38 @@ app.post('/webhook', async (req, res) => {
             const chatId = callbackQuery.message.chat.id;
             const messageId = callbackQuery.message.message_id;
             const data = callbackQuery.data;
+            const userTz = await getUserTimezone(userId);
 
-            await answerCallbackQuery(callbackQuery.id);
-
-            if (data.startsWith('menu:')) {
+            if (data === 'noop') {
+                await answerCallbackQuery(callbackQuery.id);
+            } else if (data.startsWith('del:')) {
+                const reminderId = data.replace('del:', '');
+                try {
+                    await pool.query('DELETE FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
+                    await answerCallbackQuery(callbackQuery.id, '🗑️ Reminder deleted!', true);
+                    const markup = await getRemindersKeyboard(userId, userTz);
+                    await editTelegramMessage(chatId, messageId, '📋 **Your Active Reminders:**\nTap a reminder to view details or delete it.', markup);
+                } catch (err) {
+                    console.error('Error deleting reminder:', err);
+                    await answerCallbackQuery(callbackQuery.id, '❌ Failed to delete reminder.', true);
+                }
+            } else if (data.startsWith('view:')) {
+                const reminderId = data.replace('view:', '');
+                try {
+                    const result = await pool.query('SELECT text, remind_at FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
+                    if (result.rows.length > 0) {
+                        const r = result.rows[0];
+                        const dt = DateTime.fromJSDate(new Date(r.remind_at)).setZone(userTz);
+                        await answerCallbackQuery(callbackQuery.id, `🔔 ${r.text}\n🕒 ${dt.toFormat('ff')}`, true);
+                    } else {
+                        await answerCallbackQuery(callbackQuery.id, '⚠️ Reminder not found or already sent.', true);
+                    }
+                } catch (err) {
+                    console.error('Error viewing reminder:', err);
+                    await answerCallbackQuery(callbackQuery.id, '❌ Error fetching reminder details.', true);
+                }
+            } else if (data.startsWith('menu:')) {
+                await answerCallbackQuery(callbackQuery.id);
                 const region = data.replace('menu:', '');
                 if (region === 'main') {
                     await editTelegramMessage(chatId, messageId, '⚙️ Select your region below, or type /tz Continent/City:', getRegionMenuKeyboard());
@@ -300,6 +357,7 @@ app.post('/webhook', async (req, res) => {
                     await editTelegramMessage(chatId, messageId, '📍 Select your timezone:', getSubMenuKeyboard(region));
                 }
             } else if (data.startsWith('settz:')) {
+                await answerCallbackQuery(callbackQuery.id);
                 const tz = data.replace('settz:', '');
                 if (process.env.DATABASE_URL) {
                     try {
@@ -340,8 +398,8 @@ app.post('/webhook', async (req, res) => {
                     results.push({
                         type: 'article',
                         id: 'invalid_time',
-                        title: '⚠️ Must be at least 1 min',
-                        description: 'Min 1 minute required.',
+                        title: '⚠️ Min 1 min ahead',
+                        description: 'Time must be >= 1 min.',
                         input_message_content: {
                             message_text: '❌ Reminders must be set for at least 1 minute from now.'
                         }
@@ -367,6 +425,7 @@ app.post('/webhook', async (req, res) => {
         if (chosenResult) {
             const userId = chosenResult.from.id;
             const resultId = chosenResult.result_id;
+            const chatId = chosenResult.chat_id || userId;
             const parts = resultId.split(':');
 
             if (parts.length >= 2 && parts[0] !== 'set_tz_required' && parts[0] !== 'invalid_time') {
@@ -377,10 +436,10 @@ app.post('/webhook', async (req, res) => {
                 if (process.env.DATABASE_URL) {
                     try {
                         await pool.query(
-                            'INSERT INTO reminders (user_id, text, remind_at) VALUES ($1, $2, $3)',
-                            [userId, text, remindAt]
+                            'INSERT INTO reminders (user_id, chat_id, text, remind_at) VALUES ($1, $2, $3, $4)',
+                            [userId, chatId, text, remindAt]
                         );
-                        console.log(`Saved reminder for user ${userId} at ${remindAt.toISOString()}`);
+                        console.log(`Saved reminder for user ${userId} in chat ${chatId} at ${remindAt.toISOString()}`);
                     } catch (err) {
                         console.error('Error saving reminder to database:', err);
                     }
