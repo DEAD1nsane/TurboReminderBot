@@ -21,6 +21,11 @@ pool.on('error', (err) => {
     console.error('Unexpected Postgres pool error:', err);
 });
 
+// Bind server immediately so Railway healthcheck passes instantly
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server listening on port ${PORT}`);
+});
+
 async function initDb() {
     if (!process.env.DATABASE_URL) return;
     const query = `
@@ -391,8 +396,4 @@ app.post('/webhook', async (req, res) => {
     }
 
     res.sendStatus(200);
-});
-
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server listening on port ${PORT}`);
 });
