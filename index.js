@@ -6,16 +6,14 @@ const { Pool } = require('pg');
 const app = express();
 app.use(express.json());
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
-// Initialize Postgres connection pool with SSL fallbacks
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
 });
 
-// Prevent unhandled pool errors from crashing Node
 pool.on('error', (err) => {
     console.error('Unexpected Postgres pool error:', err);
 });
@@ -46,7 +44,6 @@ async function initDb() {
 initDb();
 
 app.get('/', (req, res) => {
-    res.setHeader('Content-Type', 'text/plain');
     res.status(200).send('OK');
 });
 
@@ -62,17 +59,29 @@ async function getUserTimezone(userId) {
 }
 
 function parseFlexibleDate(text, timeZone) {
-    let clean = text.trim().toLowerCase().replace(/^reminder\s*/, '');
-    const shorthandRegex = /^(\d+)\s*([mhd])$/i;
-    const match = clean.match(shorthandRegex);
-    if (match) {
-        const num = match[1];
-        const unitMap = { m: 'minute', h: 'hour', d: 'day' };
-        clean = `in ${num} ${unitMap[match[2]]}`;
-    } else if (/^\d+\s*(m|min|minute|minutes|h|hr|hour|hours|d|day|days)/i.test(clean)) {
-        clean = `in ${clean}`;
+    let clean = text.trim().replace(/^reminder\s*/i, '');
+
+    // Support combined shorthands like 1d, 1h5m, 10m, 30s
+    const compoundRegex = /^(\d+d)?\s*(\d+h)?\s*(\d+m)?\s*(\d+s)?$/i;
+    const match = clean.match(compoundRegex);
+
+    if (match && clean.length > 0) {
+        const days = match[1] ? parseInt(match[1], 10) : 0;
+        const hours = match[2] ? parseInt(match[2], 10) : 0;
+        const minutes = match[3] ? parseInt(match[3], 10) : 0;
+        const seconds = match[4] ? parseInt(match[4], 10) : 0;
+
+        if (days > 0 || hours > 0 || minutes > 0 || seconds > 0) {
+            let dt = DateTime.now().setZone(timeZone);
+            if (days) dt = dt.plus({ days });
+            if (hours) dt = dt.plus({ hours });
+            if (minutes) dt = dt.plus({ minutes });
+            if (seconds) dt = dt.plus({ seconds });
+            return dt.toJSDate();
+        }
     }
 
+    // Natural language parsing (e.g. "tomorrow at 7pm", "a week from now")
     const nowInZone = DateTime.now().setZone(timeZone).toJSDate();
     return chrono.parseDate(clean, nowInZone);
 }
@@ -277,7 +286,7 @@ app.post('/webhook', async (req, res) => {
             const userId = inlineQuery.from.id;
             const userTz = await getUserTimezone(userId);
             const queryId = inlineQuery.id;
-            const queryText = inlineQuery.query.trim().toLowerCase();
+            const queryText = inlineQuery.query.trim();
             let results = [];
 
             if (!userTz) {
@@ -301,43 +310,44 @@ app.post('/webhook', async (req, res) => {
                     }
                 });
             } else {
-                if (!queryText || queryText === 'reminder') {
-                    const presets = [
-                        { id: 'in_5m', title: '5 Minutes', time: 'in 5 minutes' },
-                        { id: 'in_15m', title: '15 Minutes', time: 'in 15 minutes' },
-                        { id: 'in_1h', title: '1 Hour', time: 'in 1 hour' },
-                        { id: 'in_1d', title: '1 Day', time: 'in 1 day' }
-                    ];
-
-                    results = presets.map(p => {
-                        const parsedDate = chrono.parseDate(p.time, new Date());
-                        const dt = DateTime.fromJSDate(parsedDate).setZone(userTz);
-                        return {
-                            type: 'article',
-                            id: `${p.id}:${parsedDate.getTime()}:Reminder`,
-                            title: `Remind in ${p.title}`,
-                            description: `Set reminder for ${dt.toFormat('ff')}`,
-                            input_message_content: {
-                                message_text: `🔔 Reminder set for ${p.title} (${dt.toFormat('ff')})`
-                            }
-                        };
-                    });
-                } else {
+                // Parse custom query first so it appears at the top
+                if (queryText.length > 0) {
                     const parsedDate = parseFlexibleDate(queryText, userTz);
                     if (parsedDate) {
                         const dt = DateTime.fromJSDate(parsedDate).setZone(userTz);
-                        const resultText = `Parsed Time: ${dt.toFormat('ff')}`;
                         results.push({
                             type: 'article',
                             id: `custom:${parsedDate.getTime()}:${queryText}`,
-                            title: 'Set Custom Reminder',
-                            description: resultText,
+                            title: `🔔 Remind: "${queryText}"`,
+                            description: `Scheduled for: ${dt.toFormat('ff')}`,
                             input_message_content: {
-                                message_text: `🔔 Reminder set for: ${queryText} (${dt.toFormat('ff')})`
+                                message_text: `🔔 Reminder set for: **${queryText}** (${dt.toFormat('ff')})`
                             }
                         });
                     }
                 }
+
+                // Add standard quick presets below custom option
+                const presets = [
+                    { id: 'in_5m', title: '5 Minutes', time: 'in 5 minutes' },
+                    { id: 'in_15m', title: '15 Minutes', time: 'in 15 minutes' },
+                    { id: 'in_1h', title: '1 Hour', time: 'in 1 hour' },
+                    { id: 'in_1d', title: '1 Day', time: 'in 1 day' }
+                ];
+
+                presets.forEach(p => {
+                    const parsedDate = chrono.parseDate(p.time, new Date());
+                    const dt = DateTime.fromJSDate(parsedDate).setZone(userTz);
+                    results.push({
+                        type: 'article',
+                        id: `${p.id}:${parsedDate.getTime()}:Reminder`,
+                        title: `Quick Preset: ${p.title}`,
+                        description: `${dt.toFormat('ff')}`,
+                        input_message_content: {
+                            message_text: `🔔 Reminder set for ${p.title} (${dt.toFormat('ff')})`
+                        }
+                    });
+                });
             }
 
             try {
@@ -385,6 +395,6 @@ app.post('/webhook', async (req, res) => {
     res.sendStatus(200);
 });
 
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server listening on port ${PORT}`);
 });
