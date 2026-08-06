@@ -9,13 +9,15 @@ app.use(express.json());
 const PORT = process.env.PORT || 3000;
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
+// Initialize Postgres connection pool with SSL fallbacks
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
 });
 
+// Prevent unhandled pool errors from crashing Node
 pool.on('error', (err) => {
-    console.error('Unexpected database pool error:', err);
+    console.error('Unexpected Postgres pool error:', err);
 });
 
 async function initDb() {
