@@ -68,8 +68,8 @@ async function getUserTimezone(userId) {
 function parseFlexibleDate(text, timeZone) {
     let clean = text.trim().replace(/^reminder\s*/i, '');
     const nowInZone = DateTime.now().setZone(timeZone);
-    const jsDate = nowInZone.toJSDate();
 
+    // 1. Shorthand check (e.g., 12h28m)
     const compoundRegex = /^((?:\d+d)?\s*(?:\d+h)?\s*(?:\d+m)?\s*(?:\d+s)?)\s+(.+)$/i;
     const match = clean.match(compoundRegex);
 
@@ -90,7 +90,26 @@ function parseFlexibleDate(text, timeZone) {
         }
     }
 
-    return chrono.parseDate(clean, jsDate, { forwardDate: true });
+    // 2. Explicit time parsing using Luxon for absolute times like "11pm", "11:30pm"
+    const timeOnlyRegex = /^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i;
+    const timeMatch = clean.match(timeOnlyRegex);
+    if (timeMatch && timeMatch[3]) {
+        let hour = parseInt(timeMatch[1], 10);
+        const minute = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0;
+        const meridiem = timeMatch[3].toLowerCase();
+
+        if (meridiem === 'pm' && hour < 12) hour += 12;
+        if (meridiem === 'am' && hour === 12) hour = 0;
+
+        let dt = nowInZone.set({ hour, minute, second: 0, millisecond: 0 });
+        if (dt <= nowInZone) {
+            dt = dt.plus({ days: 1 }); // If time already passed today, assume tomorrow
+        }
+        return dt.toJSDate();
+    }
+
+    // 3. Fallback to chrono-node
+    return chrono.parseDate(clean, nowInZone.toJSDate(), { forwardDate: true });
 }
 
 async function sendTelegramMessage(chatId, text, replyMarkup = null) {
