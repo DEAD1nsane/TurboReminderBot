@@ -1,15 +1,15 @@
 {
   "name": "telegram-reminder-bot",
   "version": "1.0.0",
-  "description": "A Telegram reminder bot using Express, Chrono-node, and Luxon",
-  "main": "reminder.js",
+  "description": "Telegram inline reminder bot",
+  "main": "index.js",
   "scripts": {
-    "start": "node reminder.js"
+    "start": "node index.js"
   },
   "dependencies": {
-    "chrono-node": "^2.10.1",
-    "express": "^4.22.2",
-    "luxon": "^3.7.2",
-    "pg": "^8.22.0"
+    "chrono-node": "^2.7.5",
+    "express": "^4.19.2",
+    "luxon": "^3.4.4",
+    "pg": "^8.11.5"
   }
 }
