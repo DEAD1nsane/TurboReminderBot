@@ -14,15 +14,44 @@ app.post('/webhook', async (req, res) => {
         const queryId = inlineQuery.id;
         const queryText = inlineQuery.query.trim();
 
-        let resultText = "Type a time like '5m' or 'in 2 hours'";
-        if (queryText) {
-            const parsedDate = chrono.parseDate(queryText, new Date());
-            if (parsedDate) {
+        let results = [];
+
+        if (!queryText || queryText.toLowerCase() === 'reminder') {
+            const presets = [
+                { id: '1', title: '5 Minutes', time: 'in 5 minutes' },
+                { id: '2', title: '15 Minutes', time: 'in 15 minutes' },
+                { id: '3', title: '1 Hour', time: 'in 1 hour' },
+                { id: '4', title: '1 Day', time: 'in 1 day' }
+            ];
+
+            results = presets.map(p => {
+                const parsedDate = chrono.parseDate(p.time, new Date());
                 const dt = DateTime.fromJSDate(parsedDate);
-                resultText = `Parsed Time: ${dt.toFormat('ff')}`;
-            } else {
-                resultText = `Could not parse time from: "${queryText}"`;
-            }
+                return {
+                    type: 'article',
+                    id: p.id,
+                    title: `Remind in ${p.title}`,
+                    description: `Set reminder for ${dt.toFormat('ff')}`,
+                    input_message_content: {
+                        message_text: `Reminder set for ${p.title} (${dt.toFormat('ff')})`
+                    }
+                };
+            });
+        } else {
+            const parsedDate = chrono.parseDate(queryText, new Date());
+            let resultText = parsedDate 
+                ? `Parsed Time: ${DateTime.fromJSDate(parsedDate).toFormat('ff')}`
+                : `Could not parse time from: "${queryText}"`;
+
+            results.push({
+                type: 'article',
+                id: String(Date.now()),
+                title: 'Custom Reminder',
+                description: resultText,
+                input_message_content: {
+                    message_text: resultText
+                }
+            });
         }
 
         const url = `https://api.telegram.org/bot${TOKEN}/answerInlineQuery`;
@@ -32,15 +61,7 @@ app.post('/webhook', async (req, res) => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     inline_query_id: queryId,
-                    results: [{
-                        type: 'article',
-                        id: String(Date.now()),
-                        title: 'Reminder Preview',
-                        description: resultText,
-                        input_message_content: {
-                            message_text: resultText
-                        }
-                    }],
+                    results: results,
                     cache_time: 0
                 })
             });
