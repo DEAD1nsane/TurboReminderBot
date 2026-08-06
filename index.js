@@ -69,7 +69,6 @@ function parseFlexibleDate(text, timeZone) {
     let clean = text.trim().replace(/^reminder\s*/i, '');
     const nowInZone = DateTime.now().setZone(timeZone);
 
-    // 1. Shorthand check (e.g., 12h28m)
     const compoundRegex = /^((?:\d+d)?\s*(?:\d+h)?\s*(?:\d+m)?\s*(?:\d+s)?)\s+(.+)$/i;
     const match = clean.match(compoundRegex);
 
@@ -90,7 +89,6 @@ function parseFlexibleDate(text, timeZone) {
         }
     }
 
-    // 2. Explicit time parsing using Luxon for absolute times like "11pm", "11:30pm"
     const timeOnlyRegex = /^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i;
     const timeMatch = clean.match(timeOnlyRegex);
     if (timeMatch && timeMatch[3]) {
@@ -103,18 +101,17 @@ function parseFlexibleDate(text, timeZone) {
 
         let dt = nowInZone.set({ hour, minute, second: 0, millisecond: 0 });
         if (dt <= nowInZone) {
-            dt = dt.plus({ days: 1 }); // If time already passed today, assume tomorrow
+            dt = dt.plus({ days: 1 });
         }
         return dt.toJSDate();
     }
 
-    // 3. Fallback to chrono-node
     return chrono.parseDate(clean, nowInZone.toJSDate(), { forwardDate: true });
 }
 
 async function sendTelegramMessage(chatId, text, replyMarkup = null) {
     const url = `https://api.telegram.org/bot${TOKEN}/sendMessage`;
-    const payload = { chat_id: chatId, text: text, parse_mode: 'Markdown' };
+    const payload = { chat_id: chatId, text: text };
     if (replyMarkup) payload.reply_markup = replyMarkup;
 
     try {
@@ -132,7 +129,7 @@ async function sendTelegramMessage(chatId, text, replyMarkup = null) {
 
 async function editTelegramMessage(chatId, messageId, text, replyMarkup = null) {
     const url = `https://api.telegram.org/bot${TOKEN}/editMessageText`;
-    const payload = { chat_id: chatId, message_id: messageId, text: text, parse_mode: 'Markdown' };
+    const payload = { chat_id: chatId, message_id: messageId, text: text };
     if (replyMarkup) payload.reply_markup = replyMarkup;
 
     try {
@@ -233,7 +230,7 @@ setInterval(async () => {
     try {
         const res = await pool.query('SELECT * FROM reminders WHERE remind_at <= NOW() AND sent = FALSE');
         for (const reminder of res.rows) {
-            await sendTelegramMessage(reminder.chat_id || reminder.user_id, `⏰ **REMINDER:** ${reminder.text}`);
+            await sendTelegramMessage(reminder.chat_id || reminder.user_id, `⏰ REMINDER: ${reminder.text}`);
             await pool.query('UPDATE reminders SET sent = TRUE WHERE id = $1', [reminder.id]);
         }
     } catch (err) {
@@ -256,7 +253,7 @@ app.post('/webhook', async (req, res) => {
             if (text.startsWith('/tz') || text.startsWith('/start')) {
                 const tzInput = text.replace(/\/tz|\/start/, '').trim();
                 if (!tzInput || tzInput === 'tz') {
-                    await sendTelegramMessage(chatId, '⚙️ **Select your region below, or type `/tz Continent/City` (e.g. `/tz Europe/London`):**', getRegionMenuKeyboard());
+                    await sendTelegramMessage(chatId, '⚙️ Select your region below, or type /tz Continent/City (e.g. /tz Europe/London):', getRegionMenuKeyboard());
                 } else {
                     const validTz = DateTime.now().setZone(tzInput).isValid;
                     if (validTz && process.env.DATABASE_URL) {
@@ -265,12 +262,12 @@ app.post('/webhook', async (req, res) => {
                                 'INSERT INTO user_settings (user_id, timezone) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET timezone = $2',
                                 [userId, tzInput]
                             );
-                            await sendTelegramMessage(chatId, `✅ Timezone saved as **${tzInput}**! You can now use inline reminders.`);
+                            await sendTelegramMessage(chatId, `✅ Timezone saved as ${tzInput}! You can now use inline reminders.`);
                         } catch (err) {
                             console.error('Error setting timezone via text:', err);
                         }
                     } else {
-                        await sendTelegramMessage(chatId, '❌ Invalid timezone. Select a region below or search using `/tz Continent/City` (e.g. `/tz Asia/Tokyo`).', getRegionMenuKeyboard());
+                        await sendTelegramMessage(chatId, '❌ Invalid timezone. Select a region below or search using /tz Continent/City (e.g. /tz Asia/Tokyo).', getRegionMenuKeyboard());
                     }
                 }
             }
@@ -287,9 +284,9 @@ app.post('/webhook', async (req, res) => {
             if (data.startsWith('menu:')) {
                 const region = data.replace('menu:', '');
                 if (region === 'main') {
-                    await editTelegramMessage(chatId, messageId, '⚙️ **Select your region below, or type `/tz Continent/City`:**', getRegionMenuKeyboard());
+                    await editTelegramMessage(chatId, messageId, '⚙️ Select your region below, or type /tz Continent/City:', getRegionMenuKeyboard());
                 } else {
-                    await editTelegramMessage(chatId, messageId, '📍 **Select your timezone:**', getSubMenuKeyboard(region));
+                    await editTelegramMessage(chatId, messageId, '📍 Select your timezone:', getSubMenuKeyboard(region));
                 }
             } else if (data.startsWith('settz:')) {
                 const tz = data.replace('settz:', '');
@@ -299,7 +296,7 @@ app.post('/webhook', async (req, res) => {
                             'INSERT INTO user_settings (user_id, timezone) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET timezone = $2',
                             [userId, tz]
                         );
-                        await editTelegramMessage(chatId, messageId, `✅ Timezone saved as **${tz}**! You can now use inline reminders.`);
+                        await editTelegramMessage(chatId, messageId, `✅ Timezone saved as ${tz}! You can now use inline reminders.`);
                     } catch (err) {
                         console.error('Error saving user timezone via callback:', err);
                         await sendTelegramMessage(chatId, `⚠️ Could not save timezone right now. Please try again.`);
@@ -325,7 +322,7 @@ app.post('/webhook', async (req, res) => {
                         title: `🔔 Remind: "${queryText}"`,
                         description: `Scheduled for: ${dt.toFormat('ff')}`,
                         input_message_content: {
-                            message_text: `🔔 Reminder set for: **${queryText}** (${dt.toFormat('ff')})`
+                            message_text: `🔔 Reminder set for: ${queryText} (${dt.toFormat('ff')})`
                         }
                     });
                 }
