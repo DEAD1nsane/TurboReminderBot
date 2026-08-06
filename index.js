@@ -16,7 +16,6 @@ app.post('/webhook', async (req, res) => {
 
         let results = [];
 
-        // Show preset durations if query is empty or starts with "reminder"
         if (!queryText || queryText === 'reminder') {
             const presets = [
                 { id: '1', title: '5 Minutes', time: 'in 5 minutes' },
@@ -38,8 +37,17 @@ app.post('/webhook', async (req, res) => {
                     }
                 };
             });
+
+            results.push({
+                type: 'article',
+                id: 'custom_prompt',
+                title: '✍️ Custom Time...',
+                description: 'Keep typing a custom time (e.g., "reminder in 30m")',
+                input_message_content: {
+                    message_text: 'Type a specific time after the bot name, like `@TurboReminderBot 45 minutes`'
+                }
+            });
         } else {
-            // Strip "reminder" prefix if typed (e.g. "reminder 2 hours" -> "2 hours")
             const cleanText = queryText.replace(/^reminder\s*/, '');
             const parsedDate = chrono.parseDate(cleanText, new Date());
             
