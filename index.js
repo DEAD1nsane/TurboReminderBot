@@ -72,11 +72,13 @@ async function sendTelegramMessage(chatId, text, replyMarkup = null) {
     if (replyMarkup) payload.reply_markup = replyMarkup;
 
     try {
-        await fetch(url, {
+        const res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
+        const data = await res.json();
+        if (!data.ok) console.error('Telegram sendMessage error:', data);
     } catch (err) {
         console.error('Error sending reminder message:', err);
     }
@@ -88,13 +90,28 @@ async function editTelegramMessage(chatId, messageId, text, replyMarkup = null) 
     if (replyMarkup) payload.reply_markup = replyMarkup;
 
     try {
-        await fetch(url, {
+        const res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
+        const data = await res.json();
+        if (!data.ok) console.error('Telegram editMessageText error:', data);
     } catch (err) {
         console.error('Error editing message:', err);
+    }
+}
+
+async function answerCallbackQuery(callbackQueryId, text = '') {
+    const url = `https://api.telegram.org/bot${TOKEN}/answerCallbackQuery`;
+    try {
+        await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ callback_query_id: callbackQueryId, text: text })
+        });
+    } catch (err) {
+        console.error('Error answering callback query:', err);
     }
 }
 
@@ -126,6 +143,7 @@ function getSubMenuKeyboard(region) {
         buttons = [
             [{ text: '🇺🇸 US Eastern', callback_data: 'settz:America/New_York' }, { text: '🇺🇸 US Central', callback_data: 'settz:America/Chicago' }],
             [{ text: '🇺🇸 US Mountain', callback_data: 'settz:America/Denver' }, { text: '🇺🇸 US Pacific', callback_data: 'settz:America/Los_Angeles' }],
+            [{ text: '🇺🇸 Alaska', callback_data: 'settz:America/Anchorage' }, { text: '🇺🇸 Hawaii', callback_data: 'settz:Pacific/Honolulu' }],
             [{ text: '🇨🇦 Canada Eastern', callback_data: 'settz:America/Toronto' }, { text: '🇨🇦 Canada Pacific', callback_data: 'settz:America/Vancouver' }],
             [{ text: '🇲🇽 Mexico City', callback_data: 'settz:America/Mexico_City' }]
         ];
@@ -212,6 +230,8 @@ app.post('/webhook', async (req, res) => {
         const chatId = callbackQuery.message.chat.id;
         const messageId = callbackQuery.message.message_id;
         const data = callbackQuery.data;
+
+        await answerCallbackQuery(callbackQuery.id);
 
         if (data.startsWith('menu:')) {
             const region = data.replace('menu:', '');
