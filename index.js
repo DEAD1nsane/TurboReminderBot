@@ -381,7 +381,17 @@ app.post('/webhook', async (req, res) => {
             const queryText = inlineQuery.query.trim();
             let results = [];
 
-            if (queryText.length > 0) {
+            if (queryText.toLowerCase() === 'list' || queryText.toLowerCase() === 'reminders' || queryText === '') {
+                results.push({
+                    type: 'article',
+                    id: 'show_reminders_dm',
+                    title: '📋 Send Active Reminders (DM)',
+                    description: 'Tap to receive a private message listing your reminders with delete options.',
+                    input_message_content: {
+                        message_text: '📋 Requesting active reminders list...'
+                    }
+                });
+            } else {
                 const parsedDate = parseFlexibleDate(queryText, userTz);
                 if (parsedDate) {
                     const dt = DateTime.fromJSDate(parsedDate).setZone(userTz);
@@ -428,7 +438,11 @@ app.post('/webhook', async (req, res) => {
             const chatId = chosenResult.chat_id || userId;
             const parts = resultId.split(':');
 
-            if (parts.length >= 2 && parts[0] !== 'set_tz_required' && parts[0] !== 'invalid_time') {
+            if (resultId === 'show_reminders_dm') {
+                const userTz = await getUserTimezone(userId);
+                const markup = await getRemindersKeyboard(userId, userTz);
+                await sendTelegramMessage(userId, '📋 **Your Active Reminders:**\nTap a reminder to view details or delete it.', markup);
+            } else if (parts.length >= 2 && parts[0] !== 'set_tz_required' && parts[0] !== 'invalid_time') {
                 const timestamp = parseInt(parts[1], 10);
                 const text = parts.slice(2).join(':') || 'Reminder';
                 const remindAt = new Date(timestamp);
@@ -439,7 +453,6 @@ app.post('/webhook', async (req, res) => {
                             'INSERT INTO reminders (user_id, chat_id, text, remind_at) VALUES ($1, $2, $3, $4)',
                             [userId, chatId, text, remindAt]
                         );
-                        console.log(`Saved reminder for user ${userId} in chat ${chatId} at ${remindAt.toISOString()}`);
                     } catch (err) {
                         console.error('Error saving reminder to database:', err);
                     }
