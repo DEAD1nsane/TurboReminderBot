@@ -11,11 +11,15 @@ const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
+    ssl: {
+        rejectUnauthorized: false
+    },
     max: 5,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 2000,
+    idleTimeoutMillis: 10000,
+    connectionTimeoutMillis: 5000,
+    keepAlive: true
 });
+
 
 pool.on('error', (err) => {
     console.error('Unexpected Postgres pool error:', err);
