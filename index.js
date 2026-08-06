@@ -11,7 +11,10 @@ const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
+    ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
+    max: 5,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 2000,
 });
 
 pool.on('error', (err) => {
@@ -60,8 +63,6 @@ async function getUserTimezone(userId) {
 
 function parseFlexibleDate(text, timeZone) {
     let clean = text.trim().replace(/^reminder\s*/i, '');
-
-    // Support combined shorthands like 1d, 1h5m, 10m, 30s
     const compoundRegex = /^(\d+d)?\s*(\d+h)?\s*(\d+m)?\s*(\d+s)?$/i;
     const match = clean.match(compoundRegex);
 
@@ -81,7 +82,6 @@ function parseFlexibleDate(text, timeZone) {
         }
     }
 
-    // Natural language parsing (e.g. "tomorrow at 7pm", "a week from now")
     const nowInZone = DateTime.now().setZone(timeZone).toJSDate();
     return chrono.parseDate(clean, nowInZone);
 }
@@ -310,7 +310,6 @@ app.post('/webhook', async (req, res) => {
                     }
                 });
             } else {
-                // Parse custom query first so it appears at the top
                 if (queryText.length > 0) {
                     const parsedDate = parseFlexibleDate(queryText, userTz);
                     if (parsedDate) {
@@ -327,7 +326,6 @@ app.post('/webhook', async (req, res) => {
                     }
                 }
 
-                // Add standard quick presets below custom option
                 const presets = [
                     { id: 'in_5m', title: '5 Minutes', time: 'in 5 minutes' },
                     { id: 'in_15m', title: '15 Minutes', time: 'in 15 minutes' },
