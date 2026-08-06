@@ -79,15 +79,14 @@ function parseFlexibleDate(text, timeZone) {
         const minutes = (timePart.match(/(\d+)m/i) || [])[1] ? parseInt(RegExp.$1, 10) : 0;
         const seconds = (timePart.match(/(\d+)s/i) || [])[1] ? parseInt(RegExp.$1, 10) : 0;
 
-        if (days > 0 || hours > 0 || minutes > 0 || (seconds > 0 && days === 0 && hours === 0 && minutes === 0)) {
+        if (days > 0 || hours > 0 || minutes > 0 || seconds > 0) {
             let dt = nowInZone;
             if (days) dt = dt.plus({ days });
             if (hours) dt = dt.plus({ hours });
             if (minutes) dt = dt.plus({ minutes });
             if (seconds) dt = dt.plus({ seconds });
 
-            // Ensure minimum 1 minute
-            if (dt <= nowInZone.plus({ minutes: 1 })) {
+            if (dt <= nowInZone.plus({ seconds: 59 })) {
                 return null;
             }
             return dt.toJSDate();
@@ -114,7 +113,7 @@ function parseFlexibleDate(text, timeZone) {
     const parsed = chrono.parseDate(clean, nowInZone.toJSDate(), { forwardDate: true });
     if (parsed) {
         const dt = DateTime.fromJSDate(parsed);
-        if (dt <= nowInZone.plus({ minutes: 1 })) {
+        if (dt <= nowInZone.plus({ seconds: 59 })) {
             return null;
         }
     }
@@ -198,7 +197,7 @@ function getSubMenuKeyboard(region) {
         buttons = [
             [{ text: '🇺🇸 US Eastern', callback_data: 'settz:America/New_York' }, { text: '🇺🇸 US Central', callback_data: 'settz:America/Chicago' }],
             [{ text: '🇺🇸 US Mountain', callback_data: 'settz:America/Denver' }, { text: '🇺🇸 US Pacific', callback_data: 'settz:America/Los_Angeles' }],
-            [{ text: '🇺🇸 Alaska', callback_data: 'settz:America/Anchorage' }, { text: '🇺🇸 Hawaii', callback_data: 'settz:Pacific/Honolulu' }],
+            [{ text: '🇺🇸 Alaska', callback_data: 'settz:America/Anchorage' }, { text: '🇺🇸 US Hawaii', callback_data: 'settz:Pacific/Honolulu' }],
             [{ text: '🇨🇦 Canada Eastern', callback_data: 'settz:America/Toronto' }, { text: '🇨🇦 Canada Pacific', callback_data: 'settz:America/Vancouver' }],
             [{ text: '🇲🇽 Mexico City', callback_data: 'settz:America/Mexico_City' }]
         ];
@@ -341,8 +340,8 @@ app.post('/webhook', async (req, res) => {
                     results.push({
                         type: 'article',
                         id: 'invalid_time',
-                        title: '⚠️ Reminders must be at least 1 minute in the future',
-                        description: 'Please specify a valid future time.',
+                        title: '⚠️ Must be at least 1 min',
+                        description: 'Min 1 minute required.',
                         input_message_content: {
                             message_text: '❌ Reminders must be set for at least 1 minute from now.'
                         }
