@@ -21,7 +21,6 @@ pool.on('error', (err) => {
     console.error('Unexpected Postgres pool error:', err);
 });
 
-// Bind server immediately so Railway healthcheck passes instantly
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server listening on port ${PORT}`);
 });
@@ -56,26 +55,29 @@ app.get('/', (req, res) => {
 });
 
 async function getUserTimezone(userId) {
-    if (!process.env.DATABASE_URL) return null;
+    if (!process.env.DATABASE_URL) return 'UTC';
     try {
         const res = await pool.query('SELECT timezone FROM user_settings WHERE user_id = $1', [userId]);
-        return res.rows.length > 0 ? res.rows[0].timezone : null;
+        return res.rows.length > 0 ? res.rows[0].timezone : 'UTC';
     } catch (err) {
         console.error('Error fetching user timezone:', err);
-        return null;
+        return 'UTC';
     }
 }
 
 function parseFlexibleDate(text, timeZone) {
     let clean = text.trim().replace(/^reminder\s*/i, '');
-    const compoundRegex = /^(\d+d)?\s*(\d+h)?\s*(\d+m)?\s*(\d+s)?$/i;
+    
+    // Match leading shorthand pattern like "12h28m" or "1d 2h"
+    const compoundRegex = /^((?:\d+d)?\s*(?:\d+h)?\s*(?:\d+m)?\s*(?:\d+s)?)\s+(.+)$/i;
     const match = clean.match(compoundRegex);
 
-    if (match && clean.length > 0) {
-        const days = match[1] ? parseInt(match[1], 10) : 0;
-        const hours = match[2] ? parseInt(match[2], 10) : 0;
-        const minutes = match[3] ? parseInt(match[3], 10) : 0;
-        const seconds = match[4] ? parseInt(match[4], 10) : 0;
+    if (match) {
+        const timePart = match[1];
+        const days = (timePart.match(/(\d+)d/i) || [])[1] ? parseInt(RegExp.$1, 10) : 0;
+        const hours = (timePart.match(/(\d+)h/i) || [])[1] ? parseInt(RegExp.$1, 10) : 0;
+        const minutes = (timePart.match(/(\d+)m/i) || [])[1] ? parseInt(RegExp.$1, 10) : 0;
+        const seconds = (timePart.match(/(\d+)s/i) || [])[1] ? parseInt(RegExp.$1, 10) : 0;
 
         if (days > 0 || hours > 0 || minutes > 0 || seconds > 0) {
             let dt = DateTime.now().setZone(timeZone);
@@ -294,64 +296,45 @@ app.post('/webhook', async (req, res) => {
             const queryText = inlineQuery.query.trim();
             let results = [];
 
-            if (!userTz) {
-                results.push({
-                    type: 'article',
-                    id: 'set_tz_required',
-                    title: '⚠️ Setup Required: Set Your Timezone',
-                    description: 'Tap here to pick your region from a button menu.',
-                    input_message_content: {
-                        message_text: '⚠️ You must set your timezone before creating reminders!'
-                    },
-                    reply_markup: {
-                        inline_keyboard: [
-                            [
-                                {
-                                    text: '⚙️ Set Timezone Now',
-                                    url: 'https://t.me/TurbosRbot?start=tz'
-                                }
-                            ]
-                        ]
-                    }
-                });
-            } else {
-                if (queryText.length > 0) {
-                    const parsedDate = parseFlexibleDate(queryText, userTz);
-                    if (parsedDate) {
-                        const dt = DateTime.fromJSDate(parsedDate).setZone(userTz);
-                        results.push({
-                            type: 'article',
-                            id: `custom:${parsedDate.getTime()}:${queryText}`,
-                            title: `🔔 Remind: "${queryText}"`,
-                            description: `Scheduled for: ${dt.toFormat('ff')}`,
-                            input_message_content: {
-                                message_text: `🔔 Reminder set for: **${queryText}** (${dt.toFormat('ff')})`
-                            }
-                        });
-                    }
-                }
-
-                const presets = [
-                    { id: 'in_5m', title: '5 Minutes', time: 'in 5 minutes' },
-                    { id: 'in_15m', title: '15 Minutes', time: 'in 15 minutes' },
-                    { id: 'in_1h', title: '1 Hour', time: 'in 1 hour' },
-                    { id: 'in_1d', title: '1 Day', time: 'in 1 day' }
-                ];
-
-                presets.forEach(p => {
-                    const parsedDate = chrono.parseDate(p.time, new Date());
+            if (queryText.length > 0) {
+                const parsedDate = parseFlexibleDate(queryText, userTz);
+                if (parsedDate) {
                     const dt = DateTime.fromJSDate(parsedDate).setZone(userTz);
+                    const match = queryText.match(/^((?:\d+d)?\s*(?:\d+h)?\s*(?:\d+m)?\s*(?:\d+s)?)\s+(.+)$/i);
+                    const cleanText = match ? match[2] : queryText;
+
                     results.push({
                         type: 'article',
-                        id: `${p.id}:${parsedDate.getTime()}:Reminder`,
-                        title: `Quick Preset: ${p.title}`,
-                        description: `${dt.toFormat('ff')}`,
+                        id: `custom:${parsedDate.getTime()}:${cleanText}`,
+                        title: `🔔 Remind: "${cleanText}"`,
+                        description: `Scheduled for: ${dt.toFormat('ff')}`,
                         input_message_content: {
-                            message_text: `🔔 Reminder set for ${p.title} (${dt.toFormat('ff')})`
+                            message_text: `🔔 Reminder set for: **${cleanText}** (${dt.toFormat('ff')})`
                         }
                     });
-                });
+                }
             }
+
+            const presets = [
+                { id: 'in_5m', title: '5 Minutes', time: 'in 5 minutes' },
+                { id: 'in_15m', title: '15 Minutes', time: 'in 15 minutes' },
+                { id: 'in_1h', title: '1 Hour', time: 'in 1 hour' },
+                { id: 'in_1d', title: '1 Day', time: 'in 1 day' }
+            ];
+
+            presets.forEach(p => {
+                const parsedDate = chrono.parseDate(p.time, new Date());
+                const dt = DateTime.fromJSDate(parsedDate).setZone(userTz);
+                results.push({
+                    type: 'article',
+                    id: `${p.id}:${parsedDate.getTime()}:Reminder`,
+                    title: `Quick Preset: ${p.title}`,
+                    description: `${dt.toFormat('ff')}`,
+                    input_message_content: {
+                        message_text: `🔔 Reminder set for ${p.title} (${dt.toFormat('ff')})`
+                    }
+                });
+            });
 
             try {
                 await fetch(`https://api.telegram.org/bot${TOKEN}/answerInlineQuery`, {
