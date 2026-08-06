@@ -6,6 +6,7 @@ const app = express();
 app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
+const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
 app.post('/webhook', (req, res) => {
     console.log('Received Telegram update:', req.body);
