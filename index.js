@@ -263,7 +263,7 @@ async function getRemindersKeyboard(userId, userTz) {
 setInterval(async () => {
     if (!process.env.DATABASE_URL) return;
     try {
-        const res = await pool.query('SELECT * FROM reminders WHERE remind_at <= CURRENT_TIMESTAMP AND sent = FALSE');
+        const res = await pool.query('SELECT * FROM reminders WHERE remind_at <= NOW() AND sent = FALSE');
         for (const reminder of res.rows) {
             const targetChat = reminder.chat_id || reminder.user_id;
             await sendTelegramMessage(targetChat, `⏰ REMINDER: ${reminder.text}`);
@@ -289,7 +289,13 @@ app.post('/webhook', async (req, res) => {
 
             if (text.startsWith('/reminders') || text.startsWith('/list')) {
                 const markup = await getRemindersKeyboard(userId, userTz);
-                await sendTelegramMessage(chatId, '📋 **Your Active Reminders:**\nTap a reminder to view details or delete it.', markup);
+                const countRes = await pool.query('SELECT COUNT(*) FROM reminders WHERE user_id = $1 AND sent = FALSE', [userId]);
+                const count = parseInt(countRes.rows[0].count, 10);
+                if (count === 0) {
+                    await sendTelegramMessage(chatId, '📭 You have no active reminders.');
+                } else {
+                    await sendTelegramMessage(chatId, '📋 **Your Active Reminders:**\nTap a reminder to view details or delete it.', markup);
+                }
             } else if (text.startsWith('/tz') || text.startsWith('/start')) {
                 const tzInput = text.replace(/\/tz|\/start/, '').trim();
                 if (!tzInput || tzInput === 'tz') {
@@ -328,7 +334,13 @@ app.post('/webhook', async (req, res) => {
                     await pool.query('DELETE FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
                     await answerCallbackQuery(callbackQuery.id, '🗑️ Reminder deleted!', true);
                     const markup = await getRemindersKeyboard(userId, userTz);
-                    await editTelegramMessage(chatId, messageId, '📋 **Your Active Reminders:**\nTap a reminder to view details or delete it.', markup);
+                    const countRes = await pool.query('SELECT COUNT(*) FROM reminders WHERE user_id = $1 AND sent = FALSE', [userId]);
+                    const count = parseInt(countRes.rows[0].count, 10);
+                    if (count === 0) {
+                        await editTelegramMessage(chatId, messageId, '📭 You have no active reminders.');
+                    } else {
+                        await editTelegramMessage(chatId, messageId, '📋 **Your Active Reminders:**\nTap a reminder to view details or delete it.', markup);
+                    }
                 } catch (err) {
                     console.error('Error deleting reminder:', err);
                     await answerCallbackQuery(callbackQuery.id, '❌ Failed to delete reminder.', true);
@@ -440,8 +452,14 @@ app.post('/webhook', async (req, res) => {
 
             if (resultId === 'show_reminders_dm') {
                 const userTz = await getUserTimezone(userId);
-                const markup = await getRemindersKeyboard(userId, userTz);
-                await sendTelegramMessage(userId, '📋 **Your Active Reminders:**\nTap a reminder to view details or delete it.', markup);
+                const countRes = await pool.query('SELECT COUNT(*) FROM reminders WHERE user_id = $1 AND sent = FALSE', [userId]);
+                const count = parseInt(countRes.rows[0].count, 10);
+                if (count === 0) {
+                    await sendTelegramMessage(userId, '📭 You have no active reminders.');
+                } else {
+                    const markup = await getRemindersKeyboard(userId, userTz);
+                    await sendTelegramMessage(userId, '📋 **Your Active Reminders:**\nTap a reminder to view details or delete it.', markup);
+                }
             } else if (parts.length >= 2 && parts[0] !== 'set_tz_required' && parts[0] !== 'invalid_time') {
                 const timestamp = parseInt(parts[1], 10);
                 const text = parts.slice(2).join(':') || 'Reminder';
