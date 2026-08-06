@@ -7,6 +7,24 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const TIMEZONE = 'America/Chicago';
+
+function parseFlexibleDate(text) {
+    let clean = text.trim().toLowerCase().replace(/^reminder\s*/, '');
+
+    // Expand shorthand syntax (e.g., 1m -> in 1 minute, 2h -> in 2 hours)
+    const shorthandRegex = /^(\d+)\s*([mhd])$/i;
+    const match = clean.match(shorthandRegex);
+    if (match) {
+        const num = match[1];
+        const unitMap = { m: 'minute', h: 'hour', d: 'day' };
+        clean = `in ${num} ${unitMap[match[2]]}`;
+    } else if (/^\d+\s*(m|min|minute|minutes|h|hr|hour|hours|d|day|days)/i.test(clean)) {
+        clean = `in ${clean}`;
+    }
+
+    return chrono.parseDate(clean, new Date());
+}
 
 app.post('/webhook', async (req, res) => {
     const inlineQuery = req.body.inline_query;
@@ -26,7 +44,7 @@ app.post('/webhook', async (req, res) => {
 
             results = presets.map(p => {
                 const parsedDate = chrono.parseDate(p.time, new Date());
-                const dt = DateTime.fromJSDate(parsedDate);
+                const dt = DateTime.fromJSDate(parsedDate).setZone(TIMEZONE);
                 return {
                     type: 'article',
                     id: p.id,
@@ -42,18 +60,16 @@ app.post('/webhook', async (req, res) => {
                 type: 'article',
                 id: 'custom_prompt',
                 title: '✍️ Custom Time...',
-                description: 'Keep typing a custom time (e.g., "reminder in 30m")',
+                description: 'Type a time (e.g. "1m", "10m", "2h")',
                 input_message_content: {
-                    message_text: 'Type a specific time after the bot name, like `@TurboReminderBot 45 minutes`'
+                    message_text: 'Type your custom reminder time after the bot username.'
                 }
             });
         } else {
-            const cleanText = queryText.replace(/^reminder\s*/, '');
-            const parsedDate = chrono.parseDate(cleanText, new Date());
-            
+            const parsedDate = parseFlexibleDate(queryText);
             let resultText = parsedDate 
-                ? `Parsed Time: ${DateTime.fromJSDate(parsedDate).toFormat('ff')}`
-                : `Could not parse time from: "${cleanText}"`;
+                ? `Parsed Time: ${DateTime.fromJSDate(parsedDate).setZone(TIMEZONE).toFormat('ff')}`
+                : `Could not parse time from: "${queryText}"`;
 
             results.push({
                 type: 'article',
