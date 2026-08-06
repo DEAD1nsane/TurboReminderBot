@@ -14,6 +14,10 @@ const pool = new Pool({
     ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
 });
 
+pool.on('error', (err) => {
+    console.error('Unexpected database pool error:', err);
+});
+
 async function initDb() {
     if (!process.env.DATABASE_URL) return;
     const query = `
@@ -201,170 +205,179 @@ setInterval(async () => {
 }, 10000);
 
 app.post('/webhook', async (req, res) => {
-    const message = req.body.message;
-    const inlineQuery = req.body.inline_query;
-    const chosenResult = req.body.chosen_inline_result;
-    const callbackQuery = req.body.callback_query;
+    try {
+        const message = req.body.message;
+        const inlineQuery = req.body.inline_query;
+        const chosenResult = req.body.chosen_inline_result;
+        const callbackQuery = req.body.callback_query;
 
-    if (message && message.text) {
-        const text = message.text.trim();
-        const userId = message.from.id;
-        const chatId = message.chat.id;
+        if (message && message.text) {
+            const text = message.text.trim();
+            const userId = message.from.id;
+            const chatId = message.chat.id;
 
-        if (text.startsWith('/tz') || text.startsWith('/start')) {
-            const tzInput = text.replace(/\/tz|\/start/, '').trim();
-            if (!tzInput || tzInput === 'tz') {
-                await sendTelegramMessage(chatId, '⚙️ **Select your region below, or type `/tz Continent/City` (e.g. `/tz Europe/London`):**', getRegionMenuKeyboard());
-            } else {
-                const validTz = DateTime.now().setZone(tzInput).isValid;
-                if (validTz && process.env.DATABASE_URL) {
-                    await pool.query(
-                        'INSERT INTO user_settings (user_id, timezone) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET timezone = $2',
-                        [userId, tzInput]
-                    );
-                    await sendTelegramMessage(chatId, `✅ Timezone saved as **${tzInput}**! You can now use inline reminders.`);
+            if (text.startsWith('/tz') || text.startsWith('/start')) {
+                const tzInput = text.replace(/\/tz|\/start/, '').trim();
+                if (!tzInput || tzInput === 'tz') {
+                    await sendTelegramMessage(chatId, '⚙️ **Select your region below, or type `/tz Continent/City` (e.g. `/tz Europe/London`):**', getRegionMenuKeyboard());
                 } else {
-                    await sendTelegramMessage(chatId, '❌ Invalid timezone. Select a region below or search using `/tz Continent/City` (e.g. `/tz Asia/Tokyo`).', getRegionMenuKeyboard());
-                }
-            }
-        }
-    }
-
-    if (callbackQuery) {
-        const userId = callbackQuery.from.id;
-        const chatId = callbackQuery.message.chat.id;
-        const messageId = callbackQuery.message.message_id;
-        const data = callbackQuery.data;
-
-        await answerCallbackQuery(callbackQuery.id);
-
-        if (data.startsWith('menu:')) {
-            const region = data.replace('menu:', '');
-            if (region === 'main') {
-                await editTelegramMessage(chatId, messageId, '⚙️ **Select your region below, or type `/tz Continent/City`:**', getRegionMenuKeyboard());
-            } else {
-                await editTelegramMessage(chatId, messageId, '📍 **Select your timezone:**', getSubMenuKeyboard(region));
-            }
-        } else if (data.startsWith('settz:')) {
-            const tz = data.replace('settz:', '');
-            if (process.env.DATABASE_URL) {
-                try {
-                    await pool.query(
-                        'INSERT INTO user_settings (user_id, timezone) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET timezone = $2',
-                        [userId, tz]
-                    );
-                    await editTelegramMessage(chatId, messageId, `✅ Timezone saved as **${tz}**! You can now use inline reminders.`);
-                } catch (err) {
-                    console.error('Error saving user timezone:', err);
-                }
-            }
-        }
-    }
-
-    if (inlineQuery) {
-        const userId = inlineQuery.from.id;
-        const userTz = await getUserTimezone(userId);
-        const queryId = inlineQuery.id;
-        const queryText = inlineQuery.query.trim().toLowerCase();
-        let results = [];
-
-        if (!userTz) {
-            results.push({
-                type: 'article',
-                id: 'set_tz_required',
-                title: '⚠️ Setup Required: Set Your Timezone',
-                description: 'Tap here to pick your region from a button menu.',
-                input_message_content: {
-                    message_text: '⚠️ You must set your timezone before creating reminders!'
-                },
-                reply_markup: {
-                    inline_keyboard: [
-                        [
-                            {
-                                text: '⚙️ Set Timezone Now',
-                                url: 'https://t.me/TurbosRbot?start=tz'
-                            }
-                        ]
-                    ]
-                }
-            });
-        } else {
-            if (!queryText || queryText === 'reminder') {
-                const presets = [
-                    { id: 'in_5m', title: '5 Minutes', time: 'in 5 minutes' },
-                    { id: 'in_15m', title: '15 Minutes', time: 'in 15 minutes' },
-                    { id: 'in_1h', title: '1 Hour', time: 'in 1 hour' },
-                    { id: 'in_1d', title: '1 Day', time: 'in 1 day' }
-                ];
-
-                results = presets.map(p => {
-                    const parsedDate = chrono.parseDate(p.time, new Date());
-                    const dt = DateTime.fromJSDate(parsedDate).setZone(userTz);
-                    return {
-                        type: 'article',
-                        id: `${p.id}:${parsedDate.getTime()}:Reminder`,
-                        title: `Remind in ${p.title}`,
-                        description: `Set reminder for ${dt.toFormat('ff')}`,
-                        input_message_content: {
-                            message_text: `🔔 Reminder set for ${p.title} (${dt.toFormat('ff')})`
+                    const validTz = DateTime.now().setZone(tzInput).isValid;
+                    if (validTz && process.env.DATABASE_URL) {
+                        try {
+                            await pool.query(
+                                'INSERT INTO user_settings (user_id, timezone) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET timezone = $2',
+                                [userId, tzInput]
+                            );
+                            await sendTelegramMessage(chatId, `✅ Timezone saved as **${tzInput}**! You can now use inline reminders.`);
+                        } catch (err) {
+                            console.error('Error setting timezone via text:', err);
                         }
-                    };
+                    } else {
+                        await sendTelegramMessage(chatId, '❌ Invalid timezone. Select a region below or search using `/tz Continent/City` (e.g. `/tz Asia/Tokyo`).', getRegionMenuKeyboard());
+                    }
+                }
+            }
+        }
+
+        if (callbackQuery) {
+            const userId = callbackQuery.from.id;
+            const chatId = callbackQuery.message.chat.id;
+            const messageId = callbackQuery.message.message_id;
+            const data = callbackQuery.data;
+
+            await answerCallbackQuery(callbackQuery.id);
+
+            if (data.startsWith('menu:')) {
+                const region = data.replace('menu:', '');
+                if (region === 'main') {
+                    await editTelegramMessage(chatId, messageId, '⚙️ **Select your region below, or type `/tz Continent/City`:**', getRegionMenuKeyboard());
+                } else {
+                    await editTelegramMessage(chatId, messageId, '📍 **Select your timezone:**', getSubMenuKeyboard(region));
+                }
+            } else if (data.startsWith('settz:')) {
+                const tz = data.replace('settz:', '');
+                if (process.env.DATABASE_URL) {
+                    try {
+                        await pool.query(
+                            'INSERT INTO user_settings (user_id, timezone) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET timezone = $2',
+                            [userId, tz]
+                        );
+                        await editTelegramMessage(chatId, messageId, `✅ Timezone saved as **${tz}**! You can now use inline reminders.`);
+                    } catch (err) {
+                        console.error('Error saving user timezone via callback:', err);
+                        await sendTelegramMessage(chatId, `⚠️ Could not save timezone right now. Please try again.`);
+                    }
+                }
+            }
+        }
+
+        if (inlineQuery) {
+            const userId = inlineQuery.from.id;
+            const userTz = await getUserTimezone(userId);
+            const queryId = inlineQuery.id;
+            const queryText = inlineQuery.query.trim().toLowerCase();
+            let results = [];
+
+            if (!userTz) {
+                results.push({
+                    type: 'article',
+                    id: 'set_tz_required',
+                    title: '⚠️ Setup Required: Set Your Timezone',
+                    description: 'Tap here to pick your region from a button menu.',
+                    input_message_content: {
+                        message_text: '⚠️ You must set your timezone before creating reminders!'
+                    },
+                    reply_markup: {
+                        inline_keyboard: [
+                            [
+                                {
+                                    text: '⚙️ Set Timezone Now',
+                                    url: 'https://t.me/TurbosRbot?start=tz'
+                                }
+                            ]
+                        ]
+                    }
                 });
             } else {
-                const parsedDate = parseFlexibleDate(queryText, userTz);
-                if (parsedDate) {
-                    const dt = DateTime.fromJSDate(parsedDate).setZone(userTz);
-                    const resultText = `Parsed Time: ${dt.toFormat('ff')}`;
-                    results.push({
-                        type: 'article',
-                        id: `custom:${parsedDate.getTime()}:${queryText}`,
-                        title: 'Set Custom Reminder',
-                        description: resultText,
-                        input_message_content: {
-                            message_text: `🔔 Reminder set for: ${queryText} (${dt.toFormat('ff')})`
-                        }
+                if (!queryText || queryText === 'reminder') {
+                    const presets = [
+                        { id: 'in_5m', title: '5 Minutes', time: 'in 5 minutes' },
+                        { id: 'in_15m', title: '15 Minutes', time: 'in 15 minutes' },
+                        { id: 'in_1h', title: '1 Hour', time: 'in 1 hour' },
+                        { id: 'in_1d', title: '1 Day', time: 'in 1 day' }
+                    ];
+
+                    results = presets.map(p => {
+                        const parsedDate = chrono.parseDate(p.time, new Date());
+                        const dt = DateTime.fromJSDate(parsedDate).setZone(userTz);
+                        return {
+                            type: 'article',
+                            id: `${p.id}:${parsedDate.getTime()}:Reminder`,
+                            title: `Remind in ${p.title}`,
+                            description: `Set reminder for ${dt.toFormat('ff')}`,
+                            input_message_content: {
+                                message_text: `🔔 Reminder set for ${p.title} (${dt.toFormat('ff')})`
+                            }
+                        };
                     });
+                } else {
+                    const parsedDate = parseFlexibleDate(queryText, userTz);
+                    if (parsedDate) {
+                        const dt = DateTime.fromJSDate(parsedDate).setZone(userTz);
+                        const resultText = `Parsed Time: ${dt.toFormat('ff')}`;
+                        results.push({
+                            type: 'article',
+                            id: `custom:${parsedDate.getTime()}:${queryText}`,
+                            title: 'Set Custom Reminder',
+                            description: resultText,
+                            input_message_content: {
+                                message_text: `🔔 Reminder set for: ${queryText} (${dt.toFormat('ff')})`
+                            }
+                        });
+                    }
                 }
+            }
+
+            try {
+                await fetch(`https://api.telegram.org/bot${TOKEN}/answerInlineQuery`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        inline_query_id: queryId,
+                        results: results,
+                        cache_time: 0
+                    })
+                });
+            } catch (err) {
+                console.error('Error answering inline query:', err);
             }
         }
 
-        try {
-            await fetch(`https://api.telegram.org/bot${TOKEN}/answerInlineQuery`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    inline_query_id: queryId,
-                    results: results,
-                    cache_time: 0
-                })
-            });
-        } catch (err) {
-            console.error('Error answering inline query:', err);
-        }
-    }
+        if (chosenResult) {
+            const userId = chosenResult.from.id;
+            const resultId = chosenResult.result_id;
+            const parts = resultId.split(':');
 
-    if (chosenResult) {
-        const userId = chosenResult.from.id;
-        const resultId = chosenResult.result_id;
-        const parts = resultId.split(':');
+            if (parts.length >= 2 && parts[0] !== 'set_tz_required') {
+                const timestamp = parseInt(parts[1], 10);
+                const text = parts.slice(2).join(':') || 'Reminder';
+                const remindAt = new Date(timestamp);
 
-        if (parts.length >= 2 && parts[0] !== 'set_tz_required') {
-            const timestamp = parseInt(parts[1], 10);
-            const text = parts.slice(2).join(':') || 'Reminder';
-            const remindAt = new Date(timestamp);
-
-            if (process.env.DATABASE_URL) {
-                try {
-                    await pool.query(
-                        'INSERT INTO reminders (user_id, text, remind_at) VALUES ($1, $2, $3)',
-                        [userId, text, remindAt]
-                    );
-                    console.log(`Saved reminder for user ${userId} at ${remindAt.toISOString()}`);
-                } catch (err) {
-                    console.error('Error saving reminder to database:', err);
+                if (process.env.DATABASE_URL) {
+                    try {
+                        await pool.query(
+                            'INSERT INTO reminders (user_id, text, remind_at) VALUES ($1, $2, $3)',
+                            [userId, text, remindAt]
+                        );
+                        console.log(`Saved reminder for user ${userId} at ${remindAt.toISOString()}`);
+                    } catch (err) {
+                        console.error('Error saving reminder to database:', err);
+                    }
                 }
             }
         }
+    } catch (globalErr) {
+        console.error('Unhandled webhook execution error:', globalErr);
     }
 
     res.sendStatus(200);
