@@ -9,6 +9,7 @@
   "dependencies": {
     "chrono-node": "^2.10.1",
     "express": "^4.22.2",
-    "luxon": "^3.7.2"
+    "luxon": "^3.7.2",
+    "pg": "^8.22.0"
   }
 }
