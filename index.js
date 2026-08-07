@@ -41,7 +41,8 @@ async function initDb() {
             chat_id BIGINT,
             text TEXT NOT NULL,
             remind_at TIMESTAMP WITH TIME ZONE NOT NULL,
-            sent BOOLEAN DEFAULT FALSE
+            sent BOOLEAN DEFAULT FALSE,
+            recurring TEXT DEFAULT NULL
         );
     `;
     try {
@@ -66,6 +67,35 @@ async function getUserTimezone(userId) {
         console.error('Error fetching user timezone:', err);
         return 'UTC';
     }
+}
+
+function parseRecurringPattern(text) {
+    const lower = text.toLowerCase();
+    if (/\bevery\s+day\b|\bdaily\b/.test(lower)) return { type: 'daily', interval: 1 };
+    if (/\bevery\s+week\b|\bweekly\b/.test(lower)) return { type: 'weekly', interval: 1 };
+    if (/\bevery\s+month\b|\bmonthly\b/.test(lower)) return { type: 'monthly', interval: 1 };
+    
+    const dayMatch = lower.match(/\bevery\s+(\d+)\s+days?\b/);
+    if (dayMatch) return { type: 'daily', interval: parseInt(dayMatch[1], 10) };
+
+    const hourMatch = lower.match(/\bevery\s+(\d+)\s+hours?\b/);
+    if (hourMatch) return { type: 'hourly', interval: parseInt(hourMatch[1], 10) };
+
+    return null;
+}
+
+function calculateNextOccurrence(currentDate, recurringStr, timeZone) {
+    let dt = DateTime.fromJSDate(currentDate).setZone(timeZone);
+    const parts = recurringStr.split(':');
+    const type = parts[0];
+    const interval = parseInt(parts[1] || '1', 10);
+
+    if (type === 'daily') dt = dt.plus({ days: interval });
+    else if (type === 'weekly') dt = dt.plus({ weeks: interval });
+    else if (type === 'monthly') dt = dt.plus({ months: interval });
+    else if (type === 'hourly') dt = dt.plus({ hours: interval });
+
+    return dt.toJSDate();
 }
 
 function parseFlexibleDate(text, timeZone) {
@@ -241,7 +271,7 @@ function getSubMenuKeyboard(region) {
 
 async function getRemindersKeyboard(userId, userTz) {
     try {
-        const res = await pool.query('SELECT id, text, remind_at FROM reminders WHERE user_id = $1 AND sent = FALSE ORDER BY remind_at ASC', [userId]);
+        const res = await pool.query('SELECT id, text, remind_at, recurring FROM reminders WHERE user_id = $1 AND sent = FALSE ORDER BY remind_at ASC', [userId]);
         if (res.rows.length === 0) {
             return { inline_keyboard: [[{ text: '📭 No active reminders found', callback_data: 'noop' }]] };
         }
@@ -250,9 +280,10 @@ async function getRemindersKeyboard(userId, userTz) {
         res.rows.forEach(r => {
             const dt = DateTime.fromJSDate(new Date(r.remind_at)).setZone(userTz);
             const shortTime = dt.toFormat('MM/dd HH:mm');
-            const snippet = r.text.length > 20 ? r.text.substring(0, 20) + '...' : r.text;
+            const repeatTag = r.recurring ? ' 🔄' : '';
+            const snippet = r.text.length > 18 ? r.text.substring(0, 18) + '...' : r.text;
             buttons.push([
-                { text: `⏰ ${shortTime} - ${snippet}`, callback_data: `view:${r.id}` },
+                { text: `⏰ ${shortTime}${repeatTag} - ${snippet}`, callback_data: `view:${r.id}` },
                 { text: '❌ Delete', callback_data: `del:${r.id}` }
             ]);
         });
@@ -270,7 +301,14 @@ setInterval(async () => {
         for (const reminder of res.rows) {
             const targetChat = reminder.chat_id || reminder.user_id;
             await sendTelegramMessage(targetChat, `⏰ REMINDER: ${reminder.text}`);
-            await pool.query('UPDATE reminders SET sent = TRUE WHERE id = $1', [reminder.id]);
+
+            if (reminder.recurring) {
+                const userTz = await getUserTimezone(reminder.user_id);
+                const nextDate = calculateNextOccurrence(new Date(reminder.remind_at), reminder.recurring, userTz);
+                await pool.query('UPDATE reminders SET remind_at = $1 WHERE id = $2', [nextDate, reminder.id]);
+            } else {
+                await pool.query('UPDATE reminders SET sent = TRUE WHERE id = $1', [reminder.id]);
+            }
         }
     } catch (err) {
         console.error('Error checking scheduled reminders:', err);
@@ -351,11 +389,12 @@ app.post('/webhook', async (req, res) => {
             } else if (data.startsWith('view:')) {
                 const reminderId = data.replace('view:', '');
                 try {
-                    const result = await pool.query('SELECT text, remind_at FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
+                    const result = await pool.query('SELECT text, remind_at, recurring FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
                     if (result.rows.length > 0) {
                         const r = result.rows[0];
                         const dt = DateTime.fromJSDate(new Date(r.remind_at)).setZone(userTz);
-                        await answerCallbackQuery(callbackQuery.id, `🔔 ${r.text}\n🕒 ${dt.toFormat('ff')}`, true);
+                        const repeatInfo = r.recurring ? `\n🔄 Repeat: ${r.recurring}` : '';
+                        await answerCallbackQuery(callbackQuery.id, `🔔 ${r.text}\n🕒 ${dt.toFormat('ff')}${repeatInfo}`, true);
                     } else {
                         await answerCallbackQuery(callbackQuery.id, '⚠️ Reminder not found or already sent.', true);
                     }
@@ -407,16 +446,26 @@ app.post('/webhook', async (req, res) => {
                     }
                 });
             } else {
-                const parsedDate = parseFlexibleDate(queryText, userTz);
+                const recurringData = parseRecurringPattern(queryText);
+                let cleanQueryText = queryText;
+                let recurringTag = '';
+
+                if (recurringData) {
+                    recurringTag = `${recurringData.type}:${recurringData.interval}`;
+                    cleanQueryText = queryText.replace(/\b(every\s+(day|week|month|\d+\s+days?|\d+\s+hours?)|daily|weekly|monthly)\b/gi, '').trim();
+                }
+
+                const parsedDate = parseFlexibleDate(cleanQueryText, userTz) || parseFlexibleDate(queryText, userTz);
                 if (parsedDate) {
                     const dt = DateTime.fromJSDate(parsedDate).setZone(userTz);
+                    const repeatLabel = recurringData ? ` (Repeat: ${recurringData.type})` : '';
                     results.push({
                         type: 'article',
-                        id: `custom:${parsedDate.getTime()}:${queryText}`,
-                        title: `🔔 Remind: "${queryText}"`,
+                        id: `custom:${parsedDate.getTime()}:${recurringTag}:${cleanQueryText}`,
+                        title: `🔔 Remind: "${cleanQueryText}"${repeatLabel}`,
                         description: `Scheduled for: ${dt.toFormat('ff')}`,
                         input_message_content: {
-                            message_text: `🔔 Reminder set for: ${queryText} (${dt.toFormat('ff')})`
+                            message_text: `🔔 Reminder set for: ${cleanQueryText} (${dt.toFormat('ff')})${repeatLabel}`
                         }
                     });
                 } else {
@@ -465,14 +514,15 @@ app.post('/webhook', async (req, res) => {
                 }
             } else if (parts.length >= 2 && parts[0] !== 'set_tz_required' && parts[0] !== 'invalid_time') {
                 const timestamp = parseInt(parts[1], 10);
-                const text = parts.slice(2).join(':') || 'Reminder';
+                const recurringTag = parts[2] || null;
+                const text = parts.slice(3).join(':') || 'Reminder';
                 const remindAt = new Date(timestamp);
 
                 if (process.env.DATABASE_URL) {
                     try {
                         await pool.query(
-                            'INSERT INTO reminders (user_id, chat_id, text, remind_at) VALUES ($1, $2, $3, $4)',
-                            [userId, chatId, text, remindAt]
+                            'INSERT INTO reminders (user_id, chat_id, text, remind_at, recurring) VALUES ($1, $2, $3, $4, $5)',
+                            [userId, chatId, text, remindAt, recurringTag || null]
                         );
                     } catch (err) {
                         console.error('Error saving reminder to database:', err);
