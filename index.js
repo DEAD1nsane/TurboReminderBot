@@ -68,6 +68,16 @@ async function getUserTimezone(userId) {
     }
 }
 
+function formatRepeatText(rec) {
+    if (!rec) return 'None';
+    const [type, num] = rec.split(':');
+    if (type === 'daily' || type === 'days') return num === '1' ? 'Daily' : `Every ${num} Days`;
+    if (type === 'weekly' || type === 'weeks') return num === '1' ? 'Weekly' : `Every ${num} Weeks`;
+    if (type === 'monthly' || type === 'months') return num === '1' ? 'Monthly' : `Every ${num} Months`;
+    if (type === 'hourly' || type === 'hours') return num === '1' ? 'Hourly' : `Every ${num} Hours`;
+    return `${type} ${num}`;
+}
+
 function calculateNextOccurrence(currentDate, recurringStr, timeZone) {
     let dt = DateTime.fromJSDate(currentDate).setZone(timeZone);
     const parts = recurringStr.split(':');
@@ -85,6 +95,12 @@ function calculateNextOccurrence(currentDate, recurringStr, timeZone) {
 function parseFlexibleDate(text, timeZone) {
     let clean = text.trim().replace(/^reminder\s*/i, '');
     const nowInZone = DateTime.now().setZone(timeZone);
+
+    let wantRepeatMenu = false;
+    if (/\brepeat\b$/i.test(clean)) {
+        wantRepeatMenu = true;
+        clean = clean.replace(/\brepeat\b$/i, '').trim();
+    }
 
     const compoundRegex = /^((?:\d+d)?\s*(?:\d+h)?\s*(?:\d+m)?\s*(?:\d+s)?)\s+(.+)$/i;
     const match = clean.match(compoundRegex);
@@ -104,7 +120,7 @@ function parseFlexibleDate(text, timeZone) {
             if (seconds) dt = dt.plus({ seconds });
 
             if (dt <= nowInZone.plus({ seconds: 59 })) return null;
-            return { date: dt.toJSDate(), reminderText: match[2].trim() };
+            return { date: dt.toJSDate(), reminderText: match[2].trim(), wantRepeatMenu };
         }
     }
 
@@ -115,7 +131,7 @@ function parseFlexibleDate(text, timeZone) {
         if (dt <= nowInZone.plus({ seconds: 59 })) return null;
 
         const reminderText = clean.replace(parsed[0].text, '').trim() || clean;
-        return { date: parsedDate, reminderText: reminderText };
+        return { date: parsedDate, reminderText: reminderText, wantRepeatMenu };
     }
     return null;
 }
@@ -167,7 +183,7 @@ async function answerCallbackQuery(callbackQueryId, text = '', showAlert = false
 
 async function getRemindersKeyboard(userId, userTz) {
     try {
-        const res = await pool.query('SELECT id, text, remind_at, recurring, total_occurrences, current_occurrence FROM reminders WHERE user_id = $1 AND sent = FALSE ORDER BY remind_at ASC', [userId]);
+        const res = await pool.query('SELECT id, text, remind_at, recurring FROM reminders WHERE user_id = $1 AND sent = FALSE ORDER BY remind_at ASC', [userId]);
         if (res.rows.length === 0) {
             return { inline_keyboard: [[{ text: '📭 No active reminders found', callback_data: 'noop' }]] };
         }
@@ -192,7 +208,7 @@ async function getRemindersKeyboard(userId, userTz) {
 }
 
 function getEditMenuKeyboard(reminderId, currentRecurring, totalOccurrences) {
-    const recType = currentRecurring ? currentRecurring.replace(':', ' ') : 'None';
+    const recType = formatRepeatText(currentRecurring);
     const limitLabel = totalOccurrences ? `${totalOccurrences}x` : 'Forever';
 
     return {
@@ -301,10 +317,9 @@ setInterval(async () => {
 
 app.post('/webhook', async (req, res) => {
     try {
-        const message = req.body.message;
+        const callbackQuery = req.body.callback_query;
         const inlineQuery = req.body.inline_query;
         const chosenResult = req.body.chosen_inline_result;
-        const callbackQuery = req.body.callback_query;
 
         if (callbackQuery) {
             const userId = callbackQuery.from.id;
@@ -331,7 +346,7 @@ app.post('/webhook', async (req, res) => {
                 if (result.rows.length > 0) {
                     const r = result.rows[0];
                     const dt = DateTime.fromJSDate(new Date(r.remind_at)).setZone(userTz);
-                    const repeatInfo = r.recurring ? `\n🔄 Repeat: Every ${r.recurring.replace(':', ' ')}` : '\n🔄 Repeat: None';
+                    const repeatInfo = `\n🔄 Repeat: ${formatRepeatText(r.recurring)}`;
                     const limitInfo = r.total_occurrences ? `\n🔢 Progress: ${r.current_occurrence || 0}/${r.total_occurrences}` : '';
                     await answerCallbackQuery(callbackQuery.id, `🔔 ${r.text}\n🕒 ${dt.toFormat('ff')}${repeatInfo}${limitInfo}`, true);
                 }
@@ -409,9 +424,10 @@ app.post('/webhook', async (req, res) => {
                 const parsed = parseFlexibleDate(queryText, userTz);
                 if (parsed) {
                     const dt = DateTime.fromJSDate(parsed.date).setZone(userTz);
+                    const flag = parsed.wantRepeatMenu ? '1' : '0';
                     results.push({
                         type: 'article',
-                        id: `custom:${parsed.date.getTime()}:${parsed.reminderText}`,
+                        id: `custom:${parsed.date.getTime()}:${flag}:${parsed.reminderText}`,
                         title: `🔔 Remind: "${parsed.reminderText}"`,
                         description: `Scheduled for: ${dt.toFormat('ff')}`,
                         input_message_content: {
@@ -448,14 +464,20 @@ app.post('/webhook', async (req, res) => {
                 await sendTelegramMessage(userId, '📋 Your Active Reminders:\nTap View, Edit, or Delete.', markup);
             } else if (parts.length >= 2 && parts[0] !== 'invalid_time') {
                 const timestamp = parseInt(parts[1], 10);
-                const text = parts.slice(2).join(':') || 'Reminder';
+                const wantRepeat = parts[2] === '1';
+                const text = parts.slice(3).join(':') || 'Reminder';
                 const remindAt = new Date(timestamp);
 
                 if (process.env.DATABASE_URL) {
-                    await pool.query(
-                        'INSERT INTO reminders (user_id, chat_id, text, remind_at) VALUES ($1, $2, $3, $4)',
+                    const dbRes = await pool.query(
+                        'INSERT INTO reminders (user_id, chat_id, text, remind_at) VALUES ($1, $2, $3, $4) RETURNING id',
                         [userId, chatId, text, remindAt]
                     );
+                    if (wantRepeat) {
+                        const newId = dbRes.rows[0].id;
+                        const keyboard = getEditMenuKeyboard(newId, null, null);
+                        await sendTelegramMessage(userId, `🔔 Reminder Created: "${text}"\nSet a repeat pattern below:`, keyboard);
+                    }
                 }
             }
         }
