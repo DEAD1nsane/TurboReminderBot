@@ -9,12 +9,10 @@ app.use(express.json());
 const PORT = process.env.PORT || 8080;
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
-// 1. Root Healthcheck Endpoint (Must be first)
 app.get('/', (req, res) => {
     res.status(200).send('OK');
 });
 
-// 2. Start Express immediately so Railway health check passes
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server listening on port ${PORT}`);
 });
@@ -188,6 +186,19 @@ async function editTelegramMessage(chatId, messageId, text, replyMarkup = null) 
         });
     } catch (err) {
         console.error('Error editing message:', err);
+    }
+}
+
+async function deleteTelegramMessage(chatId, messageId) {
+    const url = `https://api.telegram.org/bot${TOKEN}/deleteMessage`;
+    try {
+        await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chat_id: chatId, message_id: messageId })
+        });
+    } catch (err) {
+        console.error('Error deleting message:', err);
     }
 }
 
@@ -479,6 +490,7 @@ app.post('/webhook', async (req, res) => {
             const userId = chosenResult.from.id;
             const resultId = chosenResult.result_id;
             const chatId = chosenResult.chat_id || userId;
+            const inlineMessageId = chosenResult.inline_message_id;
             const parts = resultId.split(':');
 
             if (resultId === 'show_reminders_dm') {
@@ -501,6 +513,12 @@ app.post('/webhook', async (req, res) => {
                         const keyboard = getEditMenuKeyboard(newId, null, null);
                         await sendTelegramMessage(userId, `🔔 Reminder Created: "${text}"\nSet a repeat pattern below:`, keyboard);
                     }
+                }
+
+                if (inlineMessageId) {
+                    setTimeout(() => {
+                        deleteTelegramMessage(chatId, inlineMessageId);
+                    }, 5000);
                 }
             }
         }
