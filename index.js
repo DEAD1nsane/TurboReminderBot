@@ -17,9 +17,11 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server listening on port ${PORT}`);
 });
 
+const isInternalHost = process.env.DATABASE_URL && process.env.DATABASE_URL.includes('railway.internal');
+
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
+    ssl: isInternalHost ? false : (process.env.DATABASE_URL ? { rejectUnauthorized: false } : false),
     max: 5,
     idleTimeoutMillis: 10000,
     connectionTimeoutMillis: 5000
@@ -345,9 +347,13 @@ setInterval(async () => {
             }
         }
     } catch (err) {
-        console.error('Error checking scheduled reminders:', err);
+        if (err.code === 'ECONNRESET' || (err.message && err.message.includes('Connection terminated'))) {
+            console.warn('Postgres connection resetting, retrying next cycle...');
+        } else {
+            console.error('Error checking scheduled reminders:', err);
+        }
     }
-}, 1000);
+}, 3000);
 
 app.post('/webhook', async (req, res) => {
     try {
