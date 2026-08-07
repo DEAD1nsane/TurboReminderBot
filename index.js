@@ -191,19 +191,6 @@ async function editTelegramMessage(chatId, messageId, text, replyMarkup = null) 
     }
 }
 
-async function deleteTelegramMessage(chatId, messageId) {
-    const url = `https://api.telegram.org/bot${TOKEN}/deleteMessage`;
-    try {
-        await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chat_id: chatId, message_id: messageId })
-        });
-    } catch (err) {
-        console.error('Error deleting message:', err);
-    }
-}
-
 async function answerCallbackQuery(callbackQueryId, text = '', showAlert = false) {
     const url = `https://api.telegram.org/bot${TOKEN}/answerCallbackQuery`;
     try {
@@ -471,7 +458,7 @@ app.post('/webhook', async (req, res) => {
                         title: `🔔 Remind: "${parsed.reminderText}"`,
                         description: `Scheduled for: ${dt.toFormat('ff')}`,
                         input_message_content: {
-                            message_text: `🔔 Reminder set for: ${parsed.reminderText} (${dt.toFormat('ff')})`
+                            message_text: `⏳ Creating reminder... (Check DM)`
                         }
                     });
                 } else {
@@ -496,7 +483,6 @@ app.post('/webhook', async (req, res) => {
             const userId = chosenResult.from.id;
             const resultId = chosenResult.result_id;
             const chatId = chosenResult.chat_id || userId;
-            const inlineMessageId = chosenResult.inline_message_id;
             const parts = resultId.split(':');
 
             if (resultId === 'show_reminders_dm') {
@@ -508,23 +494,22 @@ app.post('/webhook', async (req, res) => {
                 const wantRepeat = parts[2] === '1';
                 const text = parts.slice(3).join(':') || 'Reminder';
                 const remindAt = new Date(timestamp);
+                const userTz = await getUserTimezone(userId);
+                const dt = DateTime.fromJSDate(remindAt).setZone(userTz);
 
                 if (process.env.DATABASE_URL) {
                     const dbRes = await pool.query(
                         'INSERT INTO reminders (user_id, chat_id, text, remind_at) VALUES ($1, $2, $3, $4) RETURNING id',
                         [userId, chatId, text, remindAt]
                     );
+                    const newId = dbRes.rows[0].id;
+
                     if (wantRepeat) {
-                        const newId = dbRes.rows[0].id;
                         const keyboard = getEditMenuKeyboard(newId, null, null);
                         await sendTelegramMessage(userId, `🔔 Reminder Created: "${text}"\nSet a repeat pattern below:`, keyboard);
+                    } else {
+                        await sendTelegramMessage(userId, `🔔 Reminder set for: ${text} (${dt.toFormat('ff')})`);
                     }
-                }
-
-                if (inlineMessageId) {
-                    setTimeout(() => {
-                        deleteTelegramMessage(chatId, inlineMessageId);
-                    }, 5000);
                 }
             }
         }
