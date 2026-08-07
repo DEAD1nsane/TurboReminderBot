@@ -297,7 +297,7 @@ app.post('/webhook', async (req, res) => {
                 if (count === 0) {
                     await sendTelegramMessage(chatId, '📭 You have no active reminders.');
                 } else {
-                    await sendTelegramMessage(chatId, '📋 **Your Active Reminders:**\nTap a reminder to view details or delete it.', markup);
+                    await sendTelegramMessage(chatId, '📋 Your Active Reminders:\nTap a reminder to view details or delete it.', markup);
                 }
             } else if (text.startsWith('/tz') || text.startsWith('/start')) {
                 const tzInput = text.replace(/\/tz|\/start/, '').trim();
@@ -342,7 +342,7 @@ app.post('/webhook', async (req, res) => {
                     if (count === 0) {
                         await editTelegramMessage(chatId, messageId, '📭 You have no active reminders.');
                     } else {
-                        await editTelegramMessage(chatId, messageId, '📋 **Your Active Reminders:**\nTap a reminder to view details or delete it.', markup);
+                        await editTelegramMessage(chatId, messageId, '📋 Your Active Reminders:\nTap a reminder to view details or delete it.', markup);
                     }
                 } catch (err) {
                     console.error('Error deleting reminder:', err);
@@ -461,7 +461,7 @@ app.post('/webhook', async (req, res) => {
                     await sendTelegramMessage(userId, '📭 You have no active reminders.');
                 } else {
                     const markup = await getRemindersKeyboard(userId, userTz);
-                    await sendTelegramMessage(userId, '📋 **Your Active Reminders:**\nTap a reminder to view details or delete it.', markup);
+                    await sendTelegramMessage(userId, '📋 Your Active Reminders:\nTap a reminder to view details or delete it.', markup);
                 }
             } else if (parts.length >= 2 && parts[0] !== 'set_tz_required' && parts[0] !== 'invalid_time') {
                 const timestamp = parseInt(parts[1], 10);
