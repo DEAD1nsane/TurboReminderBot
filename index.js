@@ -8,6 +8,7 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 8080;
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const OWNER_ID = 6293437261;
 
 app.get('/', (req, res) => {
     res.status(200).send('OK');
@@ -191,6 +192,19 @@ async function editTelegramMessage(chatId, messageId, text, replyMarkup = null) 
     }
 }
 
+async function deleteTelegramMessage(chatId, messageId) {
+    const url = `https://api.telegram.org/bot${TOKEN}/deleteMessage`;
+    try {
+        await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chat_id: chatId, message_id: messageId })
+        });
+    } catch (err) {
+        console.error('Error deleting message:', err);
+    }
+}
+
 async function answerCallbackQuery(callbackQueryId, text = '', showAlert = false) {
     const url = `https://api.telegram.org/bot${TOKEN}/answerCallbackQuery`;
     try {
@@ -344,9 +358,32 @@ setInterval(async () => {
 
 app.post('/webhook', async (req, res) => {
     try {
+        const message = req.body.message;
         const callbackQuery = req.body.callback_query;
         const inlineQuery = req.body.inline_query;
         const chosenResult = req.body.chosen_inline_result;
+
+        if (message && message.text) {
+            const userId = message.from.id;
+            const chatId = message.chat.id;
+            const msgId = message.message_id;
+            const text = message.text;
+
+            if (text.startsWith('/delete') || text.startsWith('/del')) {
+                if (userId === OWNER_ID) {
+                    const replyMsg = message.reply_to_message;
+                    if (replyMsg && replyMsg.from && replyMsg.from.is_bot) {
+                        try {
+                            await deleteTelegramMessage(chatId, replyMsg.message_id);
+                            await deleteTelegramMessage(chatId, msgId);
+                        } catch (delErr) {
+                            console.error('Error deleting message:', delErr);
+                        }
+                    }
+                }
+                return res.sendStatus(200);
+            }
+        }
 
         if (callbackQuery) {
             const userId = callbackQuery.from.id;
