@@ -421,6 +421,7 @@ async function sendOrUpdateDashboard(userId, text, markup) {
     if (existingMsgId) {
         const success = await editTelegramMessage(userId, existingMsgId, text, markup);
         if (!success) {
+            await deleteTelegramMessage(userId, existingMsgId);
             const newMsg = await sendTelegramMessage(userId, text, markup);
             if (newMsg) {
                 targetMsgId = newMsg.message_id;
