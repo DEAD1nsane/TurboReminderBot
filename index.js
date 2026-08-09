@@ -641,23 +641,12 @@ app.post('/webhook', async (req, res) => {
                     let repeatInfo = '';
                     if (r.recurring) {
                         let repStr = formatRepeatText(r.recurring);
-                        if (r.total_occurrences) repStr += ` (${r.total_occurrences}x limit)`;
-                        repeatInfo = `\n🔄 <b>Repeat:</b> ${repStr}`;
+                        if (r.total_occurrences) repStr += ` (${r.current_occurrence || 0}/${r.total_occurrences})`;
+                        repeatInfo = `\n🔄 Repeat: ${repStr}`;
                     }
 
-                    const popupText = `🤖 <b>Reminder Details</b>\n━━━━━━━━━━━━━━━━━━\n\n🔔 <b>${r.text}</b>\n🕒 <b>${formattedTime}</b>${repeatInfo}`;
-                    await answerCallbackQuery(callbackQuery.id);
-                    await editTelegramMessage(chatId, messageId, popupText, {
-                        inline_keyboard: [
-                            [
-                                { text: '✏️ Edit', callback_data: `edit:${reminderId}` },
-                                { text: '❌ Delete', callback_data: `del:${reminderId}` }
-                            ],
-                            [
-                                { text: '⬅️ Back to Reminders', callback_data: 'menu:list' }
-                            ]
-                        ]
-                    });
+                    const popupAlertText = `🔔 ${r.text}\n🕒 ${formattedTime}${repeatInfo}`;
+                    await answerCallbackQuery(callbackQuery.id, popupAlertText, true);
                 }
             } else if (data.startsWith('edit:')) {
                 const reminderId = data.replace('edit:', '');
