@@ -502,6 +502,37 @@ app.post('/webhook', async (req, res) => {
     try {
         const message = req.body.message;
         const callbackQuery = req.body.callback_query;
+        const inlineQuery = req.body.inline_query;
+
+        if (inlineQuery) {
+            const userId = inlineQuery.from.id;
+            const userTz = (await getUserTimezone(userId)) || 'UTC';
+            const dashData = await getRemindersDashboardData(userId, userTz);
+
+            const results = [{
+                type: 'article',
+                id: '1',
+                title: '📋 View Active Reminders',
+                description: 'Click to open active reminders popup menu',
+                input_message_content: {
+                    message_text: dashData.text,
+                    parse_mode: 'HTML'
+                },
+                reply_markup: dashData.keyboard
+            }];
+
+            const url = `https://api.telegram.org/bot${TOKEN}/answerInlineQuery`;
+            await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    inline_query_id: inlineQuery.id,
+                    results: results,
+                    cache_time: 0
+                })
+            });
+            return res.sendStatus(200);
+        }
 
         if (message && message.text) {
             const userId = message.from.id;
