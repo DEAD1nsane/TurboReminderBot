@@ -567,7 +567,8 @@ app.post('/webhook', async (req, res) => {
                 const existingTz = await getUserTimezone(userId);
                 if (existingTz) {
                     const dashData = await getRemindersDashboardData(userId, existingTz);
-                    await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
+                    const welcomeText = `👋 Welcome back!\n🌍 Timezone: <b>${existingTz}</b>\n\n${dashData.text}`;
+                    await sendOrUpdateDashboard(userId, welcomeText, dashData.keyboard);
                 } else {
                     await sendTelegramMessage(userId, '👋 Welcome! Please select your primary timezone:', getTimezonePickerKeyboard());
                 }
@@ -599,7 +600,8 @@ app.post('/webhook', async (req, res) => {
                 );
 
                 const dashData = await getRemindersDashboardData(userId, userTz);
-                await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
+                const welcomeText = `🌍 Timezone: <b>${userTz}</b>\n\n${dashData.text}`;
+                await sendOrUpdateDashboard(userId, welcomeText, dashData.keyboard);
             }
             return res.sendStatus(200);
         }
@@ -611,7 +613,6 @@ app.post('/webhook', async (req, res) => {
             const data = callbackQuery.data;
             let userTz = (await getUserTimezone(userId)) || 'America/Chicago';
 
-            // Ensure the message being interacted with is tracked as active for the 30s timer reset
             await setActiveMenuMsgId(userId, messageId);
 
             if (data.startsWith('settz:')) {
@@ -619,16 +620,17 @@ app.post('/webhook', async (req, res) => {
                 await setUserTimezone(userId, tz);
                 await answerCallbackQuery(callbackQuery.id, `✅ Timezone saved: ${tz}`, true);
                 const dashData = await getRemindersDashboardData(userId, tz);
-                await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
+                const welcomeText = `🌍 Timezone set to <b>${tz}</b>.\n\n${dashData.text}`;
+                await sendOrUpdateDashboard(userId, welcomeText, dashData.keyboard);
             } else if (data === 'noop') {
                 await answerCallbackQuery(callbackQuery.id);
             } else if (data === 'menu:list') {
                 await answerCallbackQuery(callbackQuery.id);
                 await setPendingEdit(userId, null);
                 const dashData = await getRemindersDashboardData(userId, userTz);
-                await editTelegramMessage(chatId, messageId, dashData.text, dashData.keyboard);
+                const welcomeText = `🌍 Timezone: <b>${userTz}</b>\n\n${dashData.text}`;
+                await editTelegramMessage(chatId, messageId, welcomeText, dashData.keyboard);
                 
-                // Restart 30s collapse timer on menu:list
                 if (activeTimers[userId]) clearTimeout(activeTimers[userId]);
                 activeTimers[userId] = setTimeout(async () => {
                     await editTelegramMessage(userId, messageId, '🤖 Reminder Bot Active', null);
@@ -639,7 +641,8 @@ app.post('/webhook', async (req, res) => {
                 await pool.query('DELETE FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
                 await answerCallbackQuery(callbackQuery.id, '🗑️ Reminder deleted!', true);
                 const dashData = await getRemindersDashboardData(userId, userTz);
-                await editTelegramMessage(chatId, messageId, dashData.text, dashData.keyboard);
+                const welcomeText = `🌍 Timezone: <b>${userTz}</b>\n\n${dashData.text}`;
+                await editTelegramMessage(chatId, messageId, welcomeText, dashData.keyboard);
             } else if (data.startsWith('view:')) {
                 const reminderId = data.replace('view:', '');
                 const result = await pool.query('SELECT text, remind_at, recurring, total_occurrences, current_occurrence FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
@@ -655,7 +658,7 @@ app.post('/webhook', async (req, res) => {
                         repeatInfo = `\n🔄 Repeat: ${repStr}`;
                     }
 
-                    const popupAlertText = `🤖 <b>Reminder Bot</b>\n━━━━━━━━━━━━━━━━━━\n\n🔔 ${r.text}\n🕒 ${formattedTime}${repeatInfo}`;
+                    const popupAlertText = `━━━━━━━━━━━━━━━━━━\n\n🔔 ${r.text}\n🕒 ${formattedTime}${repeatInfo}`;
                     await answerCallbackQuery(callbackQuery.id, popupAlertText, true);
                 }
             } else if (data.startsWith('edit:')) {
@@ -785,7 +788,8 @@ app.post('/webhook', async (req, res) => {
             if (resultId === 'show_reminders_dm') {
                 const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
                 const dashData = await getRemindersDashboardData(userId, userTz);
-                await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
+                const welcomeText = `🌍 Timezone: <b>${userTz}</b>\n\n${dashData.text}`;
+                await sendOrUpdateDashboard(userId, welcomeText, dashData.keyboard);
             } else if (parts.length >= 2 && parts[0] !== 'invalid_time') {
                 const timestamp = parseInt(parts[1], 10);
                 const wantRepeat = parts[2] === '1';
