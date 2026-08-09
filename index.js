@@ -559,8 +559,8 @@ app.post('/webhook', async (req, res) => {
                 if (result.rows.length > 0) {
                     const r = result.rows[0];
                     const dt = DateTime.fromJSDate(new Date(r.remind_at)).setZone(userTz);
-                    const repeatInfo = `\n🔄 Repeat: ${formatRepeatText(r.recurring)}`;
-                    const limitInfo = r.total_occurrences ? `\n🔢 Progress: ${r.current_occurrence || 0}/${r.total_occurrences}` : '';
+                    const repeatInfo = r.recurring ? `\n🔄 Repeat: ${formatRepeatText(r.recurring)}` : '';
+                    const limitInfo = (r.recurring && r.total_occurrences) ? `\n🔢 Progress: ${r.current_occurrence || 0}/${r.total_occurrences}` : '';
                     await answerCallbackQuery(callbackQuery.id, `🔔 ${r.text}\n🕒 ${dt.toFormat('ff')}${repeatInfo}${limitInfo}`, true);
                 }
             } else if (data.startsWith('edit:')) {
