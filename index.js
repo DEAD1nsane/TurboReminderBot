@@ -292,8 +292,8 @@ async function getRemindersDashboardData(userId, userTz) {
 
             buttons.push([
                 { text: `${statusIcon} ${r.text}`, callback_data: `view:${r.id}` },
-                { text: '✏️', callback_data: `edit:${r.id}` },
-                { text: '❌', callback_data: `del:${r.id}` }
+                { text: '✏️ Edit', callback_data: `edit:${r.id}` },
+                { text: '❌ Del', callback_data: `del:${r.id}` }
             ]);
         });
 
