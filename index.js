@@ -40,7 +40,7 @@ async function initDb() {
     const query = `
         CREATE TABLE IF NOT EXISTS user_settings (
             user_id BIGINT PRIMARY KEY,
-            timezone TEXT NOT NULL,
+            timezone TEXT NOT NULL DEFAULT 'UTC',
             active_menu_msg_id BIGINT DEFAULT NULL
         );
         CREATE TABLE IF NOT EXISTS reminders (
@@ -285,18 +285,13 @@ async function getRemindersDashboardData(userId, userTz) {
         let buttons = [];
 
         res.rows.forEach(r => {
-            const dt = DateTime.fromJSDate(new Date(r.remind_at)).setZone(userTz);
-            const shortTime = dt.toFormat('MM/dd HH:mm');
-            
             let statusIcon = '⏰';
             if (r.recurring) {
                 statusIcon = r.total_occurrences ? '🔢' : '🔄';
             }
 
             buttons.push([
-                { text: `${statusIcon} ${shortTime} ${r.text}`, callback_data: `view:${r.id}` }
-            ]);
-            buttons.push([
+                { text: `${statusIcon} ${r.text}`, callback_data: `view:${r.id}` },
                 { text: '✏️', callback_data: `edit:${r.id}` },
                 { text: '❌', callback_data: `del:${r.id}` }
             ]);
