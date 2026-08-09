@@ -451,16 +451,27 @@ setInterval(async () => {
         for (const reminder of res.rows) {
             const targetChat = reminder.chat_id || reminder.user_id;
             const newCount = (reminder.current_occurrence || 0) + 1;
-            
-            let countLabel = '';
-            if (reminder.total_occurrences) {
-                countLabel = ` (${newCount}/${reminder.total_occurrences})`;
+            const userTz = (await getUserTimezone(reminder.user_id)) || 'UTC';
+            const dt = DateTime.fromJSDate(new Date(reminder.remind_at)).setZone(userTz);
+            const formattedTime = dt.toFormat('ff');
+
+            let headerIcon = '';
+            let progressFooter = '';
+
+            if (reminder.recurring) {
+                if (reminder.total_occurrences) {
+                    headerIcon = ' 🔢';
+                    progressFooter = `\n🔢 <i>${newCount} of ${reminder.total_occurrences}</i>`;
+                } else {
+                    headerIcon = ' 🔄';
+                }
             }
-            
-            await sendTelegramMessage(targetChat, `⏰ REMINDER${countLabel}: ${reminder.text}`);
+
+            const alertText = `🔔 <b>Reminder Alert${headerIcon}</b>\n━━━━━━━━━━━━━━━━━━\n🕒 <i>${formattedTime}</i>\n📝 <b>${reminder.text}</b>${progressFooter}`;
+
+            await sendTelegramMessage(targetChat, alertText);
 
             if (reminder.recurring && (!reminder.total_occurrences || newCount < reminder.total_occurrences)) {
-                const userTz = (await getUserTimezone(reminder.user_id)) || 'UTC';
                 const nextDate = calculateNextOccurrence(new Date(reminder.remind_at), reminder.recurring, userTz);
                 await pool.query('UPDATE reminders SET remind_at = $1, current_occurrence = $2 WHERE id = $3', [nextDate, newCount, reminder.id]);
             } else {
