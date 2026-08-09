@@ -43,6 +43,7 @@ async function initDb() {
             timezone TEXT NOT NULL DEFAULT 'UTC',
             active_menu_msg_id BIGINT DEFAULT NULL
         );
+        ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS active_menu_msg_id BIGINT DEFAULT NULL;
         CREATE TABLE IF NOT EXISTS reminders (
             id SERIAL PRIMARY KEY,
             user_id BIGINT NOT NULL,
@@ -543,7 +544,7 @@ app.post('/webhook', async (req, res) => {
                 await setUserTimezone(userId, tz);
                 await answerCallbackQuery(callbackQuery.id, `Timezone set to ${tz}`);
                 const dashData = await getRemindersDashboardData(userId, tz);
-                await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
+                await sendOrUpdateDashboard(userId, tz);
                 return res.sendStatus(200);
             }
 
