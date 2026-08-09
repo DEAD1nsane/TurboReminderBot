@@ -572,7 +572,7 @@ app.post('/webhook', async (req, res) => {
             if (data === 'menu:list') {
                 const userTz = (await getUserTimezone(userId)) || 'UTC';
                 const dashData = await getRemindersDashboardData(userId, userTz);
-                await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
+                await editTelegramMessage(userId, messageId, dashData.text, dashData.keyboard);
                 await answerCallbackQuery(callbackQuery.id);
                 return res.sendStatus(200);
             }
@@ -583,7 +583,7 @@ app.post('/webhook', async (req, res) => {
                 await answerCallbackQuery(callbackQuery.id, 'Reminder deleted!');
                 const userTz = (await getUserTimezone(userId)) || 'UTC';
                 const dashData = await getRemindersDashboardData(userId, userTz);
-                await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
+                await editTelegramMessage(userId, messageId, dashData.text, dashData.keyboard);
                 return res.sendStatus(200);
             }
 
