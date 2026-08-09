@@ -230,7 +230,7 @@ async function sendTelegramMessage(chatId, text, replyMarkup = null, autoDeleteM
 async function editTelegramMessage(chatId, messageId, text, replyMarkup = null) {
     const url = `https://api.telegram.org/bot${TOKEN}/editMessageText`;
     const payload = { chat_id: chatId, message_id: messageId, text: text, parse_mode: 'HTML' };
-    if (replyMarkup) payload.reply_markup = replyMarkup;
+    if (replyMarkup !== undefined) payload.reply_markup = replyMarkup;
 
     try {
         const res = await fetch(url, {
@@ -277,29 +277,41 @@ async function getRemindersDashboardData(userId, userTz) {
         const res = await pool.query('SELECT id, text, remind_at, recurring, total_occurrences FROM reminders WHERE user_id = $1 AND sent = FALSE ORDER BY remind_at ASC', [userId]);
         if (res.rows.length === 0) {
             return {
-                text: '📋 <b>Your Active Reminders:</b>\n\n<i>📭 No active reminders found.</i>',
+                text: '📋 <b>Your Active Reminders:</b>\n━━━━━━━━━━━━━━━━━━\n\n<i>📭 No active reminders found.</i>',
                 keyboard: { inline_keyboard: [[{ text: '📭 No active reminders', callback_data: 'noop' }]] }
             };
         }
 
-        let buttons = [];
+        let bodyLines = ['📋 <b>Your Active Reminders:</b>', '━━━━━━━━━━━━━━━━━━'];
+        let buttonRows = [];
+        let currentRow = [];
 
-        res.rows.forEach(r => {
-            let statusIcon = '⏰';
+        res.rows.forEach((r, idx) => {
+            const num = idx + 1;
+            const dt = DateTime.fromJSDate(new Date(r.remind_at)).setZone(userTz);
+            const timeShort = dt.toFormat('MM/dd h:mm a');
+
+            let repeatIcon = '';
             if (r.recurring) {
-                statusIcon = r.total_occurrences ? '🔢' : '🔄';
+                repeatIcon = r.total_occurrences ? ' 🔢' : ' 🔄';
             }
 
-            buttons.push([
-                { text: `${statusIcon} ${r.text}`, callback_data: `view:${r.id}` },
-                { text: '✏️ Edit', callback_data: `edit:${r.id}` },
+            bodyLines.push(`${num}. <b>${r.text}</b>${repeatIcon} <i>(${timeShort})</i>`);
+
+            currentRow.push(
+                { text: `${num}: ✏️ Edit`, callback_data: `edit:${r.id}` },
                 { text: '❌ Del', callback_data: `del:${r.id}` }
-            ]);
+            );
+
+            if (currentRow.length === 4 || num % 2 === 0 || idx === res.rows.length - 1) {
+                buttonRows.push(currentRow);
+                currentRow = [];
+            }
         });
 
         return {
-            text: '📋 <b>Your Active Reminders:</b>',
-            keyboard: { inline_keyboard: buttons }
+            text: bodyLines.join('\n'),
+            keyboard: { inline_keyboard: buttonRows }
         };
     } catch (err) {
         console.error('Error fetching reminders for dashboard:', err);
@@ -440,7 +452,7 @@ async function sendOrUpdateDashboard(userId, text, markup) {
 
     activeTimers[userId] = setTimeout(async () => {
         if (targetMsgId) {
-            await editTelegramMessage(userId, targetMsgId, '🤖 Reminder Bot Active');
+            await editTelegramMessage(userId, targetMsgId, '🤖 Reminder Bot Active', null);
         }
     }, 30000);
 }
@@ -499,13 +511,13 @@ app.post('/webhook', async (req, res) => {
             const userId = message.from.id;
             const chatId = message.chat.id;
             const msgId = message.message_id;
-            const text = message.text;
+            const text = message.text.trim();
 
-            if (text.startsWith('/start')) {
+            if (text.startsWith('/start') || text.toLowerCase() === 'view' || text.toLowerCase() === 'reminders' || text.toLowerCase() === 'list') {
                 const existingTz = await getUserTimezone(userId);
                 if (existingTz) {
                     const dashData = await getRemindersDashboardData(userId, existingTz);
-                    await sendOrUpdateDashboard(userId, `👋 Welcome back!\n🌍 Timezone: <b>${existingTz}</b>\n\n${dashData.text}`, dashData.keyboard);
+                    await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
                 } else {
                     await sendTelegramMessage(userId, '👋 Welcome! Please select your primary timezone:', getTimezonePickerKeyboard());
                 }
@@ -540,7 +552,7 @@ app.post('/webhook', async (req, res) => {
                 await setUserTimezone(userId, tz);
                 await answerCallbackQuery(callbackQuery.id, `✅ Timezone saved: ${tz}`, true);
                 const dashData = await getRemindersDashboardData(userId, tz);
-                await sendOrUpdateDashboard(userId, `🌍 Timezone set to <b>${tz}</b>.\n\n${dashData.text}`, dashData.keyboard);
+                await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
             } else if (data === 'noop') {
                 await answerCallbackQuery(callbackQuery.id);
             } else if (data === 'menu:list') {
