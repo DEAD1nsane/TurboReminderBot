@@ -40,9 +40,12 @@ async function initDb() {
     const query = `
         CREATE TABLE IF NOT EXISTS user_settings (
             user_id BIGINT PRIMARY KEY,
-            timezone TEXT NOT NULL DEFAULT 'UTC',
-            active_menu_msg_id BIGINT DEFAULT NULL
+            timezone TEXT NOT NULL DEFAULT 'America/Chicago',
+            active_menu_msg_id BIGINT DEFAULT NULL,
+            pending_edit TEXT DEFAULT NULL
         );
+        ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS active_menu_msg_id BIGINT DEFAULT NULL;
+        ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS pending_edit TEXT DEFAULT NULL;
         CREATE TABLE IF NOT EXISTS reminders (
             id SERIAL PRIMARY KEY,
             user_id BIGINT NOT NULL,
@@ -65,13 +68,13 @@ async function initDb() {
 initDb();
 
 async function getUserTimezone(userId) {
-    if (!process.env.DATABASE_URL) return null;
+    if (!process.env.DATABASE_URL) return 'America/Chicago';
     try {
         const res = await pool.query('SELECT timezone FROM user_settings WHERE user_id = $1', [userId]);
-        return res.rows.length > 0 ? res.rows[0].timezone : null;
+        return res.rows.length > 0 ? res.rows[0].timezone : 'America/Chicago';
     } catch (err) {
         console.error('Error fetching user timezone:', err);
-        return null;
+        return 'America/Chicago';
     }
 }
 
@@ -104,12 +107,36 @@ async function setActiveMenuMsgId(userId, msgId) {
     try {
         await pool.query(
             `INSERT INTO user_settings (user_id, timezone, active_menu_msg_id) 
-             VALUES ($1, 'UTC', $2) 
+             VALUES ($1, 'America/Chicago', $2) 
              ON CONFLICT (user_id) DO UPDATE SET active_menu_msg_id = $2`,
             [userId, msgId]
         );
     } catch (err) {
         console.error('Error setting active menu msg id:', err);
+    }
+}
+
+async function getPendingEdit(userId) {
+    if (!process.env.DATABASE_URL) return null;
+    try {
+        const res = await pool.query('SELECT pending_edit FROM user_settings WHERE user_id = $1', [userId]);
+        return res.rows.length > 0 ? res.rows[0].pending_edit : null;
+    } catch (err) {
+        return null;
+    }
+}
+
+async function setPendingEdit(userId, pendingStr) {
+    if (!process.env.DATABASE_URL) return;
+    try {
+        await pool.query(
+            `INSERT INTO user_settings (user_id, timezone, pending_edit) 
+             VALUES ($1, 'America/Chicago', $2) 
+             ON CONFLICT (user_id) DO UPDATE SET pending_edit = $2`,
+            [userId, pendingStr]
+        );
+    } catch (err) {
+        console.error('Error setting pending edit:', err);
     }
 }
 
@@ -230,7 +257,7 @@ async function sendTelegramMessage(chatId, text, replyMarkup = null, autoDeleteM
 async function editTelegramMessage(chatId, messageId, text, replyMarkup = null) {
     const url = `https://api.telegram.org/bot${TOKEN}/editMessageText`;
     const payload = { chat_id: chatId, message_id: messageId, text: text, parse_mode: 'HTML' };
-    if (replyMarkup) payload.reply_markup = replyMarkup;
+    if (replyMarkup !== undefined) payload.reply_markup = replyMarkup;
 
     try {
         const res = await fetch(url, {
@@ -277,29 +304,39 @@ async function getRemindersDashboardData(userId, userTz) {
         const res = await pool.query('SELECT id, text, remind_at, recurring, total_occurrences FROM reminders WHERE user_id = $1 AND sent = FALSE ORDER BY remind_at ASC', [userId]);
         if (res.rows.length === 0) {
             return {
-                text: '📋 <b>Your Active Reminders:</b>\n\n<i>📭 No active reminders found.</i>',
+                text: '📋 <b>Your Active Reminders:</b>\n━━━━━━━━━━━━━━━━━━\n\n<i>📭 No active reminders found.</i>',
                 keyboard: { inline_keyboard: [[{ text: '📭 No active reminders', callback_data: 'noop' }]] }
             };
         }
 
-        let buttons = [];
+        let bodyLines = ['📋 <b>Your Active Reminders:</b>', '━━━━━━━━━━━━━━━━━━'];
+        let buttonRows = [];
 
-        res.rows.forEach(r => {
-            let statusIcon = '⏰';
+        res.rows.forEach((r, idx) => {
+            const num = idx + 1;
+            const dt = DateTime.fromJSDate(new Date(r.remind_at)).setZone(userTz);
+            const timeShort = dt.toFormat('MM/dd h:mm a');
+
+            let repeatIcon = '';
+            let titlePrefix = '';
+
             if (r.recurring) {
-                statusIcon = r.total_occurrences ? '🔢' : '🔄';
+                repeatIcon = r.total_occurrences ? ' 🔢' : ' 🔄';
+                titlePrefix = r.total_occurrences ? '🔢 ' : '🔄 ';
             }
 
-            buttons.push([
-                { text: `${statusIcon} ${r.text}`, callback_data: `view:${r.id}` },
+            bodyLines.push(`${num}. <b>${r.text}</b>${repeatIcon} <i>(${timeShort})</i>`);
+
+            buttonRows.push([
+                { text: `${titlePrefix}${r.text}`, callback_data: `manage:${r.id}:${num}` },
                 { text: '✏️ Edit', callback_data: `edit:${r.id}` },
                 { text: '❌ Del', callback_data: `del:${r.id}` }
             ]);
         });
 
         return {
-            text: '📋 <b>Your Active Reminders:</b>',
-            keyboard: { inline_keyboard: buttons }
+            text: bodyLines.join('\n'),
+            keyboard: { inline_keyboard: buttonRows }
         };
     } catch (err) {
         console.error('Error fetching reminders for dashboard:', err);
@@ -339,12 +376,16 @@ function getEditMenuKeyboard(reminderId, currentRecurring, totalOccurrences) {
     return {
         inline_keyboard: [
             [
-                { text: currentRecurring === null ? '✅ None' : 'None', callback_data: `setrec:${reminderId}:none` },
-                { text: currentRecurring === 'daily:1' ? '✅ Daily' : 'Daily', callback_data: `setrec:${reminderId}:daily:1` }
+                { text: '📝 Edit Note/Text', callback_data: `prompt_edit_text:${reminderId}` },
+                { text: '🕒 Edit Time/Date', callback_data: `prompt_edit_time:${reminderId}` }
             ],
             [
-                { text: currentRecurring === 'weekly:1' ? '✅ Weekly' : 'Weekly', callback_data: `setrec:${reminderId}:weekly:1` },
-                { text: currentRecurring === 'monthly:1' ? '✅ Monthly' : 'Monthly', callback_data: `setrec:${reminderId}:monthly:1` }
+                { text: currentRecurring === null ? '✅ Repeat: None' : 'Repeat: None', callback_data: `setrec:${reminderId}:none` },
+                { text: currentRecurring === 'daily:1' ? '✅ Repeat: Daily' : 'Repeat: Daily', callback_data: `setrec:${reminderId}:daily:1` }
+            ],
+            [
+                { text: currentRecurring === 'weekly:1' ? '✅ Repeat: Weekly' : 'Repeat: Weekly', callback_data: `setrec:${reminderId}:weekly:1` },
+                { text: currentRecurring === 'monthly:1' ? '✅ Repeat: Monthly' : 'Repeat: Monthly', callback_data: `setrec:${reminderId}:monthly:1` }
             ],
             [
                 { text: `⚙️ Custom Interval (${recType})`, callback_data: `unitmenu:${reminderId}` },
@@ -426,6 +467,8 @@ async function sendOrUpdateDashboard(userId, text, markup) {
             if (newMsg) {
                 targetMsgId = newMsg.message_id;
                 await setActiveMenuMsgId(userId, targetMsgId);
+            } else {
+                await setActiveMenuMsgId(userId, null);
             }
         }
     } else {
@@ -438,11 +481,12 @@ async function sendOrUpdateDashboard(userId, text, markup) {
 
     if (activeTimers[userId]) clearTimeout(activeTimers[userId]);
 
-    activeTimers[userId] = setTimeout(async () => {
-        if (targetMsgId) {
-            await editTelegramMessage(userId, targetMsgId, '🤖 Reminder Bot Active');
-        }
-    }, 30000);
+    if (targetMsgId) {
+        activeTimers[userId] = setTimeout(async () => {
+            await editTelegramMessage(userId, targetMsgId, '🤖 Reminder Bot Active', null);
+            await setActiveMenuMsgId(userId, null);
+        }, 30000);
+    }
 }
 
 setInterval(async () => {
@@ -452,7 +496,7 @@ setInterval(async () => {
         for (const reminder of res.rows) {
             const targetChat = reminder.chat_id || reminder.user_id;
             const newCount = (reminder.current_occurrence || 0) + 1;
-            const userTz = (await getUserTimezone(reminder.user_id)) || 'UTC';
+            const userTz = (await getUserTimezone(reminder.user_id)) || 'America/Chicago';
             const dt = DateTime.fromJSDate(new Date(reminder.remind_at)).setZone(userTz);
             const formattedTime = dt.toFormat('ff');
 
@@ -493,215 +537,290 @@ app.post('/webhook', async (req, res) => {
         const message = req.body.message;
         const callbackQuery = req.body.callback_query;
         const inlineQuery = req.body.inline_query;
-        const chosenResult = req.body.chosen_inline_result;
+        const chosenInlineResult = req.body.chosen_inline_result;
+
+        if (inlineQuery) {
+            const userId = inlineQuery.from.id;
+            const userTz = await getUserTimezone(userId);
+            const queryText = inlineQuery.query.trim();
+
+            let results = [];
+
+            if (!queryText) {
+                const dashData = await getRemindersDashboardData(userId, userTz);
+                results.push({
+                    type: 'article',
+                    id: 'view_reminders',
+                    title: 'Active Reminders Pop-up',
+                    description: 'View, edit, or delete existing reminders in DMs',
+                    input_message_content: {
+                        message_text: dashData.text,
+                        parse_mode: 'HTML'
+                    },
+                    reply_markup: dashData.keyboard
+                });
+            } else {
+                const parsed = parseFlexibleDate(queryText, userTz);
+                if (parsed) {
+                    const localDt = DateTime.fromJSDate(parsed.date).setZone(userTz);
+                    const timeFormatted = localDt.toFormat('LLL d, yyyy, h:mm a');
+
+                    results.push({
+                        type: 'article',
+                        id: `create_${Date.now()}`,
+                        title: `🔔 Remind: "${parsed.reminderText}"`,
+                        description: `Scheduled for: ${timeFormatted}`,
+                        input_message_content: {
+                            message_text: `🔔 <b>Reminder Set:</b> "${parsed.reminderText}"\n━━━━━━━━━━━━━━━━━━\n🕒 Scheduled for: <i>${timeFormatted}</i>`,
+                            parse_mode: 'HTML'
+                        }
+                    });
+                }
+            }
+
+            const url = `https://api.telegram.org/bot${TOKEN}/answerInlineQuery`;
+            await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    inline_query_id: inlineQuery.id,
+                    results: results,
+                    cache_time: 0
+                })
+            });
+            return res.sendStatus(200);
+        }
+
+        if (chosenInlineResult) {
+            const userId = chosenInlineResult.from.id;
+            const queryText = chosenInlineResult.query.trim();
+            if (queryText) {
+                const userTz = await getUserTimezone(userId);
+                const parsed = parseFlexibleDate(queryText, userTz);
+                if (parsed) {
+                    await pool.query(
+                        'INSERT INTO reminders (user_id, chat_id, text, remind_at) VALUES ($1, $2, $3, $4)',
+                        [userId, userId, parsed.reminderText, parsed.date]
+                    );
+                }
+            }
+            return res.sendStatus(200);
+        }
 
         if (message && message.text) {
             const userId = message.from.id;
             const chatId = message.chat.id;
-            const msgId = message.message_id;
-            const text = message.text;
+            const text = message.text.trim();
 
-            if (text.startsWith('/start')) {
+            const pendingEdit = await getPendingEdit(userId);
+            if (pendingEdit) {
+                const parts = pendingEdit.split(':');
+                const field = parts[0];
+                const reminderId = parts[1];
+                const userTz = await getUserTimezone(userId);
+
+                if (field === 'text') {
+                    await pool.query('UPDATE reminders SET text = $1 WHERE id = $2 AND user_id = $3', [text, reminderId, userId]);
+                    await sendTelegramMessage(userId, `✅ Reminder text updated to: "<b>${text}</b>"`, null, 5000);
+                } else if (field === 'time') {
+                    const parsed = parseFlexibleDate(text, userTz);
+                    if (parsed) {
+                        await pool.query('UPDATE reminders SET remind_at = $1 WHERE id = $2 AND user_id = $3', [parsed.date, reminderId, userId]);
+                        const localDt = DateTime.fromJSDate(parsed.date).setZone(userTz);
+                        await sendTelegramMessage(userId, `✅ Reminder time updated to: <i>${localDt.toFormat('LLL d, yyyy, h:mm a')}</i>`, null, 5000);
+                    } else {
+                        await sendTelegramMessage(userId, '⚠️ Could not parse new time. Please try again or tap Back.', null, 5000);
+                        return res.sendStatus(200);
+                    }
+                }
+
+                await setPendingEdit(userId, null);
+                const dashData = await getRemindersDashboardData(userId, userTz);
+                await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
+                return res.sendStatus(200);
+            }
+
+            if (text.startsWith('/start') || text.toLowerCase() === 'view' || text.toLowerCase() === 'reminders' || text.toLowerCase() === 'list') {
                 const existingTz = await getUserTimezone(userId);
                 if (existingTz) {
                     const dashData = await getRemindersDashboardData(userId, existingTz);
-                    await sendOrUpdateDashboard(userId, `👋 Welcome back!\n🌍 Timezone: <b>${existingTz}</b>\n\n${dashData.text}`, dashData.keyboard);
+                    await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
                 } else {
                     await sendTelegramMessage(userId, '👋 Welcome! Please select your primary timezone:', getTimezonePickerKeyboard());
                 }
                 return res.sendStatus(200);
             }
 
-            if (text.startsWith('/delete') || text.startsWith('/del')) {
-                if (userId === OWNER_ID) {
-                    const replyMsg = message.reply_to_message;
-                    if (replyMsg && replyMsg.from && replyMsg.from.is_bot) {
-                        try {
-                            await deleteTelegramMessage(chatId, replyMsg.message_id);
-                            await deleteTelegramMessage(chatId, msgId);
-                        } catch (delErr) {
-                            console.error('Error deleting message:', delErr);
-                        }
-                    }
+            const userTz = await getUserTimezone(userId);
+            const parsed = parseFlexibleDate(text, userTz);
+
+            if (parsed) {
+                await pool.query(
+                    'INSERT INTO reminders (user_id, chat_id, text, remind_at) VALUES ($1, $2, $3, $4)',
+                    [userId, chatId, parsed.reminderText, parsed.date]
+                );
+
+                const dashData = await getRemindersDashboardData(userId, userTz);
+                await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
+            }
+            return res.sendStatus(200);
+        }
+
+        if (callbackQuery && callbackQuery.data) {
+            const data = callbackQuery.data;
+            const userId = callbackQuery.from.id;
+            const messageId = callbackQuery.message.message_id;
+
+            if (data.startsWith('settz:')) {
+                const tz = data.split(':')[1];
+                await setUserTimezone(userId, tz);
+                await answerCallbackQuery(callbackQuery.id, `Timezone set to ${tz}`);
+                const dashData = await getRemindersDashboardData(userId, tz);
+                await sendOrUpdateDashboard(userId, tz);
+                return res.sendStatus(200);
+            }
+
+            if (data.startsWith('manage:')) {
+                const parts = data.split(':');
+                const reminderId = parts[1];
+                const num = parts[2];
+
+                const subMenu = {
+                    inline_keyboard: [
+                        [
+                            { text: '✏️ Edit', callback_data: `edit:${reminderId}` },
+                            { text: '❌ Delete', callback_data: `del:${reminderId}` }
+                        ],
+                        [
+                            { text: '⬅️ Back to Reminders', callback_data: 'menu:list' }
+                        ]
+                    ]
+                };
+
+                await editTelegramMessage(userId, messageId, `⚙️ <b>Managing Reminder #${num}</b>\n━━━━━━━━━━━━━━━━━━\nSelect an action:`, subMenu);
+                await answerCallbackQuery(callbackQuery.id);
+                return res.sendStatus(200);
+            }
+
+            if (data === 'menu:list') {
+                const userTz = await getUserTimezone(userId);
+                await setPendingEdit(userId, null);
+                const dashData = await getRemindersDashboardData(userId, userTz);
+                await editTelegramMessage(userId, messageId, dashData.text, dashData.keyboard);
+                await answerCallbackQuery(callbackQuery.id);
+                return res.sendStatus(200);
+            }
+
+            if (data.startsWith('del:')) {
+                const reminderId = data.split(':')[1];
+                await pool.query('DELETE FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
+                await answerCallbackQuery(callbackQuery.id, 'Reminder deleted!');
+                const userTz = await getUserTimezone(userId);
+                const dashData = await getRemindersDashboardData(userId, userTz);
+                await editTelegramMessage(userId, messageId, dashData.text, dashData.keyboard);
+                return res.sendStatus(200);
+            }
+
+            if (data.startsWith('edit:')) {
+                const reminderId = data.split(':')[1];
+                const resRem = await pool.query('SELECT recurring, total_occurrences FROM reminders WHERE id = $1', [reminderId]);
+                if (resRem.rows.length > 0) {
+                    const r = resRem.rows[0];
+                    const editKb = getEditMenuKeyboard(reminderId, r.recurring, r.total_occurrences);
+                    await editTelegramMessage(userId, messageId, `✏️ <b>Edit Reminder Settings</b>\n━━━━━━━━━━━━━━━━━━`, editKb);
+                }
+                await answerCallbackQuery(callbackQuery.id);
+                return res.sendStatus(200);
+            }
+
+            if (data.startsWith('prompt_edit_text:')) {
+                const reminderId = data.split(':')[1];
+                await setPendingEdit(userId, `text:${reminderId}`);
+                await editTelegramMessage(userId, messageId, `📝 <b>Please type the new note/text for this reminder:</b>\n━━━━━━━━━━━━━━━━━━`, {
+                    inline_keyboard: [[{ text: '⬅️ Cancel', callback_data: `edit:${reminderId}` }]]
+                });
+                await answerCallbackQuery(callbackQuery.id);
+                return res.sendStatus(200);
+            }
+
+            if (data.startsWith('prompt_edit_time:')) {
+                const reminderId = data.split(':')[1];
+                await setPendingEdit(userId, `time:${reminderId}`);
+                await editTelegramMessage(userId, messageId, `🕒 <b>Please type the new time/date for this reminder:</b>\n<i>Example: tomorrow at 8am, 2h, or Aug 12 5pm</i>\n━━━━━━━━━━━━━━━━━━`, {
+                    inline_keyboard: [[{ text: '⬅️ Cancel', callback_data: `edit:${reminderId}` }]]
+                });
+                await answerCallbackQuery(callbackQuery.id);
+                return res.sendStatus(200);
+            }
+
+            if (data.startsWith('setrec:')) {
+                const parts = data.split(':');
+                const reminderId = parts[1];
+                let recValue = null;
+
+                if (parts[2] !== 'none') {
+                    recValue = `${parts[2]}:${parts[3] || 1}`;
+                }
+
+                await pool.query('UPDATE reminders SET recurring = $1 WHERE id = $2 AND user_id = $3', [recValue, reminderId, userId]);
+                await answerCallbackQuery(callbackQuery.id, 'Recurrence updated!');
+
+                const resRem = await pool.query('SELECT recurring, total_occurrences FROM reminders WHERE id = $1', [reminderId]);
+                if (resRem.rows.length > 0) {
+                    const r = resRem.rows[0];
+                    const editKb = getEditMenuKeyboard(reminderId, r.recurring, r.total_occurrences);
+                    await editTelegramMessage(userId, messageId, `✏️ <b>Edit Reminder Settings</b>\n━━━━━━━━━━━━━━━━━━`, editKb);
+                }
+                return res.sendStatus(200);
+            }
+
+            if (data.startsWith('unitmenu:')) {
+                const reminderId = data.split(':')[1];
+                await editTelegramMessage(userId, messageId, `⏱️ <b>Select Recurrence Unit</b>\n━━━━━━━━━━━━━━━━━━`, getUnitMenuKeyboard(reminderId));
+                await answerCallbackQuery(callbackQuery.id);
+                return res.sendStatus(200);
+            }
+
+            if (data.startsWith('nummenu:')) {
+                const parts = data.split(':');
+                const reminderId = parts[1];
+                const unit = parts[2];
+                await editTelegramMessage(userId, messageId, `🔢 <b>Select Interval (${unit})</b>\n━━━━━━━━━━━━━━━━━━`, getNumberMenuKeyboard(reminderId, unit));
+                await answerCallbackQuery(callbackQuery.id);
+                return res.sendStatus(200);
+            }
+
+            if (data.startsWith('limitmenu:')) {
+                const reminderId = data.split(':')[1];
+                const resRem = await pool.query('SELECT total_occurrences FROM reminders WHERE id = $1', [reminderId]);
+                const totalOcc = resRem.rows.length > 0 ? resRem.rows[0].total_occurrences : 0;
+                await editTelegramMessage(userId, messageId, `🔁 <b>Select Repeat Limit</b>\n━━━━━━━━━━━━━━━━━━`, getLimitMenuKeyboard(reminderId, totalOcc));
+                await answerCallbackQuery(callbackQuery.id);
+                return res.sendStatus(200);
+            }
+
+            if (data.startsWith('setlimit:')) {
+                const parts = data.split(':');
+                const reminderId = parts[1];
+                const limitVal = parseInt(parts[2], 10);
+                const finalLimit = limitVal === 0 ? null : limitVal;
+
+                await pool.query('UPDATE reminders SET total_occurrences = $1 WHERE id = $2 AND user_id = $3', [finalLimit, reminderId, userId]);
+                await answerCallbackQuery(callbackQuery.id, 'Limit updated!');
+
+                const resRem = await pool.query('SELECT recurring, total_occurrences FROM reminders WHERE id = $1', [reminderId]);
+                if (resRem.rows.length > 0) {
+                    const r = resRem.rows[0];
+                    const editKb = getEditMenuKeyboard(reminderId, r.recurring, r.total_occurrences);
+                    await editTelegramMessage(userId, messageId, `✏️ <b>Edit Reminder Settings</b>\n━━━━━━━━━━━━━━━━━━`, editKb);
                 }
                 return res.sendStatus(200);
             }
         }
 
-        if (callbackQuery) {
-            const userId = callbackQuery.from.id;
-            const chatId = callbackQuery.message.chat.id;
-            const messageId = callbackQuery.message.message_id;
-            const data = callbackQuery.data;
-            let userTz = (await getUserTimezone(userId)) || 'UTC';
-
-            if (data.startsWith('settz:')) {
-                const tz = data.replace('settz:', '');
-                await setUserTimezone(userId, tz);
-                await answerCallbackQuery(callbackQuery.id, `✅ Timezone saved: ${tz}`, true);
-                const dashData = await getRemindersDashboardData(userId, tz);
-                await sendOrUpdateDashboard(userId, `🌍 Timezone set to <b>${tz}</b>.\n\n${dashData.text}`, dashData.keyboard);
-            } else if (data === 'noop') {
-                await answerCallbackQuery(callbackQuery.id);
-            } else if (data === 'menu:list') {
-                await answerCallbackQuery(callbackQuery.id);
-                const dashData = await getRemindersDashboardData(userId, userTz);
-                await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
-            } else if (data.startsWith('del:')) {
-                const reminderId = data.replace('del:', '');
-                await pool.query('DELETE FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
-                await answerCallbackQuery(callbackQuery.id, '🗑️ Reminder deleted!', true);
-                const dashData = await getRemindersDashboardData(userId, userTz);
-                await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
-            } else if (data.startsWith('view:')) {
-                const reminderId = data.replace('view:', '');
-                const result = await pool.query('SELECT text, remind_at, recurring, total_occurrences, current_occurrence FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
-                if (result.rows.length > 0) {
-                    const r = result.rows[0];
-                    const dt = DateTime.fromJSDate(new Date(r.remind_at)).setZone(userTz);
-                    const repeatInfo = r.recurring ? `\n🔄 Repeat: ${formatRepeatText(r.recurring)}` : '';
-                    const limitInfo = (r.recurring && r.total_occurrences) ? `\n🔢 Progress: ${r.current_occurrence || 0}/${r.total_occurrences}` : '';
-                    await answerCallbackQuery(callbackQuery.id, `🔔 ${r.text}\n🕒 ${dt.toFormat('ff')}${repeatInfo}${limitInfo}`, true);
-                }
-            } else if (data.startsWith('edit:')) {
-                const reminderId = data.replace('edit:', '');
-                const result = await pool.query('SELECT text, recurring, total_occurrences FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
-                if (result.rows.length > 0) {
-                    await answerCallbackQuery(callbackQuery.id);
-                    const r = result.rows[0];
-                    const keyboard = getEditMenuKeyboard(reminderId, r.recurring, r.total_occurrences);
-                    await editTelegramMessage(chatId, messageId, `✏️ Editing Reminder: "<b>${r.text}</b>"\nSelect options below:`, keyboard);
-                }
-            } else if (data.startsWith('unitmenu:')) {
-                const reminderId = data.replace('unitmenu:', '');
-                await answerCallbackQuery(callbackQuery.id);
-                await editTelegramMessage(chatId, messageId, `⚙️ Select Custom Interval Unit:`, getUnitMenuKeyboard(reminderId));
-            } else if (data.startsWith('nummenu:')) {
-                const parts = data.split(':');
-                const reminderId = parts[1];
-                const unit = parts[2];
-                await answerCallbackQuery(callbackQuery.id);
-                await editTelegramMessage(chatId, messageId, `⚙️ Select Every How Many ${unit.toUpperCase()}:`, getNumberMenuKeyboard(reminderId, unit));
-            } else if (data.startsWith('limitmenu:')) {
-                const reminderId = data.replace('limitmenu:', '');
-                const result = await pool.query('SELECT total_occurrences FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
-                if (result.rows.length > 0) {
-                    await answerCallbackQuery(callbackQuery.id);
-                    const keyboard = getLimitMenuKeyboard(reminderId, result.rows[0].total_occurrences);
-                    await editTelegramMessage(chatId, messageId, `🔁 Select How Many Times to Repeat:`, keyboard);
-                }
-            } else if (data.startsWith('setrec:')) {
-                const parts = data.split(':');
-                const reminderId = parts[1];
-                const recType = parts[2];
-                const interval = parts[3] || '1';
-                const recurringVal = recType === 'none' ? null : `${recType}:${interval}`;
-
-                await pool.query('UPDATE reminders SET recurring = $1 WHERE id = $2 AND user_id = $3', [recurringVal, reminderId, userId]);
-                await answerCallbackQuery(callbackQuery.id, '✅ Recurrence updated!', true);
-
-                const result = await pool.query('SELECT total_occurrences FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
-                const totalOcc = result.rows.length > 0 ? result.rows[0].total_occurrences : null;
-                const keyboard = getEditMenuKeyboard(reminderId, recurringVal, totalOcc);
-                await editTelegramMessage(chatId, messageId, `✏️ Editing Reminder\nSelect options below:`, keyboard);
-            } else if (data.startsWith('setlimit:')) {
-                const parts = data.split(':');
-                const reminderId = parts[1];
-                const count = parseInt(parts[2], 10);
-                const limitVal = count === 0 ? null : count;
-
-                await pool.query('UPDATE reminders SET total_occurrences = $1 WHERE id = $2 AND user_id = $3', [limitVal, reminderId, userId]);
-                await answerCallbackQuery(callbackQuery.id, '✅ Repeat limit updated!', true);
-
-                const keyboard = getLimitMenuKeyboard(reminderId, limitVal);
-                await editTelegramMessage(chatId, messageId, `🔁 Select How Many Times to Repeat:`, keyboard);
-            }
-        }
-
-        if (inlineQuery) {
-            const userId = inlineQuery.from.id;
-            const userTz = (await getUserTimezone(userId)) || 'UTC';
-            const queryId = inlineQuery.id;
-            const queryText = inlineQuery.query.trim();
-            let results = [];
-
-            if (queryText.toLowerCase() === 'list' || queryText.toLowerCase() === 'reminders' || queryText === '') {
-                results.push({
-                    type: 'article',
-                    id: 'show_reminders_dm',
-                    title: '📋 Send Active Reminders (DM)',
-                    description: 'Tap to view and manage your active reminders.',
-                    input_message_content: { message_text: '📋 Requesting active reminders list...' }
-                });
-            } else {
-                const parsed = parseFlexibleDate(queryText, userTz);
-                if (parsed) {
-                    const dt = DateTime.fromJSDate(parsed.date).setZone(userTz);
-                    const flag = parsed.wantRepeatMenu ? '1' : '0';
-                    results.push({
-                        type: 'article',
-                        id: `custom:${parsed.date.getTime()}:${flag}:${parsed.reminderText}`,
-                        title: `🔔 Remind: "${parsed.reminderText}"`,
-                        description: `Scheduled for: ${dt.toFormat('ff')}`,
-                        input_message_content: {
-                            message_text: `⏳ Creating reminder... (Check DM)`
-                        }
-                    });
-                } else {
-                    results.push({
-                        type: 'article',
-                        id: 'invalid_time',
-                        title: '⚠️ Min 1 min ahead',
-                        description: 'Time must be >= 1 min.',
-                        input_message_content: { message_text: '❌ Reminders must be set for at least 1 minute from now.' }
-                    });
-                }
-            }
-
-            await fetch(`https://api.telegram.org/bot${TOKEN}/answerInlineQuery`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ inline_query_id: queryId, results: results, cache_time: 0 })
-            });
-        }
-
-        if (chosenResult) {
-            const userId = chosenResult.from.id;
-            const resultId = chosenResult.result_id;
-            const chatId = chosenResult.chat_id || userId;
-            const parts = resultId.split(':');
-
-            if (resultId === 'show_reminders_dm') {
-                const userTz = (await getUserTimezone(userId)) || 'UTC';
-                const dashData = await getRemindersDashboardData(userId, userTz);
-                await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
-            } else if (parts.length >= 2 && parts[0] !== 'invalid_time') {
-                const timestamp = parseInt(parts[1], 10);
-                const wantRepeat = parts[2] === '1';
-                const text = parts.slice(3).join(':') || 'Reminder';
-                const remindAt = new Date(timestamp);
-                const userTz = (await getUserTimezone(userId)) || 'UTC';
-                const dt = DateTime.fromJSDate(remindAt).setZone(userTz);
-
-                if (process.env.DATABASE_URL) {
-                    const dbRes = await pool.query(
-                        'INSERT INTO reminders (user_id, chat_id, text, remind_at) VALUES ($1, $2, $3, $4) RETURNING id',
-                        [userId, chatId, text, remindAt]
-                    );
-                    const newId = dbRes.rows[0].id;
-
-                    if (wantRepeat) {
-                        const keyboard = getEditMenuKeyboard(newId, null, null);
-                        await sendTelegramMessage(userId, `🔔 Reminder Created: "<b>${text}</b>"\nSet a repeat pattern below:`, keyboard, 10000);
-                    } else {
-                        await sendTelegramMessage(userId, `🔔 Reminder set for: <b>${text}</b> (${dt.toFormat('ff')})`, null, 10000);
-                    }
-                }
-            }
-        }
-    } catch (globalErr) {
-        console.error('Unhandled webhook execution error:', globalErr);
+        res.sendStatus(200);
+    } catch (err) {
+        console.error('Webhook error:', err);
+        res.sendStatus(500);
     }
-
-    res.sendStatus(200);
 });
