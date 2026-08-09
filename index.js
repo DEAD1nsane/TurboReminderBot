@@ -611,6 +611,9 @@ app.post('/webhook', async (req, res) => {
             const data = callbackQuery.data;
             let userTz = (await getUserTimezone(userId)) || 'America/Chicago';
 
+            // Ensure the message being interacted with is tracked as active for the 30s timer reset
+            await setActiveMenuMsgId(userId, messageId);
+
             if (data.startsWith('settz:')) {
                 const tz = data.replace('settz:', '');
                 await setUserTimezone(userId, tz);
@@ -624,6 +627,13 @@ app.post('/webhook', async (req, res) => {
                 await setPendingEdit(userId, null);
                 const dashData = await getRemindersDashboardData(userId, userTz);
                 await editTelegramMessage(chatId, messageId, dashData.text, dashData.keyboard);
+                
+                // Restart 30s collapse timer on menu:list
+                if (activeTimers[userId]) clearTimeout(activeTimers[userId]);
+                activeTimers[userId] = setTimeout(async () => {
+                    await editTelegramMessage(userId, messageId, '🤖 Reminder Bot Active', null);
+                    await setActiveMenuMsgId(userId, null);
+                }, 30000);
             } else if (data.startsWith('del:')) {
                 const reminderId = data.replace('del:', '');
                 await pool.query('DELETE FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
@@ -645,7 +655,7 @@ app.post('/webhook', async (req, res) => {
                         repeatInfo = `\n🔄 Repeat: ${repStr}`;
                     }
 
-                    const popupAlertText = `🔔 ${r.text}\n🕒 ${formattedTime}${repeatInfo}`;
+                    const popupAlertText = `🤖 <b>Reminder Bot</b>\n━━━━━━━━━━━━━━━━━━\n\n🔔 ${r.text}\n🕒 ${formattedTime}${repeatInfo}`;
                     await answerCallbackQuery(callbackQuery.id, popupAlertText, true);
                 }
             } else if (data.startsWith('edit:')) {
