@@ -253,6 +253,25 @@ async function getRemindersDashboardData(userId, userTz) {
 
 let activeTimers = {};
 
+function startCollapseTimer(userId, msgId) {
+    if (activeTimers[userId]) {
+        clearTimeout(activeTimers[userId]);
+        delete activeTimers[userId];
+    }
+    if (!msgId) return;
+
+    activeTimers[userId] = setTimeout(async () => {
+        try {
+            await editTelegramMessage(userId, msgId, '🤖 Reminder Bot Active', null);
+            await setActiveMenuMsgId(userId, null);
+        } catch (err) {
+            console.error('Error auto-collapsing message:', err);
+        } finally {
+            delete activeTimers[userId];
+        }
+    }, 30000);
+}
+
 async function sendOrUpdateDashboard(userId, text, markup) {
     const existingMsgId = await getActiveMenuMsgId(userId);
     let targetMsgId = existingMsgId;
@@ -277,24 +296,7 @@ async function sendOrUpdateDashboard(userId, text, markup) {
         }
     }
 
-    if (activeTimers[userId]) {
-        clearTimeout(activeTimers[userId]);
-        delete activeTimers[userId];
-    }
-
-    if (targetMsgId) {
-        const currentTarget = targetMsgId;
-        activeTimers[userId] = setTimeout(async () => {
-            try {
-                await editTelegramMessage(userId, currentTarget, '🤖 Reminder Bot Active', null);
-                await setActiveMenuMsgId(userId, null);
-            } catch (err) {
-                console.error('Error auto-collapsing message:', err);
-            } finally {
-                delete activeTimers[userId];
-            }
-        }, 30000);
-    }
+    startCollapseTimer(userId, targetMsgId);
 }
 
 setInterval(async () => {
@@ -367,8 +369,7 @@ app.post('/webhook', async (req, res) => {
                 const existingTz = await getUserTimezone(userId);
                 if (existingTz) {
                     const dashData = await getRemindersDashboardData(userId, existingTz);
-                    const welcomeText = dashData.text;
-                    await sendOrUpdateDashboard(userId, welcomeText, dashData.keyboard);
+                    await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
                 } else {
                     await sendTelegramMessage(userId, '👋 Welcome! Please select your primary timezone:', getTimezonePickerKeyboard());
                 }
@@ -403,13 +404,14 @@ app.post('/webhook', async (req, res) => {
             let userTz = (await getUserTimezone(userId)) || 'America/Chicago';
 
             await setActiveMenuMsgId(userId, messageId);
+            startCollapseTimer(userId, messageId);
 
             if (data.startsWith('settz:')) {
                 const tz = data.replace('settz:', '');
                 await setUserTimezone(userId, tz);
                 await answerCallbackQuery(callbackQuery.id, `✅ Timezone saved: ${tz}`, true);
                 const dashData = await getRemindersDashboardData(userId, tz);
-                await sendOrUpdateDashboard(userId, `🌍 Timezone set to <b>${tz}</b>.\n\n${dashData.text}`, dashData.keyboard);
+                await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
             } else if (data === 'noop') {
                 await answerCallbackQuery(callbackQuery.id);
             } else if (data === 'menu:list') {
@@ -417,13 +419,6 @@ app.post('/webhook', async (req, res) => {
                 await setPendingEdit(userId, null);
                 const dashData = await getRemindersDashboardData(userId, userTz);
                 await editTelegramMessage(chatId, messageId, dashData.text, dashData.keyboard);
-                
-                if (activeTimers[userId]) clearTimeout(activeTimers[userId]);
-                activeTimers[userId] = setTimeout(async () => {
-                    await editTelegramMessage(userId, messageId, '🤖 Reminder Bot Active', null);
-                    await setActiveMenuMsgId(userId, null);
-                    delete activeTimers[userId];
-                }, 30000);
             } else if (data.startsWith('del:')) {
                 const reminderId = data.replace('del:', '');
                 await pool.query('DELETE FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
