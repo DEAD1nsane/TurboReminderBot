@@ -547,3 +547,22 @@ setInterval(async () => {
         }
     } catch(err) { console.error("Collapse loop error:", err); }
 }, 3000);
+
+
+// Background Worker: Poll and send due reminders every 10 seconds
+setInterval(async () => {
+    if (!process.env.DATABASE_URL) return;
+    try {
+        const dueReminders = await pool.query("SELECT * FROM reminders WHERE sent = false AND remind_at <= NOW()");
+        for (const r of dueReminders.rows) {
+            try {
+                await sendTelegramMessage(r.user_id, `⏰ **Reminder:** ${r.text}`);
+                await pool.query("UPDATE reminders SET sent = true WHERE id = $1", [r.id]);
+            } catch (err) {
+                console.error(`Failed to send reminder ${r.id}:`, err);
+            }
+        }
+    } catch (err) {
+        if (!err.message?.includes("Connection terminated")) console.error("Error processing due reminders:", err);
+    }
+}, 10000);
