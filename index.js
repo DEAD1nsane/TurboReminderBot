@@ -313,7 +313,7 @@ setInterval(async () => {
             let headerIcon = reminder.recurring ? (reminder.total_occurrences ? ' 🔢' : ' 🔄') : '';
             let progressFooter = (reminder.recurring && reminder.total_occurrences) ? `\n🔢 ${newCount} of ${reminder.total_occurrences}` : '';
 
-            const alertText = `🔔 <b>Reminder Alert${headerIcon}</b>\n━━━━━━━━━━━━━━━━━━\n\n📝 <b>${reminder.text}</b>\n🕒 <i>${formattedTime}</i>${progressFooter}`;
+            const alertText = `🔔 <b>Reminder Alert${headerIcon}</b>\n━━━━━━━━━━━━━━━━━━\n📝 <b>${reminder.text}</b>\n🕒 <i>${formattedTime}</i>${progressFooter}`;
 
             await sendTelegramMessage(targetChat, alertText);
 
