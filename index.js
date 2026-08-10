@@ -282,52 +282,6 @@ async function sendOrUpdateDashboard(userId, text, markup, triggerMsgId = null) 
     }
 }
 
-setInterval(async () => {
-    if (!process.env.DATABASE_URL) return;
-
-    try {
-        const activeMenus = await pool.query('SELECT user_id, active_menu_msg_id, trigger_msg_id FROM user_settings WHERE collapse_at IS NOT NULL AND collapse_at <= CURRENT_TIMESTAMP');
-        for (const row of activeMenus.rows) {
-            const { user_id, active_menu_msg_id, trigger_msg_id } = row;
-            if (active_menu_msg_id) {
-                await editTelegramMessage(user_id, active_menu_msg_id, '🤖 Reminder Bot Active', null);
-            }
-            if (trigger_msg_id) {
-                await deleteTelegramMessage(user_id, trigger_msg_id);
-            }
-            await pool.query('UPDATE user_settings SET active_menu_msg_id = NULL, trigger_msg_id = NULL, collapse_at = NULL WHERE user_id = $1', [user_id]);
-        }
-    } catch (err) {
-        if (!err.message?.includes('Connection terminated')) console.error('Error auto-collapsing menus:', err);
-    }
-
-    try {
-        const res = await pool.query('SELECT * FROM reminders WHERE remind_at <= CURRENT_TIMESTAMP AND sent = FALSE');
-        for (const reminder of res.rows) {
-            const targetChat = reminder.chat_id || reminder.user_id;
-            const newCount = (reminder.current_occurrence || 0) + 1;
-            const userTz = (await getUserTimezone(reminder.user_id)) || 'America/Chicago';
-            const dt = DateTime.fromJSDate(new Date(reminder.remind_at)).setZone(userTz);
-            const formattedTime = dt.toFormat("LLL d, yyyy 'at' h:mm a");
-
-            let headerIcon = reminder.recurring ? (reminder.total_occurrences ? ' 🔢' : ' 🔄') : '';
-            let progressFooter = (reminder.recurring && reminder.total_occurrences) ? `\n🔢 ${newCount} of ${reminder.total_occurrences}` : '';
-
-            const alertText = `🔔 <b>Reminder Alert${headerIcon}</b>\n━━━━━━━━━━━━━━━━━━\n📝 <b>${reminder.text}</b>\n🕒 <i>${formattedTime}</i>${progressFooter}`;
-
-            await sendTelegramMessage(targetChat, alertText);
-
-            if (reminder.recurring && (!reminder.total_occurrences || newCount < reminder.total_occurrences)) {
-                const nextDate = calculateNextOccurrence(new Date(reminder.remind_at), reminder.recurring, userTz);
-                await pool.query('UPDATE reminders SET remind_at = $1, current_occurrence = $2 WHERE id = $3', [nextDate, newCount, reminder.id]);
-            } else {
-                await pool.query('UPDATE reminders SET sent = TRUE, current_occurrence = $1 WHERE id = $2', [newCount, reminder.id]);
-            }
-        }
-    } catch (err) {
-        if (!err.message?.includes('Connection terminated')) console.error('Error checking scheduled reminders:', err);
-    }
-}, 3000);
 
 app.post('/webhook', async (req, res) => {
     try {
@@ -574,3 +528,22 @@ app.post('/webhook', async (req, res) => {
 
     res.sendStatus(200);
 });
+
+setInterval(async () => {
+    if (!process.env.DATABASE_URL) return;
+    try {
+        const res = await pool.query("SELECT user_id, active_menu_msg_id, trigger_msg_id, collapse_at FROM user_settings WHERE collapse_at IS NOT NULL");
+        const now = Date.now();
+        for (const row of res.rows) {
+            if (row.collapse_at && new Date(row.collapse_at).getTime() <= now) {
+                if (row.active_menu_msg_id) {
+                    try { await editTelegramMessage(row.user_id, row.active_menu_msg_id, "🤖 Reminder Bot Active", null); } catch(e) {}
+                }
+                if (row.trigger_msg_id) {
+                    try { await deleteTelegramMessage(row.user_id, row.trigger_msg_id); } catch(e) {}
+                }
+                await pool.query("UPDATE user_settings SET active_menu_msg_id = NULL, trigger_msg_id = NULL, collapse_at = NULL WHERE user_id = $1", [row.user_id]);
+            }
+        }
+    } catch(err) {}
+}, 3000);
