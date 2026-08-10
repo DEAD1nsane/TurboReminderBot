@@ -40,42 +40,44 @@ const pool = new Pool({
 pool.on('error', (err) => console.error('Unexpected Postgres pool error:', err));
 
 async function initDb() {
-    if (!process.env.DATABASE_URL) return console.warn('DATABASE_URL is missing!');
-    const query = `
-        
-    await pool.query("ALTER TABLE user_settings ALTER COLUMN timezone SET DEFAULT 'America/Chicago';");
-    await pool.query("UPDATE user_settings SET timezone = 'America/Chicago' WHERE timezone IS NULL;");
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS user_settings (
+        user_id BIGINT PRIMARY KEY,
+        timezone TEXT NOT NULL DEFAULT 'America/Chicago',
+        pending_edit TEXT DEFAULT NULL,
+        trigger_msg_id BIGINT DEFAULT NULL,
+        active_menu_msg_id BIGINT DEFAULT NULL,
+        collapse_at TIMESTAMPTZ DEFAULT NULL
+      );
+    `);
 
-    CREATE TABLE IF NOT EXISTS user_settings (
-            user_id BIGINT PRIMARY KEY,
-            timezone TEXT NOT NULL DEFAULT 'America/Chicago',
-            active_menu_msg_id BIGINT DEFAULT NULL,
-            pending_edit TEXT DEFAULT NULL,
-            trigger_msg_id BIGINT DEFAULT NULL,
-            collapse_at TIMESTAMPTZ DEFAULT NULL
-        );
-        ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS active_menu_msg_id BIGINT DEFAULT NULL;
-        ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS pending_edit TEXT DEFAULT NULL;
-        ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS trigger_msg_id BIGINT DEFAULT NULL;
-        ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS collapse_at TIMESTAMPTZ DEFAULT NULL;
-        CREATE TABLE IF NOT EXISTS reminders (
-            id SERIAL PRIMARY KEY,
-            user_id BIGINT NOT NULL,
-            chat_id BIGINT,
-            text TEXT NOT NULL,
-            remind_at TIMESTAMPTZ NOT NULL,
-            sent BOOLEAN DEFAULT FALSE,
-            recurring TEXT DEFAULT NULL,
-            total_occurrences INT DEFAULT NULL,
-            current_occurrence INT DEFAULT 0
-        );
-    `;
-    try {
-        await pool.query(query);
-        console.log('Database initialized successfully.');
-    } catch (err) {
-        console.error('Error initializing database:', err);
-    }
+    await pool.query(`
+      ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS pending_edit TEXT DEFAULT NULL;
+      ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS trigger_msg_id BIGINT DEFAULT NULL;
+      ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS active_menu_msg_id BIGINT DEFAULT NULL;
+      ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS collapse_at TIMESTAMPTZ DEFAULT NULL;
+      ALTER TABLE user_settings ALTER COLUMN timezone SET DEFAULT 'America/Chicago';
+      UPDATE user_settings SET timezone = 'America/Chicago' WHERE timezone IS NULL;
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS reminders (
+        id SERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL,
+        chat_id BIGINT,
+        text TEXT NOT NULL,
+        remind_at TIMESTAMPTZ NOT NULL,
+        sent BOOLEAN DEFAULT FALSE,
+        recurring TEXT DEFAULT NULL,
+        total_occurrences INT DEFAULT NULL,
+        current_occurrence INT DEFAULT 0
+      );
+    `);
+    console.log("Database initialized successfully!");
+  } catch (err) {
+    console.error("Error initializing database:", err);
+  }
 }
 initDb();
 
