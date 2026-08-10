@@ -43,7 +43,11 @@ pool.on('error', (err) => console.error('Unexpected Postgres pool error:', err))
 async function initDb() {
     if (!process.env.DATABASE_URL) return console.warn('DATABASE_URL is missing!');
     const query = `
-        CREATE TABLE IF NOT EXISTS user_settings (
+        
+    await pool.query("ALTER TABLE user_settings ALTER COLUMN timezone SET DEFAULT 'America/Chicago';");
+    await pool.query("UPDATE user_settings SET timezone = 'America/Chicago' WHERE timezone IS NULL;");
+
+    CREATE TABLE IF NOT EXISTS user_settings (
             user_id BIGINT PRIMARY KEY,
             timezone TEXT NOT NULL DEFAULT 'America/Chicago',
             active_menu_msg_id BIGINT DEFAULT NULL,
