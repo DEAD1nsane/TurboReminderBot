@@ -432,7 +432,7 @@ app.post('/webhook', async (req, res) => {
                     const dt = DateTime.fromJSDate(new Date(r.remind_at)).setZone(userTz);
                     const formattedTime = dt.toFormat("LLL d, yyyy 'at' h:mm a");
                     let repeatInfo = r.recurring ? `\n━━━━━━━━━━━━━━━━━━\n🔄 Repeat: ${formatRepeatText(r.recurring)}${r.total_occurrences ? ` (${r.current_occurrence || 0}/${r.total_occurrences})` : ''}` : '';
-                    await answerCallbackQuery(callbackQuery.id, `🔔 ${r.text}\n━━━━━━━━━━━━━━━━━━\n🕒 ${formattedTime}${repeatInfo}`, true);
+                    await answerCallbackQuery(callbackQuery.id, `Reminder Bot\n━━━━━━━━━━━━━━━━━━\n🔔 ${r.text}\n🕒 ${formattedTime}${repeatInfo}`, true);
                 }
             } else if (data.startsWith('edit:')) {
                 const reminderId = data.replace('edit:', '');
