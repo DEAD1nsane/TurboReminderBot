@@ -274,18 +274,18 @@ function startCollapseTimer(userId, msgId) {
 
 async function sendOrUpdateDashboard(userId, text, markup) {
     const existingMsgId = await getActiveMenuMsgId(userId);
-    let targetMsgId = existingMsgId;
+    let targetMsgId = null;
 
     if (existingMsgId) {
         const success = await editTelegramMessage(userId, existingMsgId, text, markup);
-        if (!success) {
+        if (success) {
+            targetMsgId = existingMsgId;
+        } else {
             await deleteTelegramMessage(userId, existingMsgId);
             const newMsg = await sendTelegramMessage(userId, text, markup);
             if (newMsg) {
                 targetMsgId = newMsg.message_id;
                 await setActiveMenuMsgId(userId, targetMsgId);
-            } else {
-                await setActiveMenuMsgId(userId, null);
             }
         }
     } else {
