@@ -1,9 +1,6 @@
 const { Telegraf } = require('telegraf');
 const { Pool } = require('pg');
 const { DateTime } = require('luxon');
-const
-const { DateTime } = require('luxon');
-const { Pool } = require('pg');
 const { 
     formatRepeatText, 
     getTimezonePickerKeyboard, 
