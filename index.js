@@ -347,7 +347,7 @@ app.post('/webhook', async (req, res) => {
                 }
                 return res.sendStatus(200);
             }
-
+        await pool.query('INSERT INTO reminders (user_id, chat_id, text, remind_at) VALUES ($1, $2, $3, $4)', [userId, chatId, parsed.reminderText, parsed.date]);
             const userTz = await getUserTimezone(userId);
             const parsed = parseFlexibleDate(text, userTz);
 
