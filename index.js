@@ -196,7 +196,8 @@ function parseFlexibleDate(text, timeZone) {
         }
     }
 
-    const parsed = chrono.parse(clean, nowInZone.toJSDate(), { forwardDate: true });
+    const referenceDate = new Date(nowInZone.year, nowInZone.month - 1, nowInZone.day, nowInZone.hour, nowInZone.minute, nowInZone.second);
+    const parsed = chrono.parse(clean, referenceDate, { forwardDate: true });
     if (parsed.length > 0) {
         const parsedResult = parsed[0];
         const parsedComp = parsedResult.start;
@@ -217,7 +218,11 @@ function parseFlexibleDate(text, timeZone) {
         }
 
         if (dt <= nowInZone) {
-            dt = dt.plus({ days: 1 });
+            if (parsedComp.get('day') === null && parsedComp.get('month') === null) {
+                dt = dt.plus({ days: 1 });
+            } else {
+                return null;
+            }
         }
 
         const reminderText = clean.replace(parsedResult.text, '').trim() || clean;
@@ -469,12 +474,22 @@ async function sendOrUpdateDashboard(userId, text, markup) {
         }
     }
 
-    if (activeTimers[userId]) clearTimeout(activeTimers[userId]);
+    if (activeTimers[userId]) {
+        clearTimeout(activeTimers[userId]);
+        delete activeTimers[userId];
+    }
 
     if (targetMsgId) {
+        const currentTarget = targetMsgId;
         activeTimers[userId] = setTimeout(async () => {
-            await editTelegramMessage(userId, targetMsgId, '🤖 Reminder Bot Active', null);
-            await setActiveMenuMsgId(userId, null);
+            try {
+                await editTelegramMessage(userId, currentTarget, '🤖 Reminder Bot Active', null);
+                await setActiveMenuMsgId(userId, null);
+            } catch (err) {
+                console.error('Error auto-collapsing message:', err);
+            } finally {
+                delete activeTimers[userId];
+            }
         }, 30000);
     }
 }
@@ -567,7 +582,7 @@ app.post('/webhook', async (req, res) => {
                 const existingTz = await getUserTimezone(userId);
                 if (existingTz) {
                     const dashData = await getRemindersDashboardData(userId, existingTz);
-                    const welcomeText = `👋 Welcome back!\n🌍 Timezone: <b>${existingTz}</b>\n\n${dashData.text}`;
+                    const welcomeText = `🌍 Timezone: <b>${existingTz}</b>\n\n${dashData.text}`;
                     await sendOrUpdateDashboard(userId, welcomeText, dashData.keyboard);
                 } else {
                     await sendTelegramMessage(userId, '👋 Welcome! Please select your primary timezone:', getTimezonePickerKeyboard());
@@ -600,8 +615,7 @@ app.post('/webhook', async (req, res) => {
                 );
 
                 const dashData = await getRemindersDashboardData(userId, userTz);
-                const welcomeText = `🌍 Timezone: <b>${userTz}</b>\n\n${dashData.text}`;
-                await sendOrUpdateDashboard(userId, welcomeText, dashData.keyboard);
+                await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
             }
             return res.sendStatus(200);
         }
@@ -628,21 +642,23 @@ app.post('/webhook', async (req, res) => {
                 await answerCallbackQuery(callbackQuery.id);
                 await setPendingEdit(userId, null);
                 const dashData = await getRemindersDashboardData(userId, userTz);
-                const welcomeText = `🌍 Timezone: <b>${userTz}</b>\n\n${dashData.text}`;
-                await editTelegramMessage(chatId, messageId, welcomeText, dashData.keyboard);
+                await editTelegramMessage(chatId, messageId, dashData.text, dashData.keyboard);
                 
-                if (activeTimers[userId]) clearTimeout(activeTimers[userId]);
+                if (activeTimers[userId]) {
+                    clearTimeout(activeTimers[userId]);
+                    delete activeTimers[userId];
+                }
                 activeTimers[userId] = setTimeout(async () => {
                     await editTelegramMessage(userId, messageId, '🤖 Reminder Bot Active', null);
                     await setActiveMenuMsgId(userId, null);
+                    delete activeTimers[userId];
                 }, 30000);
             } else if (data.startsWith('del:')) {
                 const reminderId = data.replace('del:', '');
                 await pool.query('DELETE FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
                 await answerCallbackQuery(callbackQuery.id, '🗑️ Reminder deleted!', true);
                 const dashData = await getRemindersDashboardData(userId, userTz);
-                const welcomeText = `🌍 Timezone: <b>${userTz}</b>\n\n${dashData.text}`;
-                await editTelegramMessage(chatId, messageId, welcomeText, dashData.keyboard);
+                await editTelegramMessage(chatId, messageId, dashData.text, dashData.keyboard);
             } else if (data.startsWith('view:')) {
                 const reminderId = data.replace('view:', '');
                 const result = await pool.query('SELECT text, remind_at, recurring, total_occurrences, current_occurrence FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
@@ -658,7 +674,7 @@ app.post('/webhook', async (req, res) => {
                         repeatInfo = `\n🔄 Repeat: ${repStr}`;
                     }
 
-                    const popupAlertText = `━━━━━━━━━━━━━━━━━━\n\n🔔 ${r.text}\n🕒 ${formattedTime}${repeatInfo}`;
+                    const popupAlertText = `🔔 ${r.text}\n🕒 ${formattedTime}${repeatInfo}`;
                     await answerCallbackQuery(callbackQuery.id, popupAlertText, true);
                 }
             } else if (data.startsWith('edit:')) {
@@ -788,8 +804,7 @@ app.post('/webhook', async (req, res) => {
             if (resultId === 'show_reminders_dm') {
                 const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
                 const dashData = await getRemindersDashboardData(userId, userTz);
-                const welcomeText = `🌍 Timezone: <b>${userTz}</b>\n\n${dashData.text}`;
-                await sendOrUpdateDashboard(userId, welcomeText, dashData.keyboard);
+                await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
             } else if (parts.length >= 2 && parts[0] !== 'invalid_time') {
                 const timestamp = parseInt(parts[1], 10);
                 const wantRepeat = parts[2] === '1';
