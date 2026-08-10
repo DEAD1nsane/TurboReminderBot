@@ -9,8 +9,9 @@
   "dependencies": {
     "chrono-node": "^2.7.5",
     "express": "^4.19.2",
-    "luxon": "^3.4.4",
-    "pg": "^8.11.5",
-    "postgres": "^3.4.9"
+    "luxon": "^3.7.2",
+    "pg": "^8.23.0",
+    "postgres": "^3.4.9",
+    "telegraf": "^4.16.3"
   }
 }
