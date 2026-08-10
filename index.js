@@ -31,7 +31,7 @@ const isInternalHost = process.env.DATABASE_URL && process.env.DATABASE_URL.incl
 
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: isInternalHost ? false : (process.env.DATABASE_URL ? { rejectUnauthorized: false } : false),
+    ssl: isInternalHost ? false : (process.env.DATABASE_URL ? { rejectUnauthorized: true } : false),
     max: 5,
     idleTimeoutMillis: 10000,
     connectionTimeoutMillis: 5000
