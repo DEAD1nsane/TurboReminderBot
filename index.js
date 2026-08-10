@@ -46,10 +46,14 @@ async function initDb() {
             user_id BIGINT PRIMARY KEY,
             timezone TEXT NOT NULL DEFAULT 'America/Chicago',
             active_menu_msg_id BIGINT DEFAULT NULL,
-            pending_edit TEXT DEFAULT NULL
+            pending_edit TEXT DEFAULT NULL,
+            trigger_msg_id BIGINT DEFAULT NULL,
+            collapse_at TIMESTAMP WITH TIME ZONE DEFAULT NULL
         );
         ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS active_menu_msg_id BIGINT DEFAULT NULL;
         ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS pending_edit TEXT DEFAULT NULL;
+        ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS trigger_msg_id BIGINT DEFAULT NULL;
+        ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS collapse_at TIMESTAMP WITH TIME ZONE DEFAULT NULL;
         CREATE TABLE IF NOT EXISTS reminders (
             id SERIAL PRIMARY KEY,
             user_id BIGINT NOT NULL,
@@ -104,14 +108,15 @@ async function getActiveMenuMsgId(userId) {
     }
 }
 
-async function setActiveMenuMsgId(userId, msgId) {
+async function setActiveMenuMsgId(userId, msgId, triggerMsgId = null) {
     if (!process.env.DATABASE_URL) return;
     try {
+        const collapseAt = msgId ? new Date(Date.now() + 30000) : null;
         await pool.query(
-            `INSERT INTO user_settings (user_id, active_menu_msg_id) 
-             VALUES ($1, $2) 
-             ON CONFLICT (user_id) DO UPDATE SET active_menu_msg_id = $2`,
-            [userId, msgId]
+            `INSERT INTO user_settings (user_id, active_menu_msg_id, trigger_msg_id, collapse_at) 
+             VALUES ($1, $2, $3, $4) 
+             ON CONFLICT (user_id) DO UPDATE SET active_menu_msg_id = $2, trigger_msg_id = COALESCE($3, user_settings.trigger_msg_id), collapse_at = $4`,
+            [userId, msgId, triggerMsgId, collapseAt]
         );
     } catch (err) {
         console.error('Error setting active menu msg id:', err);
@@ -251,30 +256,6 @@ async function getRemindersDashboardData(userId, userTz) {
     }
 }
 
-let activeTimers = {};
-
-function startCollapseTimer(userId, msgId, triggerMsgId = null) {
-    if (activeTimers[userId]) {
-        clearTimeout(activeTimers[userId]);
-        delete activeTimers[userId];
-    }
-    if (!msgId) return;
-
-    activeTimers[userId] = setTimeout(async () => {
-        try {
-            await editTelegramMessage(userId, msgId, '🤖 Reminder Bot Active', null);
-            await setActiveMenuMsgId(userId, null);
-            if (triggerMsgId) {
-                await deleteTelegramMessage(userId, triggerMsgId);
-            }
-        } catch (err) {
-            console.error('Error auto-collapsing message:', err);
-        } finally {
-            delete activeTimers[userId];
-        }
-    }, 30000);
-}
-
 async function sendOrUpdateDashboard(userId, text, markup, triggerMsgId = null) {
     const existingMsgId = await getActiveMenuMsgId(userId);
     let targetMsgId = null;
@@ -283,27 +264,43 @@ async function sendOrUpdateDashboard(userId, text, markup, triggerMsgId = null) 
         const success = await editTelegramMessage(userId, existingMsgId, text, markup);
         if (success) {
             targetMsgId = existingMsgId;
+            await setActiveMenuMsgId(userId, targetMsgId, triggerMsgId);
         } else {
             await deleteTelegramMessage(userId, existingMsgId);
             const newMsg = await sendTelegramMessage(userId, text, markup);
             if (newMsg) {
                 targetMsgId = newMsg.message_id;
-                await setActiveMenuMsgId(userId, targetMsgId);
+                await setActiveMenuMsgId(userId, targetMsgId, triggerMsgId);
             }
         }
     } else {
         const newMsg = await sendTelegramMessage(userId, text, markup);
         if (newMsg) {
             targetMsgId = newMsg.message_id;
-            await setActiveMenuMsgId(userId, targetMsgId);
+            await setActiveMenuMsgId(userId, targetMsgId, triggerMsgId);
         }
     }
-
-    startCollapseTimer(userId, targetMsgId, triggerMsgId);
 }
 
 setInterval(async () => {
     if (!process.env.DATABASE_URL) return;
+
+    try {
+        const activeMenus = await pool.query('SELECT user_id, active_menu_msg_id, trigger_msg_id FROM user_settings WHERE collapse_at IS NOT NULL AND collapse_at <= CURRENT_TIMESTAMP');
+        for (const row of activeMenus.rows) {
+            const { user_id, active_menu_msg_id, trigger_msg_id } = row;
+            if (active_menu_msg_id) {
+                await editTelegramMessage(user_id, active_menu_msg_id, '🤖 Reminder Bot Active', null);
+            }
+            if (trigger_msg_id) {
+                await deleteTelegramMessage(user_id, trigger_msg_id);
+            }
+            await pool.query('UPDATE user_settings SET active_menu_msg_id = NULL, trigger_msg_id = NULL, collapse_at = NULL WHERE user_id = $1', [user_id]);
+        }
+    } catch (err) {
+        if (!err.message?.includes('Connection terminated')) console.error('Error auto-collapsing menus:', err);
+    }
+
     try {
         const res = await pool.query('SELECT * FROM reminders WHERE remind_at <= CURRENT_TIMESTAMP AND sent = FALSE');
         for (const reminder of res.rows) {
@@ -407,7 +404,6 @@ app.post('/webhook', async (req, res) => {
             let userTz = (await getUserTimezone(userId)) || 'America/Chicago';
 
             await setActiveMenuMsgId(userId, messageId);
-            startCollapseTimer(userId, messageId);
 
             if (data.startsWith('settz:')) {
                 const tz = data.replace('settz:', '');
