@@ -108,8 +108,8 @@ async function setActiveMenuMsgId(userId, msgId) {
     if (!process.env.DATABASE_URL) return;
     try {
         await pool.query(
-            `INSERT INTO user_settings (user_id, timezone, active_menu_msg_id) 
-             VALUES ($1, 'America/Chicago', $2) 
+            `INSERT INTO user_settings (user_id, active_menu_msg_id) 
+             VALUES ($1, $2) 
              ON CONFLICT (user_id) DO UPDATE SET active_menu_msg_id = $2`,
             [userId, msgId]
         );
@@ -132,8 +132,8 @@ async function setPendingEdit(userId, pendingStr) {
     if (!process.env.DATABASE_URL) return;
     try {
         await pool.query(
-            `INSERT INTO user_settings (user_id, timezone, pending_edit) 
-             VALUES ($1, 'America/Chicago', $2) 
+            `INSERT INTO user_settings (user_id, pending_edit) 
+             VALUES ($1, $2) 
              ON CONFLICT (user_id) DO UPDATE SET pending_edit = $2`,
             [userId, pendingStr]
         );
