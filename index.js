@@ -48,18 +48,18 @@ async function initDb() {
             active_menu_msg_id BIGINT DEFAULT NULL,
             pending_edit TEXT DEFAULT NULL,
             trigger_msg_id BIGINT DEFAULT NULL,
-            collapse_at TIMESTAMP WITH TIME ZONE DEFAULT NULL
+            collapse_at TIMESTAMPTZ DEFAULT NULL
         );
         ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS active_menu_msg_id BIGINT DEFAULT NULL;
         ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS pending_edit TEXT DEFAULT NULL;
         ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS trigger_msg_id BIGINT DEFAULT NULL;
-        ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS collapse_at TIMESTAMP WITH TIME ZONE DEFAULT NULL;
+        ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS collapse_at TIMESTAMPTZ DEFAULT NULL;
         CREATE TABLE IF NOT EXISTS reminders (
             id SERIAL PRIMARY KEY,
             user_id BIGINT NOT NULL,
             chat_id BIGINT,
             text TEXT NOT NULL,
-            remind_at TIMESTAMP WITH TIME ZONE NOT NULL,
+            remind_at TIMESTAMPTZ NOT NULL,
             sent BOOLEAN DEFAULT FALSE,
             recurring TEXT DEFAULT NULL,
             total_occurrences INT DEFAULT NULL,
@@ -115,7 +115,7 @@ async function setActiveMenuMsgId(userId, msgId, triggerMsgId = null) {
         await pool.query(
             `INSERT INTO user_settings (user_id, active_menu_msg_id, trigger_msg_id, collapse_at) 
              VALUES ($1, $2, $3, $4) 
-             ON CONFLICT (user_id) DO UPDATE SET active_menu_msg_id = $2, trigger_msg_id = COALESCE($3, user_settings.trigger_msg_id), collapse_at = EXCLUDED.collapse_at`,
+             ON CONFLICT (user_id) DO UPDATE SET active_menu_msg_id = $2, trigger_msg_id = COALESCE($3, user_settings.trigger_msg_id), collapse_at = $4`,
             [userId, msgId, triggerMsgId, collapseAt]
         );
     } catch (err) {
@@ -431,8 +431,8 @@ app.post('/webhook', async (req, res) => {
                     const r = result.rows[0];
                     const dt = DateTime.fromJSDate(new Date(r.remind_at)).setZone(userTz);
                     const formattedTime = dt.toFormat("LLL d, yyyy 'at' h:mm a");
-                    let repeatInfo = r.recurring ? `\n🔄 Repeat: ${formatRepeatText(r.recurring)}${r.total_occurrences ? ` (${r.current_occurrence || 0}/${r.total_occurrences})` : ''}` : '';
-                    await answerCallbackQuery(callbackQuery.id, `🔔 ${r.text}\n🕒 ${formattedTime}\n━━━━━━━━━━━━━━━━━━${repeatInfo}`, true);
+                    let repeatInfo = r.recurring ? `\n━━━━━━━━━━━━━━━━━━\n🔄 Repeat: ${formatRepeatText(r.recurring)}${r.total_occurrences ? ` (${r.current_occurrence || 0}/${r.total_occurrences})` : ''}` : '';
+                    await answerCallbackQuery(callbackQuery.id, `🔔 ${r.text}\n━━━━━━━━━━━━━━━━━━\n🕒 ${formattedTime}${repeatInfo}`, true);
                 }
             } else if (data.startsWith('edit:')) {
                 const reminderId = data.replace('edit:', '');
@@ -514,7 +514,7 @@ app.post('/webhook', async (req, res) => {
                         id: `custom:${parsed.date.getTime()}:${parsed.wantRepeatMenu ? '1' : '0'}:${parsed.reminderText}`,
                         title: `🔔 Remind: "${parsed.reminderText}"`,
                         description: `Scheduled for: ${dt.toFormat('ff')}`,
-                        input_message_content: { message_text: `⏳ Creating reminder... (Check DM)` }
+                        input_message_content: { message_text: `⏳ Creating reminder...` }
                     });
                 } else {
                     results.push({
