@@ -537,7 +537,11 @@ setInterval(async () => {
         for (const row of res.rows) {
             if (row.collapse_epoch && row.collapse_epoch <= nowSec) {
                 if (row.active_menu_msg_id) {
-                    try { await editTelegramMessage(row.user_id, row.active_menu_msg_id, "🤖 Reminder Bot Active", null); } catch(e) {}
+                    try {
+                        await deleteTelegramMessage(row.user_id, row.active_menu_msg_id);
+                    } catch (e) {
+                        console.error("Dashboard cleanup failed:", e);
+                    }
                 }
                 if (row.trigger_msg_id) {
                     try { await deleteTelegramMessage(row.user_id, row.trigger_msg_id); } catch(e) {}
