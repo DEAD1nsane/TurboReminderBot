@@ -367,7 +367,7 @@ app.post('/webhook', async (req, res) => {
                 const existingTz = await getUserTimezone(userId);
                 if (existingTz) {
                     const dashData = await getRemindersDashboardData(userId, existingTz);
-                    const welcomeText = `🌍 Timezone: <b>${existingTz}</b>\n\n${dashData.text}`;
+                    const welcomeText = dashData.text;
                     await sendOrUpdateDashboard(userId, welcomeText, dashData.keyboard);
                 } else {
                     await sendTelegramMessage(userId, '👋 Welcome! Please select your primary timezone:', getTimezonePickerKeyboard());
