@@ -2,6 +2,20 @@ const express = require('express');
 const chrono = require('chrono-node');
 const { DateTime } = require('luxon');
 const { Pool } = require('pg');
+const { 
+    formatRepeatText, 
+    getTimezonePickerKeyboard, 
+    getEditMenuKeyboard, 
+    getUnitMenuKeyboard, 
+    getNumberMenuKeyboard, 
+    getLimitMenuKeyboard 
+} = require('./keyboards');
+const { 
+    sendTelegramMessage, 
+    editTelegramMessage, 
+    deleteTelegramMessage, 
+    answerCallbackQuery 
+} = require('./telegram');
 
 const app = express();
 app.use(express.json());
@@ -10,13 +24,8 @@ const PORT = process.env.PORT || 8080;
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const OWNER_ID = 6293437261;
 
-app.get('/', (req, res) => {
-    res.status(200).send('OK');
-});
-
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server listening on port ${PORT}`);
-});
+app.get('/', (req, res) => res.status(200).send('OK'));
+app.listen(PORT, '0.0.0.0', () => console.log(`Server listening on port ${PORT}`));
 
 const isInternalHost = process.env.DATABASE_URL && process.env.DATABASE_URL.includes('railway.internal');
 
@@ -28,15 +37,10 @@ const pool = new Pool({
     connectionTimeoutMillis: 5000
 });
 
-pool.on('error', (err) => {
-    console.error('Unexpected Postgres pool error:', err);
-});
+pool.on('error', (err) => console.error('Unexpected Postgres pool error:', err));
 
 async function initDb() {
-    if (!process.env.DATABASE_URL) {
-        console.warn('DATABASE_URL is missing!');
-        return;
-    }
+    if (!process.env.DATABASE_URL) return console.warn('DATABASE_URL is missing!');
     const query = `
         CREATE TABLE IF NOT EXISTS user_settings (
             user_id BIGINT PRIMARY KEY,
@@ -73,7 +77,6 @@ async function getUserTimezone(userId) {
         const res = await pool.query('SELECT timezone FROM user_settings WHERE user_id = $1', [userId]);
         return res.rows.length > 0 ? res.rows[0].timezone : 'America/Chicago';
     } catch (err) {
-        console.error('Error fetching user timezone:', err);
         return 'America/Chicago';
     }
 }
@@ -82,8 +85,7 @@ async function setUserTimezone(userId, tz) {
     if (!process.env.DATABASE_URL) return;
     try {
         await pool.query(
-            `INSERT INTO user_settings (user_id, timezone) 
-             VALUES ($1, $2) 
+            `INSERT INTO user_settings (user_id, timezone) VALUES ($1, $2) 
              ON CONFLICT (user_id) DO UPDATE SET timezone = $2`,
             [userId, tz]
         );
@@ -138,16 +140,6 @@ async function setPendingEdit(userId, pendingStr) {
     } catch (err) {
         console.error('Error setting pending edit:', err);
     }
-}
-
-function formatRepeatText(rec) {
-    if (!rec) return 'None';
-    const [type, num] = rec.split(':');
-    if (type === 'daily' || type === 'days') return num === '1' ? 'Daily' : `Every ${num} Days`;
-    if (type === 'weekly' || type === 'weeks') return num === '1' ? 'Weekly' : `Every ${num} Weeks`;
-    if (type === 'monthly' || type === 'months') return num === '1' ? 'Monthly' : `Every ${num} Months`;
-    if (type === 'hourly' || type === 'hours') return num === '1' ? 'Hourly' : `Every ${num} Hours`;
-    return `${type} ${num}`;
 }
 
 function calculateNextOccurrence(currentDate, recurringStr, timeZone) {
@@ -225,83 +217,12 @@ function parseFlexibleDate(text, timeZone) {
             }
         }
 
-        const reminderText = clean.replace(parsedResult.text, '').trim() || clean;
+        let reminderText = clean.replace(parsedResult.text, '').trim();
+        if (!reminderText) reminderText = 'Reminder';
+
         return { date: dt.toJSDate(), reminderText: reminderText, wantRepeatMenu };
     }
     return null;
-}
-
-async function sendTelegramMessage(chatId, text, replyMarkup = null, autoDeleteMs = null) {
-    const url = `https://api.telegram.org/bot${TOKEN}/sendMessage`;
-    const payload = { chat_id: chatId, text: text, parse_mode: 'HTML' };
-    if (replyMarkup) payload.reply_markup = replyMarkup;
-
-    try {
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-        const data = await response.json();
-        
-        if (data.ok && data.result) {
-            const messageId = data.result.message_id;
-            if (autoDeleteMs) {
-                setTimeout(() => {
-                    deleteTelegramMessage(chatId, messageId);
-                }, autoDeleteMs);
-            }
-            return data.result;
-        }
-    } catch (err) {
-        console.error('Error sending message:', err);
-    }
-    return null;
-}
-
-async function editTelegramMessage(chatId, messageId, text, replyMarkup = null) {
-    const url = `https://api.telegram.org/bot${TOKEN}/editMessageText`;
-    const payload = { chat_id: chatId, message_id: messageId, text: text, parse_mode: 'HTML' };
-    if (replyMarkup !== undefined) payload.reply_markup = replyMarkup;
-
-    try {
-        const res = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-        const data = await res.json();
-        return data.ok;
-    } catch (err) {
-        console.error('Error editing message:', err);
-        return false;
-    }
-}
-
-async function deleteTelegramMessage(chatId, messageId) {
-    const url = `https://api.telegram.org/bot${TOKEN}/deleteMessage`;
-    try {
-        await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chat_id: chatId, message_id: messageId })
-        });
-    } catch (err) {
-        console.error('Error deleting message:', err);
-    }
-}
-
-async function answerCallbackQuery(callbackQueryId, text = '', showAlert = false) {
-    const url = `https://api.telegram.org/bot${TOKEN}/answerCallbackQuery`;
-    try {
-        await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ callback_query_id: callbackQueryId, text: text, show_alert: showAlert })
-        });
-    } catch (err) {
-        console.error('Error answering callback query:', err);
-    }
 }
 
 async function getRemindersDashboardData(userId, userTz) {
@@ -314,138 +235,20 @@ async function getRemindersDashboardData(userId, userTz) {
             };
         }
 
-        let buttons = [];
-
-        res.rows.forEach(r => {
-            let statusIcon = '';
-            if (r.recurring) {
-                statusIcon = r.total_occurrences ? '🔢 ' : '🔄 ';
-            }
-
-            buttons.push([
+        let buttons = res.rows.map(r => {
+            let statusIcon = r.recurring ? (r.total_occurrences ? '🔢 ' : '🔄 ') : '';
+            return [
                 { text: `${statusIcon}${r.text}`, callback_data: `view:${r.id}` },
                 { text: '✏️ Edit', callback_data: `edit:${r.id}` },
                 { text: '❌ Del', callback_data: `del:${r.id}` }
-            ]);
+            ];
         });
 
-        return {
-            text: '📋 <b>Your Active Reminders:</b>',
-            keyboard: { inline_keyboard: buttons }
-        };
+        return { text: '📋 <b>Your Active Reminders:</b>', keyboard: { inline_keyboard: buttons } };
     } catch (err) {
         console.error('Error fetching reminders for dashboard:', err);
-        return {
-            text: '⚠️ Error loading reminders.',
-            keyboard: { inline_keyboard: [[{ text: '⚠️ Error loading reminders', callback_data: 'noop' }]] }
-        };
+        return { text: '⚠️ Error loading reminders.', keyboard: { inline_keyboard: [[{ text: '⚠️ Error loading reminders', callback_data: 'noop' }]] } };
     }
-}
-
-function getTimezonePickerKeyboard() {
-    return {
-        inline_keyboard: [
-            [
-                { text: '🇺🇸 Eastern (EST/EDT)', callback_data: 'settz:America/New_York' },
-                { text: '🇺🇸 Central (CST/CDT)', callback_data: 'settz:America/Chicago' }
-            ],
-            [
-                { text: '🇺🇸 Mountain (MST/MDT)', callback_data: 'settz:America/Denver' },
-                { text: '🇺🇸 Pacific (PST/PDT)', callback_data: 'settz:America/Los_Angeles' }
-            ],
-            [
-                { text: '🇬🇧 London (GMT/BST)', callback_data: 'settz:Europe/London' },
-                { text: '🇪🇺 Central Europe (CET)', callback_data: 'settz:Europe/Paris' }
-            ],
-            [
-                { text: '🌐 UTC', callback_data: 'settz:UTC' }
-            ]
-        ]
-    };
-}
-
-function getEditMenuKeyboard(reminderId, currentRecurring, totalOccurrences) {
-    const recType = formatRepeatText(currentRecurring);
-    const limitLabel = totalOccurrences ? `${totalOccurrences}x` : 'Forever';
-
-    return {
-        inline_keyboard: [
-            [
-                { text: '📝 Edit Note/Text', callback_data: `prompt_edit_text:${reminderId}` },
-                { text: '🕒 Edit Time/Date', callback_data: `prompt_edit_time:${reminderId}` }
-            ],
-            [
-                { text: currentRecurring === null ? '✅ None' : 'None', callback_data: `setrec:${reminderId}:none` },
-                { text: currentRecurring === 'daily:1' ? '✅ Daily' : 'Daily', callback_data: `setrec:${reminderId}:daily:1` }
-            ],
-            [
-                { text: currentRecurring === 'weekly:1' ? '✅ Weekly' : 'Weekly', callback_data: `setrec:${reminderId}:weekly:1` },
-                { text: currentRecurring === 'monthly:1' ? '✅ Monthly' : 'Monthly', callback_data: `setrec:${reminderId}:monthly:1` }
-            ],
-            [
-                { text: `⚙️ Custom Interval (${recType})`, callback_data: `unitmenu:${reminderId}` },
-                { text: `🔁 Repeat Limit (${limitLabel})`, callback_data: `limitmenu:${reminderId}` }
-            ],
-            [
-                { text: '⬅️ Back to Reminders', callback_data: 'menu:list' }
-            ]
-        ]
-    };
-}
-
-function getUnitMenuKeyboard(reminderId) {
-    return {
-        inline_keyboard: [
-            [
-                { text: '⏱️ Hours', callback_data: `nummenu:${reminderId}:hours` },
-                { text: '📅 Days', callback_data: `nummenu:${reminderId}:days` }
-            ],
-            [
-                { text: '🗓️ Weeks', callback_data: `nummenu:${reminderId}:weeks` },
-                { text: '📆 Months', callback_data: `nummenu:${reminderId}:months` }
-            ],
-            [
-                { text: '⬅️ Back to Edit', callback_data: `edit:${reminderId}` }
-            ]
-        ]
-    };
-}
-
-function getNumberMenuKeyboard(reminderId, unit) {
-    const nums = [2, 3, 4, 5, 6, 8, 10, 12, 14, 21, 30];
-    let buttons = [];
-    let row = [];
-
-    nums.forEach((n, idx) => {
-        row.push({ text: `${n}`, callback_data: `setrec:${reminderId}:${unit}:${n}` });
-        if (row.length === 4 || idx === nums.length - 1) {
-            buttons.push(row);
-            row = [];
-        }
-    });
-
-    buttons.push([{ text: '⬅️ Back to Units', callback_data: `unitmenu:${reminderId}` }]);
-    return { inline_keyboard: buttons };
-}
-
-function getLimitMenuKeyboard(reminderId, totalOccurrences) {
-    const current = totalOccurrences || 0;
-    const limits = [0, 2, 3, 5, 10, 15, 20, 30, 50, 100];
-    let buttons = [];
-    let row = [];
-
-    limits.forEach((val, idx) => {
-        const label = val === 0 ? 'Forever' : `${val}x`;
-        const activeTag = current === val ? `✅ ${label}` : label;
-        row.push({ text: activeTag, callback_data: `setlimit:${reminderId}:${val}` });
-        if (row.length === 3 || idx === limits.length - 1) {
-            buttons.push(row);
-            row = [];
-        }
-    });
-
-    buttons.push([{ text: '⬅️ Back to Edit', callback_data: `edit:${reminderId}` }]);
-    return { inline_keyboard: buttons };
 }
 
 let activeTimers = {};
@@ -503,19 +306,10 @@ setInterval(async () => {
             const newCount = (reminder.current_occurrence || 0) + 1;
             const userTz = (await getUserTimezone(reminder.user_id)) || 'America/Chicago';
             const dt = DateTime.fromJSDate(new Date(reminder.remind_at)).setZone(userTz);
-            const formattedTime = dt.toFormat('LLL d, yyyy at h:mm a');
+            const formattedTime = dt.toFormat("LLL d, yyyy 'at' h:mm a");
 
-            let headerIcon = '';
-            let progressFooter = '';
-
-            if (reminder.recurring) {
-                if (reminder.total_occurrences) {
-                    headerIcon = ' 🔢';
-                    progressFooter = `\n🔢 ${newCount} of ${reminder.total_occurrences}`;
-                } else {
-                    headerIcon = ' 🔄';
-                }
-            }
+            let headerIcon = reminder.recurring ? (reminder.total_occurrences ? ' 🔢' : ' 🔄') : '';
+            let progressFooter = (reminder.recurring && reminder.total_occurrences) ? `\n🔢 ${newCount} of ${reminder.total_occurrences}` : '';
 
             const alertText = `🔔 <b>Reminder Alert${headerIcon}</b>\n━━━━━━━━━━━━━━━━━━\n\n📝 <b>${reminder.text}</b>\n🕒 <i>${formattedTime}</i>${progressFooter}`;
 
@@ -529,20 +323,13 @@ setInterval(async () => {
             }
         }
     } catch (err) {
-        if (err.code === 'ECONNRESET' || (err.message && err.message.includes('Connection terminated'))) {
-            console.warn('Postgres connection resetting, retrying next cycle...');
-        } else {
-            console.error('Error checking scheduled reminders:', err);
-        }
+        if (!err.message?.includes('Connection terminated')) console.error('Error checking scheduled reminders:', err);
     }
 }, 3000);
 
 app.post('/webhook', async (req, res) => {
     try {
-        const message = req.body.message;
-        const callbackQuery = req.body.callback_query;
-        const inlineQuery = req.body.inline_query;
-        const chosenResult = req.body.chosen_inline_result;
+        const { message, callback_query: callbackQuery, inline_query: inlineQuery, chosen_inline_result: chosenResult } = req.body;
 
         if (message && message.text) {
             const userId = message.from.id;
@@ -552,9 +339,7 @@ app.post('/webhook', async (req, res) => {
 
             const pendingEdit = await getPendingEdit(userId);
             if (pendingEdit) {
-                const parts = pendingEdit.split(':');
-                const field = parts[0];
-                const reminderId = parts[1];
+                const [field, reminderId] = pendingEdit.split(':');
                 const userTz = await getUserTimezone(userId);
 
                 if (field === 'text') {
@@ -565,7 +350,7 @@ app.post('/webhook', async (req, res) => {
                     if (parsed) {
                         await pool.query('UPDATE reminders SET remind_at = $1 WHERE id = $2 AND user_id = $3', [parsed.date, reminderId, userId]);
                         const localDt = DateTime.fromJSDate(parsed.date).setZone(userTz);
-                        await sendTelegramMessage(userId, `✅ Reminder time updated to: <i>${localDt.toFormat('LLL d, yyyy, h:mm a')}</i>`, null, 5000);
+                        await sendTelegramMessage(userId, `✅ Reminder time updated to: <i>${localDt.toFormat("LLL d, yyyy 'at' h:mm a")}</i>`, null, 5000);
                     } else {
                         await sendTelegramMessage(userId, '⚠️ Could not parse new time. Please try again or tap Cancel.', null, 5000);
                         return res.sendStatus(200);
@@ -590,17 +375,11 @@ app.post('/webhook', async (req, res) => {
                 return res.sendStatus(200);
             }
 
-            if (text.startsWith('/delete') || text.startsWith('/del')) {
-                if (userId === OWNER_ID) {
-                    const replyMsg = message.reply_to_message;
-                    if (replyMsg && replyMsg.from && replyMsg.from.is_bot) {
-                        try {
-                            await deleteTelegramMessage(chatId, replyMsg.message_id);
-                            await deleteTelegramMessage(chatId, msgId);
-                        } catch (delErr) {
-                            console.error('Error deleting message:', delErr);
-                        }
-                    }
+            if ((text.startsWith('/delete') || text.startsWith('/del')) && userId === OWNER_ID) {
+                const replyMsg = message.reply_to_message;
+                if (replyMsg?.from?.is_bot) {
+                    await deleteTelegramMessage(chatId, replyMsg.message_id);
+                    await deleteTelegramMessage(chatId, msgId);
                 }
                 return res.sendStatus(200);
             }
@@ -609,11 +388,7 @@ app.post('/webhook', async (req, res) => {
             const parsed = parseFlexibleDate(text, userTz);
 
             if (parsed) {
-                await pool.query(
-                    'INSERT INTO reminders (user_id, chat_id, text, remind_at) VALUES ($1, $2, $3, $4)',
-                    [userId, chatId, parsed.reminderText, parsed.date]
-                );
-
+                await pool.query('INSERT INTO reminders (user_id, chat_id, text, remind_at) VALUES ($1, $2, $3, $4)', [userId, chatId, parsed.reminderText, parsed.date]);
                 const dashData = await getRemindersDashboardData(userId, userTz);
                 await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
             }
@@ -634,8 +409,7 @@ app.post('/webhook', async (req, res) => {
                 await setUserTimezone(userId, tz);
                 await answerCallbackQuery(callbackQuery.id, `✅ Timezone saved: ${tz}`, true);
                 const dashData = await getRemindersDashboardData(userId, tz);
-                const welcomeText = `🌍 Timezone set to <b>${tz}</b>.\n\n${dashData.text}`;
-                await sendOrUpdateDashboard(userId, welcomeText, dashData.keyboard);
+                await sendOrUpdateDashboard(userId, `🌍 Timezone set to <b>${tz}</b>.\n\n${dashData.text}`, dashData.keyboard);
             } else if (data === 'noop') {
                 await answerCallbackQuery(callbackQuery.id);
             } else if (data === 'menu:list') {
@@ -644,10 +418,7 @@ app.post('/webhook', async (req, res) => {
                 const dashData = await getRemindersDashboardData(userId, userTz);
                 await editTelegramMessage(chatId, messageId, dashData.text, dashData.keyboard);
                 
-                if (activeTimers[userId]) {
-                    clearTimeout(activeTimers[userId]);
-                    delete activeTimers[userId];
-                }
+                if (activeTimers[userId]) clearTimeout(activeTimers[userId]);
                 activeTimers[userId] = setTimeout(async () => {
                     await editTelegramMessage(userId, messageId, '🤖 Reminder Bot Active', null);
                     await setActiveMenuMsgId(userId, null);
@@ -665,17 +436,9 @@ app.post('/webhook', async (req, res) => {
                 if (result.rows.length > 0) {
                     const r = result.rows[0];
                     const dt = DateTime.fromJSDate(new Date(r.remind_at)).setZone(userTz);
-                    const formattedTime = dt.toFormat('LLL d, yyyy, h:mm a');
-
-                    let repeatInfo = '';
-                    if (r.recurring) {
-                        let repStr = formatRepeatText(r.recurring);
-                        if (r.total_occurrences) repStr += ` (${r.current_occurrence || 0}/${r.total_occurrences})`;
-                        repeatInfo = `\n🔄 Repeat: ${repStr}`;
-                    }
-
-                    const popupAlertText = `🔔 ${r.text}\n🕒 ${formattedTime}${repeatInfo}`;
-                    await answerCallbackQuery(callbackQuery.id, popupAlertText, true);
+                    const formattedTime = dt.toFormat("LLL d, yyyy 'at' h:mm a");
+                    let repeatInfo = r.recurring ? `\n🔄 Repeat: ${formatRepeatText(r.recurring)}${r.total_occurrences ? ` (${r.current_occurrence || 0}/${r.total_occurrences})` : ''}` : '';
+                    await answerCallbackQuery(callbackQuery.id, `🔔 ${r.text}\n🕒 ${formattedTime}${repeatInfo}`, true);
                 }
             } else if (data.startsWith('edit:')) {
                 const reminderId = data.replace('edit:', '');
@@ -683,31 +446,24 @@ app.post('/webhook', async (req, res) => {
                 if (result.rows.length > 0) {
                     await answerCallbackQuery(callbackQuery.id);
                     const r = result.rows[0];
-                    const keyboard = getEditMenuKeyboard(reminderId, r.recurring, r.total_occurrences);
-                    await editTelegramMessage(chatId, messageId, `✏️ Editing Reminder: "<b>${r.text}</b>"\n━━━━━━━━━━━━━━━━━━\nSelect options below:`, keyboard);
+                    await editTelegramMessage(chatId, messageId, `✏️ Editing Reminder: "<b>${r.text}</b>"\n━━━━━━━━━━━━━━━━━━\nSelect options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occurrences));
                 }
             } else if (data.startsWith('prompt_edit_text:')) {
                 const reminderId = data.replace('prompt_edit_text:', '');
                 await setPendingEdit(userId, `text:${reminderId}`);
-                await editTelegramMessage(chatId, messageId, `📝 <b>Please type the new note/text for this reminder:</b>\n━━━━━━━━━━━━━━━━━━`, {
-                    inline_keyboard: [[{ text: '⬅️ Cancel', callback_data: `edit:${reminderId}` }]]
-                });
+                await editTelegramMessage(chatId, messageId, `📝 <b>Please type the new note/text for this reminder:</b>\n━━━━━━━━━━━━━━━━━━`, { inline_keyboard: [[{ text: '⬅️ Cancel', callback_data: `edit:${reminderId}` }]] });
                 await answerCallbackQuery(callbackQuery.id);
             } else if (data.startsWith('prompt_edit_time:')) {
                 const reminderId = data.replace('prompt_edit_time:', '');
                 await setPendingEdit(userId, `time:${reminderId}`);
-                await editTelegramMessage(chatId, messageId, `🕒 <b>Please type the new time/date for this reminder:</b>\n<i>Example: tomorrow at 8am, 2h, or Aug 12 5pm</i>\n━━━━━━━━━━━━━━━━━━`, {
-                    inline_keyboard: [[{ text: '⬅️ Cancel', callback_data: `edit:${reminderId}` }]]
-                });
+                await editTelegramMessage(chatId, messageId, `🕒 <b>Please type the new time/date for this reminder:</b>\n<i>Example: tomorrow at 8am, 2h, or Aug 12 5pm</i>\n━━━━━━━━━━━━━━━━━━`, { inline_keyboard: [[{ text: '⬅️ Cancel', callback_data: `edit:${reminderId}` }]] });
                 await answerCallbackQuery(callbackQuery.id);
             } else if (data.startsWith('unitmenu:')) {
                 const reminderId = data.replace('unitmenu:', '');
                 await answerCallbackQuery(callbackQuery.id);
                 await editTelegramMessage(chatId, messageId, `⚙️ <b>Select Custom Interval Unit:</b>\n━━━━━━━━━━━━━━━━━━`, getUnitMenuKeyboard(reminderId));
             } else if (data.startsWith('nummenu:')) {
-                const parts = data.split(':');
-                const reminderId = parts[1];
-                const unit = parts[2];
+                const [, reminderId, unit] = data.split(':');
                 await answerCallbackQuery(callbackQuery.id);
                 await editTelegramMessage(chatId, messageId, `⚙️ <b>Select Every How Many ${unit.toUpperCase()}:</b>\n━━━━━━━━━━━━━━━━━━`, getNumberMenuKeyboard(reminderId, unit));
             } else if (data.startsWith('limitmenu:')) {
@@ -715,14 +471,10 @@ app.post('/webhook', async (req, res) => {
                 const result = await pool.query('SELECT total_occurrences FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
                 if (result.rows.length > 0) {
                     await answerCallbackQuery(callbackQuery.id);
-                    const keyboard = getLimitMenuKeyboard(reminderId, result.rows[0].total_occurrences);
-                    await editTelegramMessage(chatId, messageId, `🔁 <b>Select How Many Times to Repeat:</b>\n━━━━━━━━━━━━━━━━━━`, keyboard);
+                    await editTelegramMessage(chatId, messageId, `🔁 <b>Select How Many Times to Repeat:</b>\n━━━━━━━━━━━━━━━━━━`, getLimitMenuKeyboard(reminderId, result.rows[0].total_occurrences));
                 }
             } else if (data.startsWith('setrec:')) {
-                const parts = data.split(':');
-                const reminderId = parts[1];
-                const recType = parts[2];
-                const interval = parts[3] || '1';
+                const [, reminderId, recType, interval = '1'] = data.split(':');
                 const recurringVal = recType === 'none' ? null : `${recType}:${interval}`;
 
                 await pool.query('UPDATE reminders SET recurring = $1 WHERE id = $2 AND user_id = $3', [recurringVal, reminderId, userId]);
@@ -730,12 +482,10 @@ app.post('/webhook', async (req, res) => {
 
                 const result = await pool.query('SELECT total_occurrences FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
                 const totalOcc = result.rows.length > 0 ? result.rows[0].total_occurrences : null;
-                const keyboard = getEditMenuKeyboard(reminderId, recurringVal, totalOcc);
-                await editTelegramMessage(chatId, messageId, `✏️ Editing Reminder\n━━━━━━━━━━━━━━━━━━\nSelect options below:`, keyboard);
+                await editTelegramMessage(chatId, messageId, `✏️ Editing Reminder\n━━━━━━━━━━━━━━━━━━\nSelect options below:`, getEditMenuKeyboard(reminderId, recurringVal, totalOcc));
             } else if (data.startsWith('setlimit:')) {
-                const parts = data.split(':');
-                const reminderId = parts[1];
-                const count = parseInt(parts[2], 10);
+                const [, reminderId, countStr] = data.split(':');
+                const count = parseInt(countStr, 10);
                 const limitVal = count === 0 ? null : count;
 
                 await pool.query('UPDATE reminders SET total_occurrences = $1 WHERE id = $2 AND user_id = $3', [limitVal, reminderId, userId]);
@@ -743,15 +493,13 @@ app.post('/webhook', async (req, res) => {
 
                 const result = await pool.query('SELECT recurring FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
                 const currentRec = result.rows.length > 0 ? result.rows[0].recurring : null;
-                const keyboard = getEditMenuKeyboard(reminderId, currentRec, limitVal);
-                await editTelegramMessage(chatId, messageId, `✏️ Editing Reminder\n━━━━━━━━━━━━━━━━━━\nSelect options below:`, keyboard);
+                await editTelegramMessage(chatId, messageId, `✏️ Editing Reminder\n━━━━━━━━━━━━━━━━━━\nSelect options below:`, getEditMenuKeyboard(reminderId, currentRec, limitVal));
             }
         }
 
         if (inlineQuery) {
             const userId = inlineQuery.from.id;
             const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
-            const queryId = inlineQuery.id;
             const queryText = inlineQuery.query.trim();
             let results = [];
 
@@ -767,15 +515,12 @@ app.post('/webhook', async (req, res) => {
                 const parsed = parseFlexibleDate(queryText, userTz);
                 if (parsed) {
                     const dt = DateTime.fromJSDate(parsed.date).setZone(userTz);
-                    const flag = parsed.wantRepeatMenu ? '1' : '0';
                     results.push({
                         type: 'article',
-                        id: `custom:${parsed.date.getTime()}:${flag}:${parsed.reminderText}`,
+                        id: `custom:${parsed.date.getTime()}:${parsed.wantRepeatMenu ? '1' : '0'}:${parsed.reminderText}`,
                         title: `🔔 Remind: "${parsed.reminderText}"`,
                         description: `Scheduled for: ${dt.toFormat('ff')}`,
-                        input_message_content: {
-                            message_text: `⏳ Creating reminder... (Check DM)`
-                        }
+                        input_message_content: { message_text: `⏳ Creating reminder... (Check DM)` }
                     });
                 } else {
                     results.push({
@@ -791,7 +536,7 @@ app.post('/webhook', async (req, res) => {
             await fetch(`https://api.telegram.org/bot${TOKEN}/answerInlineQuery`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ inline_query_id: queryId, results: results, cache_time: 0 })
+                body: JSON.stringify({ inline_query_id: inlineQuery.id, results, cache_time: 0 })
             });
         }
 
@@ -814,15 +559,11 @@ app.post('/webhook', async (req, res) => {
                 const dt = DateTime.fromJSDate(remindAt).setZone(userTz);
 
                 if (process.env.DATABASE_URL) {
-                    const dbRes = await pool.query(
-                        'INSERT INTO reminders (user_id, chat_id, text, remind_at) VALUES ($1, $2, $3, $4) RETURNING id',
-                        [userId, chatId, text, remindAt]
-                    );
+                    const dbRes = await pool.query('INSERT INTO reminders (user_id, chat_id, text, remind_at) VALUES ($1, $2, $3, $4) RETURNING id', [userId, chatId, text, remindAt]);
                     const newId = dbRes.rows[0].id;
 
                     if (wantRepeat) {
-                        const keyboard = getEditMenuKeyboard(newId, null, null);
-                        await sendTelegramMessage(userId, `🔔 Reminder Created: "<b>${text}</b>"\nSet a repeat pattern below:`, keyboard, 10000);
+                        await sendTelegramMessage(userId, `🔔 Reminder Created: "<b>${text}</b>"\nSet a repeat pattern below:`, getEditMenuKeyboard(newId, null, null), 10000);
                     } else {
                         await sendTelegramMessage(userId, `🔔 Reminder set for: <b>${text}</b> (${dt.toFormat('ff')})`, null, 10000);
                     }
