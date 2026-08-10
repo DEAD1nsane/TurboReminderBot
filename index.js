@@ -253,7 +253,7 @@ async function getRemindersDashboardData(userId, userTz) {
 
 let activeTimers = {};
 
-function startCollapseTimer(userId, msgId) {
+function startCollapseTimer(userId, msgId, triggerMsgId = null) {
     if (activeTimers[userId]) {
         clearTimeout(activeTimers[userId]);
         delete activeTimers[userId];
@@ -264,6 +264,9 @@ function startCollapseTimer(userId, msgId) {
         try {
             await editTelegramMessage(userId, msgId, '🤖 Reminder Bot Active', null);
             await setActiveMenuMsgId(userId, null);
+            if (triggerMsgId) {
+                await deleteTelegramMessage(userId, triggerMsgId);
+            }
         } catch (err) {
             console.error('Error auto-collapsing message:', err);
         } finally {
@@ -272,7 +275,7 @@ function startCollapseTimer(userId, msgId) {
     }, 30000);
 }
 
-async function sendOrUpdateDashboard(userId, text, markup) {
+async function sendOrUpdateDashboard(userId, text, markup, triggerMsgId = null) {
     const existingMsgId = await getActiveMenuMsgId(userId);
     let targetMsgId = null;
 
@@ -296,7 +299,7 @@ async function sendOrUpdateDashboard(userId, text, markup) {
         }
     }
 
-    startCollapseTimer(userId, targetMsgId);
+    startCollapseTimer(userId, targetMsgId, triggerMsgId);
 }
 
 setInterval(async () => {
@@ -369,7 +372,7 @@ app.post('/webhook', async (req, res) => {
                 const existingTz = await getUserTimezone(userId);
                 if (existingTz) {
                     const dashData = await getRemindersDashboardData(userId, existingTz);
-                    await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
+                    await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard, msgId);
                 } else {
                     await sendTelegramMessage(userId, '👋 Welcome! Please select your primary timezone:', getTimezonePickerKeyboard());
                 }
@@ -391,7 +394,7 @@ app.post('/webhook', async (req, res) => {
             if (parsed) {
                 await pool.query('INSERT INTO reminders (user_id, chat_id, text, remind_at) VALUES ($1, $2, $3, $4)', [userId, chatId, parsed.reminderText, parsed.date]);
                 const dashData = await getRemindersDashboardData(userId, userTz);
-                await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
+                await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard, msgId);
             }
             return res.sendStatus(200);
         }
