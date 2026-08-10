@@ -360,6 +360,10 @@ app.post('/webhook', async (req, res) => {
                 }
 
                 await setPendingEdit(userId, null);
+                await deleteTelegramMessage(chatId, msgId);
+                const existingMenuId = await getActiveMenuMsgId(userId);
+                if (existingMenuId) await deleteTelegramMessage(userId, existingMenuId);
+                await setActiveMenuMsgId(userId, null);
                 const dashData = await getRemindersDashboardData(userId, userTz);
                 await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
                 return res.sendStatus(200);
