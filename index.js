@@ -352,7 +352,7 @@ app.post('/webhook', async (req, res) => {
             const parsed = parseFlexibleDate(text, userTz);
 
             if (parsed) {
-                await pool.query('INSERT INTO reminders (user_id, chat_id, text, remind_at) VALUES ($1, $2, $3, $4, 'America/Chicago')', [userId, chatId, parsed.reminderText, parsed.date]);
+        await pool.query('INSERT INTO reminders (user_id, chat_id, text, remind_at) VALUES ($1, $2, $3, $4)', [userId, chatId, parsed.reminderText, parsed.date]);
                 const dashData = await getRemindersDashboardData(userId, userTz);
                 await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard, msgId);
             }
@@ -516,7 +516,7 @@ app.post('/webhook', async (req, res) => {
                 const dt = DateTime.fromJSDate(remindAt).setZone(userTz);
 
                 if (process.env.DATABASE_URL) {
-                    const dbRes = await pool.query('INSERT INTO reminders (user_id, chat_id, text, remind_at) VALUES ($1, $2, $3, $4, 'America/Chicago') RETURNING id', [userId, chatId, text, remindAt]);
+        await pool.query('INSERT INTO reminders (user_id, chat_id, text, remind_at) VALUES ($1, $2, $3, $4)', [userId, chatId, parsed.reminderText, parsed.date]);
                     const newId = dbRes.rows[0].id;
 
                     if (wantRepeat) {
