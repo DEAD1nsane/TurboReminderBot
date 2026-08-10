@@ -113,8 +113,8 @@ async function setActiveMenuMsgId(userId, msgId, triggerMsgId = null) {
     try {
         const collapseAt = msgId ? new Date(Date.now() + 30000) : null;
         await pool.query(
-            `INSERT INTO user_settings (user_id, active_menu_msg_id, trigger_msg_id, collapse_at) 
-             VALUES ($1, $2, $3, $4) 
+            `INSERT INTO user_settings (user_id, active_menu_msg_id, trigger_msg_id, collapse_at, timezone) 
+             VALUES ($1, $2, $3, $4, 'America/Chicago') 
              ON CONFLICT (user_id) DO UPDATE SET active_menu_msg_id = $2, trigger_msg_id = COALESCE($3, user_settings.trigger_msg_id), collapse_at = $4`,
             [userId, msgId, triggerMsgId, collapseAt]
         );
@@ -347,7 +347,7 @@ app.post('/webhook', async (req, res) => {
             const parsed = parseFlexibleDate(text, userTz);
 
             if (parsed) {
-                await pool.query('INSERT INTO reminders (user_id, chat_id, text, remind_at) VALUES ($1, $2, $3, $4)', [userId, chatId, parsed.reminderText, parsed.date]);
+                await pool.query('INSERT INTO reminders (user_id, chat_id, text, remind_at) VALUES ($1, $2, $3, $4, 'America/Chicago')', [userId, chatId, parsed.reminderText, parsed.date]);
                 const dashData = await getRemindersDashboardData(userId, userTz);
                 await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard, msgId);
             }
@@ -511,7 +511,7 @@ app.post('/webhook', async (req, res) => {
                 const dt = DateTime.fromJSDate(remindAt).setZone(userTz);
 
                 if (process.env.DATABASE_URL) {
-                    const dbRes = await pool.query('INSERT INTO reminders (user_id, chat_id, text, remind_at) VALUES ($1, $2, $3, $4) RETURNING id', [userId, chatId, text, remindAt]);
+                    const dbRes = await pool.query('INSERT INTO reminders (user_id, chat_id, text, remind_at) VALUES ($1, $2, $3, $4, 'America/Chicago') RETURNING id', [userId, chatId, text, remindAt]);
                     const newId = dbRes.rows[0].id;
 
                     if (wantRepeat) {
