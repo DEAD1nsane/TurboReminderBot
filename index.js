@@ -532,10 +532,10 @@ app.post('/webhook', async (req, res) => {
 setInterval(async () => {
     if (!process.env.DATABASE_URL) return;
     try {
-        const res = await pool.query("SELECT user_id, active_menu_msg_id, trigger_msg_id, collapse_at FROM user_settings WHERE collapse_at IS NOT NULL");
-        const now = Date.now();
+        const res = await pool.query("SELECT user_id, active_menu_msg_id, trigger_msg_id, EXTRACT(EPOCH FROM collapse_at) as collapse_epoch FROM user_settings WHERE collapse_at IS NOT NULL");
+        const nowSec = Date.now() / 1000;
         for (const row of res.rows) {
-            if (row.collapse_at && new Date(row.collapse_at).getTime() <= now) {
+            if (row.collapse_epoch && row.collapse_epoch <= nowSec) {
                 if (row.active_menu_msg_id) {
                     try { await editTelegramMessage(row.user_id, row.active_menu_msg_id, "🤖 Reminder Bot Active", null); } catch(e) {}
                 }
@@ -545,5 +545,5 @@ setInterval(async () => {
                 await pool.query("UPDATE user_settings SET active_menu_msg_id = NULL, trigger_msg_id = NULL, collapse_at = NULL WHERE user_id = $1", [row.user_id]);
             }
         }
-    } catch(err) {}
+    } catch(err) { console.error("Collapse loop error:", err); }
 }, 3000);
