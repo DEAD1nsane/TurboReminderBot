@@ -1,7 +1,7 @@
 
 conschrono = require('chrono-node');
 cons
-{ DateTime } = require('luxon');
+const { DateTime } = require('luxon');
 const { Pool } = require('pg');
 const { 
     formatRepeatText, 
