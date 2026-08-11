@@ -1,3 +1,4 @@
+const chrono = require('chrono-node');
 const dmCollapseTimers = new Map();
 const pendingInlineEdits = new Set();
 const express = require('express');
