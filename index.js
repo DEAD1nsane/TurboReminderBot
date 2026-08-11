@@ -495,22 +495,22 @@ app.post('/webhook', async (req, res) => {
                 results.push({
                     type: 'article',
                     id: 'show_reminders_dm',
-                    thumbnail_url: 'https://em-content.zobj.net/source/microsoft-teams/337/incoming-envelope_1f4e8.png?v=2',
+                    thumbnail_url: 'https://em-content.zobj.net/source/microsoft-teams/337/envelope-with-arrow_1f838.png',
                     title: '📋 View Active Reminders (DM)',
                     description: 'Tap to view and manage your active reminders.',
-                    thumbnail_url: 'https://em-content.zobj.net/source/microsoft-teams/337/incoming-envelope_1f4e8.png?v=2',
+                    thumbnail_url: 'https://em-content.zobj.net/source/microsoft-teams/337/envelope-with-arrow_1f838.png',
                 input_message_content: { message_text: '📋 Requesting active reminders list...' }
                 });
                 results.push({
                     type: 'article',
                     id: 'show_reminders_inline',
-                    thumbnail_url: 'https://em-content.zobj.net/source/microsoft-teams/337/speaking-head_1f5e3-fe0f.png?v=2',
+                    thumbnail_url: 'https://em-content.zobj.net/source/microsoft-teams/337/left-speech-bubble_1f5e8-fe0f.png',
                     reply_markup: {
                         inline_keyboard: [[{ text: '⏳ Loading...', callback_data: 'noop' }]]
                     },
                     title: '📋 View Active Reminders (Inline)',
                     description: 'Posts active reminders in chat, collapses in 30s',
-                    thumbnail_url: 'https://em-content.zobj.net/source/microsoft-teams/337/incoming-envelope_1f4e8.png?v=2',
+                    thumbnail_url: 'https://em-content.zobj.net/source/microsoft-teams/337/envelope-with-arrow_1f838.png',
                     input_message_content: { message_text: '📋 *Fetching active reminders...* ', parse_mode: 'Markdown' },
                     reply_markup: {
                         inline_keyboard: [[{ text: '⏳ Loading...', callback_data: 'noop' }]]
