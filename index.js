@@ -445,6 +445,7 @@ app.post('/webhook', async (req, res) => {
                 return res.sendStatus(200);
             } else if (data.startsWith('confirm_del:')) {
                 const reminderId = data.replace('confirm_del:', '');
+                const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
                 await pool.query('DELETE FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
                 await answerCallbackQuery(callbackQuery.id, '🗑️ Reminder deleted!', false);
 
