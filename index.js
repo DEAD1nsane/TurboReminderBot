@@ -561,9 +561,9 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                     const dt = DateTime.fromJSDate(parsed.date).setZone(userTz);
                     results.push({
                         type: 'article',
-                        id: `custom:${parsed.date.getTime()}:${parsed.wantRepeatMenu ? '1' : '0'}:${parsed.reminderText}`,
-                        title: `Remind: "${parsed.reminderText}"`,
-            thumbnail_url: "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f0.png",
+                        id: `create_inline_${encodeURIComponent(query.trim())}`,
+                        title: `🔔 Set Reminder: "${parsed.text}"`,
+                        thumbnail_url: "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f0.png",
                         description: `Scheduled for: ${dt.toFormat('ff')}`,
                         input_message_content: { message_text: `⏳ Creating reminder...` }
                     });
@@ -628,10 +628,10 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                 } else {
                     await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
                 }
-            } else if (resultId.startsWith('custom:') || resultId.startsWith('create_inline_')) {
+            } else if (resultId.startsWith('create_inline_')) {
                 const inlineMessageId = chosenResult.inline_message_id;
                 if (inlineMessageId) {
-                    const rawQuery = chosenResult.query;
+                    const rawQuery = decodeURIComponent(resultId.replace('create_inline_', ''));
                     const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
                     const parsed = parseFlexibleDate(rawQuery, userTz);
                     if (parsed) {
