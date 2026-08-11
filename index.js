@@ -561,7 +561,7 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                     const dt = DateTime.fromJSDate(parsed.date).setZone(userTz);
                     results.push({
                         type: 'article',
-                        id: `create_inline_${encodeURIComponent(query.trim())}`,
+                        id: `create_inline_${encodeURIComponent((inlineQuery.query || '').trim())}`,
                         title: `🔔 Set Reminder: "${parsed.text}"`,
                         thumbnail_url: "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f0.png",
                         description: `Scheduled for: ${dt.toFormat('ff')}`,
