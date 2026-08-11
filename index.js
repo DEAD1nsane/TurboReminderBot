@@ -413,22 +413,33 @@ app.post('/webhook', async (req, res) => {
                     await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
                 }
             } else if (data.startsWith('del:')) {
-                await fetch(`https://api.telegram.org/bot${TOKEN}/answerCallbackQuery`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        callback_query_id: callbackQuery.id,
-                        text: 'Tap Del again to confirm deletion',
-                        show_alert: true
-                    })
-                });
+                const reminderId = data.replace('del:', '');
+                const key = `del_confirm:${userId}:${reminderId}`;
+                
+                if (pendingInlineEdits.has(key)) {
+                    pendingInlineEdits.delete(key);
+                    await pool.query('DELETE FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
+                    await answerCallbackQuery(callbackQuery.id, '🗑️ Reminder deleted!', true);
+                    const dashData = await getRemindersDashboardData(userId, userTz);
+                    if (chatId && messageId) {
+                        await editTelegramMessage(chatId, messageId, dashData.text, dashData.keyboard);
+                    } else if (callbackQuery.inline_message_id) {
+                        await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                inline_message_id: callbackQuery.inline_message_id,
+                                text: '🗑️ <b>Reminder deleted!</b>',
+                                parse_mode: 'HTML'
+                            })
+                        });
+                    }
+                } else {
+                    pendingInlineEdits.add(key);
+                    setTimeout(() => pendingInlineEdits.delete(key), 10000);
+                    await answerCallbackQuery(callbackQuery.id, '⚠️ Tap Del again within 10s to confirm deletion', true);
+                }
                 return res.sendStatus(200);
-            } else if (data.startsWith('confirm_del:')) {
-                const reminderId = data.replace('confirm_del:', '');
-                await pool.query('DELETE FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
-                await answerCallbackQuery(callbackQuery.id, '🗑️ Reminder deleted!', true);
-                const dashData = await getRemindersDashboardData(userId, userTz);
-                await editTelegramMessage(chatId, messageId, dashData.text, dashData.keyboard);
             } else if (data.startsWith('view:')) {
                 const reminderId = data.replace('view:', '');
                 const result = await pool.query('SELECT text, remind_at, recurring, total_occurrences, current_occurrence FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
