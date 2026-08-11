@@ -495,19 +495,17 @@ app.post('/webhook', async (req, res) => {
                 results.push({
                     type: 'article',
                     id: 'show_reminders_dm',
-                    thumbnail_url: 'https://em-content.zobj.net/source/microsoft-teams/337/envelope-with-arrow_1f838.png',
                     title: '👀 View Active Reminders (DM)',
                     description: 'Tap to view and manage your active reminders.',
-                    thumbnail_url: 'https://upload.wikimedia.org/wikipedia/commons/4/46/Noto_Emoji_v2.034_1f4e9.png?v=5',
+                    thumbnail_url: 'https://em-content.zobj.net/source/microsoft-teams/337/envelope-with-arrow_1f838.png',
                 input_message_content: { message_text: '📋 Requesting active reminders list...' }
                 });
                 results.push({
                     type: 'article',
                     id: 'show_reminders_inline',
+                    title: '👀 View Active Reminders (Inline)',
+                    description: 'Posts active reminders in chat, collapses in 30s',
                     thumbnail_url: 'https://em-content.zobj.net/source/microsoft-teams/337/cheering-megaphone_1f4e3.png',
-                    reply_markup: {
-                        inline_keyboard: [[{ text: '⏳ Loading...', callback_data: 'noop' }]]
-                    },
                     title: '👀 View Active Reminders (Inline)',
                     description: 'Posts active reminders in chat, collapses in 30s',
                     thumbnail_url: 'https://upload.wikimedia.org/wikipedia/commons/4/46/Noto_Emoji_v2.034_1f4e9.png?v=5',
