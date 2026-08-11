@@ -496,7 +496,7 @@ app.post('/webhook', async (req, res) => {
                     type: 'article',
                     id: 'show_reminders_dm',
                     thumbnail_url: 'https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/2709.png',
-                    title: '📋 View Active Reminders (DM)',
+                    title: '👀 View Active Reminders (DM)',
                     description: 'Tap to view and manage your active reminders.',
                     thumbnail_url: 'https://upload.wikimedia.org/wikipedia/commons/4/46/Noto_Emoji_v2.034_1f4e9.png?v=5',
                 input_message_content: { message_text: '📋 Requesting active reminders list...' }
@@ -508,7 +508,7 @@ app.post('/webhook', async (req, res) => {
                     reply_markup: {
                         inline_keyboard: [[{ text: '⏳ Loading...', callback_data: 'noop' }]]
                     },
-                    title: '📋 View Active Reminders (Inline)',
+                    title: '👀 View Active Reminders (Inline)',
                     description: 'Posts active reminders in chat, collapses in 30s',
                     thumbnail_url: 'https://upload.wikimedia.org/wikipedia/commons/4/46/Noto_Emoji_v2.034_1f4e9.png?v=5',
                     input_message_content: { message_text: '📋 *Fetching active reminders...* ', parse_mode: 'Markdown' },
