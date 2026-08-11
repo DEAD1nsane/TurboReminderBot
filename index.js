@@ -547,41 +547,26 @@ app.post('/webhook', async (req, res) => {
         if (chosenResult) {
             const userId = chosenResult.from.id;
             const resultId = chosenResult.result_id;
-            const chatId = chosenResult.chat_id || userId;
 
             if (resultId === 'show_reminders_dm') {
                 const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
                 const dashData = await getRemindersDashboardData(userId, userTz);
                 await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
-                        } else if (resultId === 'show_reminders_inline_v6') {
+            } else if (resultId === 'show_reminders_inline_v6') {
                 const inlineMessageId = chosenResult.inline_message_id;
                 const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
                 const dashData = await getRemindersDashboardData(userId, userTz);
-
-                const editPayload = {
-                    text: dashData.text,
-                    reply_markup: dashData.keyboard,
-                    parse_mode: 'HTML'
-                };
-
-                const collapsePayload = {
-                    text: '🫈 Squatch spotted! List collapsed before anyone got proof.',
-                    parse_mode: 'HTML'
-                };
-
-                if (inlineMessageId) {
-                    editPayload.inline_message_id = inlineMessageId;
-                    collapsePayload.inline_message_id = inlineMessageId;
-                } else {
-                    editPayload.chat_id = userId;
-                    // Try to grab message_id if present, else fallback send
-                }
 
                 if (inlineMessageId) {
                     await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(editPayload)
+                        body: JSON.stringify({
+                            inline_message_id: inlineMessageId,
+                            text: dashData.text,
+                            reply_markup: dashData.keyboard,
+                            parse_mode: 'HTML'
+                        })
                     });
 
                     setTimeout(async () => {
@@ -589,7 +574,11 @@ app.post('/webhook', async (req, res) => {
                             await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify(collapsePayload)
+                                body: JSON.stringify({
+                                    inline_message_id: inlineMessageId,
+                                    text: '🫈 Squatch spotted! List collapsed before anyone got proof.',
+                                    parse_mode: 'HTML'
+                                })
                             });
                         } catch (err) {
                             console.error('Failed to collapse inline message:', err);
@@ -597,9 +586,6 @@ app.post('/webhook', async (req, res) => {
                     }, 30000);
                 } else {
                     await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
-                }
-            }
-        }, 30000);
                 }
             }
         }
