@@ -495,6 +495,7 @@ app.post('/webhook', async (req, res) => {
                 results.push({
                     type: 'article',
                     id: 'show_reminders_dm',
+                    thumbnail_url: 'https://img.icons8.com/emoji/96/incoming-envelope-emoji.png',
                     title: '📋 View Active Reminders (DM)',
                     description: 'Tap to view and manage your active reminders.',
                     thumbnail_url: 'https://img.icons8.com/emoji/96/incoming-envelope-emoji.png',
@@ -503,6 +504,7 @@ app.post('/webhook', async (req, res) => {
                 results.push({
                     type: 'article',
                     id: 'show_reminders_inline',
+                    thumbnail_url: 'https://img.icons8.com/emoji/96/speaking-head-emoji.png',
                     reply_markup: {
                         inline_keyboard: [[{ text: '⏳ Loading...', callback_data: 'noop' }]]
                     },
