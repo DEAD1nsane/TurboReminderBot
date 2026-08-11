@@ -419,7 +419,8 @@ app.post('/webhook', async (req, res) => {
                 if (pendingInlineEdits.has(key)) {
                     pendingInlineEdits.delete(key);
                     await pool.query('DELETE FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
-                    await answerCallbackQuery(callbackQuery.id, '🗑️ Reminder deleted!', true);
+                    await answerCallbackQuery(callbackQuery.id, '🗑️ Reminder deleted!', false);
+                    
                     const dashData = await getRemindersDashboardData(userId, userTz);
                     if (chatId && messageId) {
                         await editTelegramMessage(chatId, messageId, dashData.text, dashData.keyboard);
@@ -429,7 +430,8 @@ app.post('/webhook', async (req, res) => {
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 inline_message_id: callbackQuery.inline_message_id,
-                                text: '🗑️ <b>Reminder deleted!</b>',
+                                text: dashData.text,
+                                reply_markup: dashData.keyboard,
                                 parse_mode: 'HTML'
                             })
                         });
