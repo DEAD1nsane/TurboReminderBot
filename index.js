@@ -494,23 +494,23 @@ app.post('/webhook', async (req, res) => {
             if (queryText.toLowerCase() === 'view' || queryText === '') {
                 results.push({
                     type: 'article',
-                    id: 'show_reminders_dm_v2',
-                    thumbnail_url: 'https://em-content.zobj.net/source/microsoft-teams/337/incoming-envelope_1f4e8.png',
+                    id: 'show_reminders_dm',
+                    thumbnail_url: 'https://em-content.zobj.net/source/microsoft-teams/337/incoming-envelope_1f4e8.png?v=2',
                     title: '📋 View Active Reminders (DM)',
                     description: 'Tap to view and manage your active reminders.',
-                    thumbnail_url: 'https://em-content.zobj.net/source/microsoft-teams/337/incoming-envelope_1f4e8.png',
+                    thumbnail_url: 'https://em-content.zobj.net/source/microsoft-teams/337/incoming-envelope_1f4e8.png?v=2',
                 input_message_content: { message_text: '📋 Requesting active reminders list...' }
                 });
                 results.push({
                     type: 'article',
-                    id: 'show_reminders_inline_v2',
-                    thumbnail_url: 'https://em-content.zobj.net/source/microsoft-teams/337/speaking-head_1f5e3-fe0f.png',
+                    id: 'show_reminders_inline',
+                    thumbnail_url: 'https://em-content.zobj.net/source/microsoft-teams/337/speaking-head_1f5e3-fe0f.png?v=2',
                     reply_markup: {
                         inline_keyboard: [[{ text: '⏳ Loading...', callback_data: 'noop' }]]
                     },
                     title: '📋 View Active Reminders (Inline)',
                     description: 'Posts active reminders in chat, collapses in 30s',
-                    thumbnail_url: 'https://em-content.zobj.net/source/microsoft-teams/337/incoming-envelope_1f4e8.png',
+                    thumbnail_url: 'https://em-content.zobj.net/source/microsoft-teams/337/incoming-envelope_1f4e8.png?v=2',
                     input_message_content: { message_text: '📋 *Fetching active reminders...* ', parse_mode: 'Markdown' },
                     reply_markup: {
                         inline_keyboard: [[{ text: '⏳ Loading...', callback_data: 'noop' }]]
@@ -551,11 +551,11 @@ app.post('/webhook', async (req, res) => {
             const chatId = chosenResult.chat_id || userId;
             const parts = resultId.split(':');
 
-            if (resultId.startsWith('show_reminders_dm')) {
+            if (resultId === 'show_reminders_dm') {
                 const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
                 const dashData = await getRemindersDashboardData(userId, userTz);
                 await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
-            } else if (resultId.startsWith('show_reminders_inline')) {
+            } else if (resultId === 'show_reminders_inline') {
                 const inlineMessageId = chosenResult.inline_message_id;
                 const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
                 const dashData = await getRemindersDashboardData(userId, userTz);
@@ -588,7 +588,7 @@ app.post('/webhook', async (req, res) => {
                         }
                     }, 30000);
                 }
-            } else if (resultId.startsWith('show_reminders_inline')) {
+            } else if (resultId === 'show_reminders_inline') {
                 const inlineMessageId = chosenResult.inline_message_id;
                 const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
                 const dashData = await getRemindersDashboardData(userId, userTz);
