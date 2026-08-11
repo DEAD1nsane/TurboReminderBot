@@ -414,32 +414,54 @@ app.post('/webhook', async (req, res) => {
                 }
             } else if (data.startsWith('del:')) {
                 const reminderId = data.replace('del:', '');
-                const key = `del_confirm:${userId}:${reminderId}`;
+                await answerCallbackQuery(callbackQuery.id, '⚠️ Tap again to confirm deletion!', false);
                 
-                if (pendingInlineEdits.has(key)) {
-                    pendingInlineEdits.delete(key);
-                    await pool.query('DELETE FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
-                    await answerCallbackQuery(callbackQuery.id, '🗑️ Reminder deleted!', false);
-                    
-                    const dashData = await getRemindersDashboardData(userId, userTz);
-                    if (chatId && messageId) {
-                        await editTelegramMessage(chatId, messageId, dashData.text, dashData.keyboard);
-                    } else if (callbackQuery.inline_message_id) {
-                        await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                inline_message_id: callbackQuery.inline_message_id,
-                                text: dashData.text,
-                                reply_markup: dashData.keyboard,
-                                parse_mode: 'HTML'
-                            })
+                const dashData = await getRemindersDashboardData(userId, userTz);
+                if (dashData && dashData.keyboard && dashData.keyboard.inline_keyboard) {
+                    dashData.keyboard.inline_keyboard = dashData.keyboard.inline_keyboard.map(row => {
+                        return row.map(btn => {
+                            if (btn.callback_data === `del:${reminderId}`) {
+                                return { text: '⚠️ Confirm?', callback_data: `confirm_del:${reminderId}` };
+                            }
+                            return btn;
                         });
-                    }
-                } else {
-                    pendingInlineEdits.add(key);
-                    setTimeout(() => pendingInlineEdits.delete(key), 10000);
-                    await answerCallbackQuery(callbackQuery.id, '⚠️ Tap Del again within 10s to confirm deletion', true);
+                    });
+                }
+
+                if (chatId && messageId) {
+                    await editTelegramMessage(chatId, messageId, dashData.text, dashData.keyboard);
+                } else if (callbackQuery.inline_message_id) {
+                    await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            inline_message_id: callbackQuery.inline_message_id,
+                            text: dashData.text,
+                            reply_markup: dashData.keyboard,
+                            parse_mode: 'HTML'
+                        })
+                    });
+                }
+                return res.sendStatus(200);
+            } else if (data.startsWith('confirm_del:')) {
+                const reminderId = data.replace('confirm_del:', '');
+                await pool.query('DELETE FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
+                await answerCallbackQuery(callbackQuery.id, '🗑️ Reminder deleted!', false);
+
+                const dashData = await getRemindersDashboardData(userId, userTz);
+                if (chatId && messageId) {
+                    await editTelegramMessage(chatId, messageId, dashData.text, dashData.keyboard);
+                } else if (callbackQuery.inline_message_id) {
+                    await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            inline_message_id: callbackQuery.inline_message_id,
+                            text: dashData.text,
+                            reply_markup: dashData.keyboard,
+                            parse_mode: 'HTML'
+                        })
+                    });
                 }
                 return res.sendStatus(200);
             } else if (data.startsWith('view:')) {
