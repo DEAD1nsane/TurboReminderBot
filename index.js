@@ -495,22 +495,22 @@ app.post('/webhook', async (req, res) => {
                 results.push({
                     type: 'article',
                     id: 'show_reminders_dm',
-                    thumbnail_url: 'https://em-content.zobj.net/source/microsoft-teams/337/envelope-with-arrow_1f838.png',
+                    thumbnail_url: 'https://upload.wikimedia.org/wikipedia/commons/4/46/Noto_Emoji_v2.034_1f4e9.png?v=5',
                     title: '📋 View Active Reminders (DM)',
                     description: 'Tap to view and manage your active reminders.',
-                    thumbnail_url: 'https://em-content.zobj.net/source/microsoft-teams/337/envelope-with-arrow_1f838.png',
+                    thumbnail_url: 'https://upload.wikimedia.org/wikipedia/commons/4/46/Noto_Emoji_v2.034_1f4e9.png?v=5',
                 input_message_content: { message_text: '📋 Requesting active reminders list...' }
                 });
                 results.push({
                     type: 'article',
                     id: 'show_reminders_inline',
-                    thumbnail_url: 'https://em-content.zobj.net/source/microsoft-teams/337/left-speech-bubble_1f5e8-fe0f.png',
+                    thumbnail_url: 'https://upload.wikimedia.org/wikipedia/commons/2/29/Noto_Emoji_v2.034_1f5e8.png?v=5',
                     reply_markup: {
                         inline_keyboard: [[{ text: '⏳ Loading...', callback_data: 'noop' }]]
                     },
                     title: '📋 View Active Reminders (Inline)',
                     description: 'Posts active reminders in chat, collapses in 30s',
-                    thumbnail_url: 'https://em-content.zobj.net/source/microsoft-teams/337/envelope-with-arrow_1f838.png',
+                    thumbnail_url: 'https://upload.wikimedia.org/wikipedia/commons/4/46/Noto_Emoji_v2.034_1f4e9.png?v=5',
                     input_message_content: { message_text: '📋 *Fetching active reminders...* ', parse_mode: 'Markdown' },
                     reply_markup: {
                         inline_keyboard: [[{ text: '⏳ Loading...', callback_data: 'noop' }]]
