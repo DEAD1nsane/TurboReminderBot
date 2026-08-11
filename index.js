@@ -565,6 +565,42 @@ app.post('/webhook', async (req, res) => {
                         }
                     }, 30000);
                 }
+            } else if (resultId === 'show_reminders_inline') {
+                const inlineMessageId = chosenResult.inline_message_id;
+                const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
+                const dashData = await getRemindersDashboardData(userId, userTz);
+
+                if (inlineMessageId) {
+                    await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            inline_message_id: inlineMessageId,
+                            text: dashData.text,
+                            parse_mode: 'Markdown',
+                            reply_markup: dashData.keyboard
+                        })
+                    });
+
+                    setTimeout(async () => {
+                        try {
+                            await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    inline_message_id: inlineMessageId,
+                                    text: '📂 *Active Reminders (Collapsed)*',
+                                    parse_mode: 'Markdown',
+                                    reply_markup: {
+                                        inline_keyboard: [[{ text: 'Expand', callback_data: `expand_inline:${userId}` }]]
+                                    }
+                                })
+                            });
+                        } catch (err) {
+                            console.error('Failed to collapse inline message:', err);
+                        }
+                    }, 30000);
+                }
             } else if (parts.length >= 2 && parts[0] !== 'invalid_time') {
                 const timestamp = parseInt(parts[1], 10);
                 const wantRepeat = parts[2] === '1';
