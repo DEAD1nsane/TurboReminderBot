@@ -241,7 +241,7 @@ function parseFlexibleDate(text, timeZone) {
         let reminderText = clean.replace(parsedResult.text, '').trim();
         if (!reminderText) reminderText = 'Reminder';
 
-        return { date: dt.toJSDate(), reminderText: reminderText, wantRepeatMenu };
+        return { dt, date: dt.toJSDate(), text: reminderText, reminderText: reminderText, wantRepeatMenu };
     }
     return null;
 }
