@@ -541,7 +541,7 @@ app.post('/webhook', async (req, res) => {
                         body: JSON.stringify({
                             inline_message_id: inlineMessageId,
                             text: dashData.text,
-                            parse_mode: 'Markdown',
+                            parse_mode: 'HTML',
                             reply_markup: dashData.keyboard
                         })
                     });
