@@ -747,7 +747,7 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                                         headers: { 'Content-Type': 'application/json' },
                                         body: JSON.stringify({
                                             inline_message_id: inlineMessageId,
-                                            text: ' ឵឵ ',
+                                            text: '✅ Reminder Created!',
                                             parse_mode: 'HTML'
                                         })
                                     });
