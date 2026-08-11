@@ -493,14 +493,15 @@ app.post('/webhook', async (req, res) => {
                     await answerCallbackQuery(callbackQuery.id, `━━━━━━━━━━━━━━━━━━\n🔔 ${r.text}\n🕒 ${formattedTime}${repeatInfo}`, true);
                 }
             } else if (data.startsWith('edit:')) {
-                const inlineMsgId = callbackQuery.inline_message_id;
                 const reminderId = data.replace('edit:', '');
-                
+                const inlineMsgId = callbackQuery.inline_message_id;
+
                 if (inlineMsgId) {
-                    const key = `${userId}:${reminderId}`;
+                    const key = `edit_confirm:${userId}:${reminderId}`;
                     if (pendingInlineEdits.has(key)) {
                         pendingInlineEdits.delete(key);
-                        await answerCallbackQuery(callbackQuery.id, '📩 Sent edit options to DM!');
+                        await answerCallbackQuery(callbackQuery.id, '📩 Sent edit options to DM!', false);
+
                         const result = await pool.query('SELECT text, recurring, total_occurrences FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
                         if (result.rows.length > 0) {
                             const r = result.rows[0];
@@ -509,22 +510,53 @@ app.post('/webhook', async (req, res) => {
                                 await deleteTelegramMessage(userId, activeMsgId);
                                 await setActiveMenuMsgId(userId, null);
                             }
-                            await sendOrUpdateDashboard(userId, `✏️ Editing Reminder: "<b>${r.text}</b>"\n━━━━━━━━━━━━━━━━━━\nSelect options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occurrences));
+                            await sendOrUpdateDashboard(userId, `✏️ Editing Reminder: "<b>${r.text}</b>"
+━━━━━━━━━━━━━━━━━━
+Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occurrences));
                         }
-                    } else {
-                        pendingInlineEdits.add(key);
-                        setTimeout(() => pendingInlineEdits.delete(key), 10000);
-                        await fetch(`https://api.telegram.org/bot${TOKEN}/answerCallbackQuery`, {
+
+                        const dashData = await getRemindersDashboardData(userId, userTz);
+                        await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
-                                callback_query_id: callbackQuery.id,
-                                text: '⚠️ Tap Edit again within 10s to send options to your DM',
-                                show_alert: true
+                                inline_message_id: inlineMsgId,
+                                text: dashData.text,
+                                reply_markup: dashData.keyboard,
+                                parse_mode: 'HTML'
+                            })
+                        });
+                    } else {
+                        pendingInlineEdits.add(key);
+                        setTimeout(() => pendingInlineEdits.delete(key), 10000);
+                        await answerCallbackQuery(callbackQuery.id, '⚠️ Tap Edit again within 10s to send options to your DM', false);
+
+                        const dashData = await getRemindersDashboardData(userId, userTz);
+                        if (dashData && dashData.keyboard && dashData.keyboard.inline_keyboard) {
+                            dashData.keyboard.inline_keyboard = dashData.keyboard.inline_keyboard.map(row => {
+                                return row.map(btn => {
+                                    if (btn.callback_data === `edit:${reminderId}`) {
+                                        return { text: '⚠️ Send DM?', callback_data: `edit:${reminderId}` };
+                                    }
+                                    return btn;
+                                });
+                            });
+                        }
+
+                        await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                inline_message_id: inlineMsgId,
+                                text: dashData.text,
+                                reply_markup: dashData.keyboard,
+                                parse_mode: 'HTML'
                             })
                         });
                     }
                     return res.sendStatus(200);
+                }
+            }
                 }
             } else if (data.startsWith('prompt_edit_text:')) {
                 const reminderId = data.replace('prompt_edit_text:', '');
