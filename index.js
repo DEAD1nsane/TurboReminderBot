@@ -387,7 +387,11 @@ app.post('/webhook', async (req, res) => {
                 await answerCallbackQuery(callbackQuery.id);
                 await setPendingEdit(userId, null);
                 const dashData = await getRemindersDashboardData(userId, userTz);
-                await editTelegramMessage(chatId, messageId, dashData.text, dashData.keyboard);
+                if (chatId && messageId) {
+                    await editTelegramMessage(chatId, messageId, dashData.text, dashData.keyboard);
+                } else {
+                    await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
+                }
             } else if (data.startsWith('del:')) {
             const id = data.split(':')[1];
             await fetch(`https://api.telegram.org/bot${TOKEN}/answerCallbackQuery`, {
