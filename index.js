@@ -25,7 +25,12 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 8080;
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const OWNER_ID = 6293437261;
+const OWNER_ID = process.env.OWNER_ID ? parseInt(process.env.OWNER_ID, 10) : 6293437261;
+
+if (!TOKEN || !process.env.DATABASE_URL) {
+    console.error('CRITICAL: Missing TELEGRAM_BOT_TOKEN or DATABASE_URL environment variables.');
+    process.exit(1);
+}
 
 app.get('/', (req, res) => res.status(200).send('OK'));
 app.listen(PORT, '0.0.0.0', () => console.log(`Server listening on port ${PORT}`));
@@ -324,7 +329,10 @@ app.post('/webhook', async (req, res) => {
             const chatId = message.chat.id;
             const msgId = message.message_id;
             const text = message.text.trim();
-
+            if (text.length > 500) {
+                await sendTelegramMessage(chatId, '⚠️ Reminder text is too long. Please keep it under 500 characters.');
+                return res.sendStatus(200);
+            }
             const pendingEdit = await getPendingEdit(userId);
             if (pendingEdit) {
                 const [field, reminderId] = pendingEdit.split(':');
