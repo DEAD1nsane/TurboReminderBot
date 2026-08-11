@@ -523,7 +523,8 @@ app.post('/webhook', async (req, res) => {
                     results.push({
                         type: 'article',
                         id: `custom:${parsed.date.getTime()}:${parsed.wantRepeatMenu ? '1' : '0'}:${parsed.reminderText}`,
-                        title: `🔔 Remind: "${parsed.reminderText}"`,
+                        title: `⏰ Remind: "${parsed.reminderText}"`,
+            thumbnail_url: "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f0.png",
                         description: `Scheduled for: ${dt.toFormat('ff')}`,
                         input_message_content: { message_text: `⏳ Creating reminder...` }
                     });
