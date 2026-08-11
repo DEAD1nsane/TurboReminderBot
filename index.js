@@ -470,19 +470,6 @@ app.post('/webhook', async (req, res) => {
                 results.push({
                     type: 'article',
                     id: 'show_reminders_dm',
-                        title: '👀 View Active Reminders (DM)',
-                        description: 'Shows active reminders as a temporary pop-up',
-                        input_message_content: { message_text: 'Click below to view your active reminders:' },
-                        reply_markup: {
-                            inline_keyboard: [[{ text: 'View Reminders', callback_data: 'view_active_dm' }]]
-                        }
-                    },
-                    {
-                        type: 'article',
-                        id: 'show_reminders_inline',
-                        title: '📋 View Active Reminders (Inline)',
-                        description: 'Posts active reminders in chat, collapses in 30s',
-                        input_message_content: { message_text: 'Fetching active reminders...' }
                     title: '📋 View Active Reminders (DM)',
                     description: 'Tap to view and manage your active reminders.',
                     input_message_content: { message_text: '📋 Requesting active reminders list...' }
@@ -523,45 +510,6 @@ app.post('/webhook', async (req, res) => {
             const parts = resultId.split(':');
 
             if (resultId === 'show_reminders_dm') {
-                const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
-                const dashData = await getRemindersDashboardData(userId, userTz);
-                await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
-            } else if (resultId === 'show_reminders_inline') {
-                const inlineMessageId = chosenResult.inline_message_id;
-                const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
-                const dashData = await getRemindersDashboardData(userId, userTz);
-
-                if (inlineMessageId) {
-                    await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            inline_message_id: inlineMessageId,
-                            text: dashData.text,
-                            parse_mode: 'Markdown'
-                        })
-                    });
-
-                    setTimeout(async () => {
-                        try {
-                            await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    inline_message_id: inlineMessageId,
-                                    text: '📂 *Active Reminders (Collapsed)*',
-                                    parse_mode: 'Markdown',
-                                    reply_markup: {
-                                        inline_keyboard: [[{ text: 'Expand', callback_data: `expand_inline:${userId}` }]]
-                                    }
-                                })
-                            });
-                        } catch (err) {
-                            console.error('Failed to collapse inline message:', err);
-                        }
-                    }, 30000);
-                }
-            }
                 const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
                 const dashData = await getRemindersDashboardData(userId, userTz);
                 await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
