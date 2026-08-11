@@ -494,7 +494,7 @@ app.post('/webhook', async (req, res) => {
             if (queryText.toLowerCase() === 'view' || queryText === '') {
                 results.push({
                     type: 'article',
-                    id: 'show_reminders_dm',
+                    id: 'show_reminders_dm_v2',
                     thumbnail_url: 'https://em-content.zobj.net/source/microsoft-teams/337/incoming-envelope_1f4e8.png',
                     title: '📋 View Active Reminders (DM)',
                     description: 'Tap to view and manage your active reminders.',
@@ -503,7 +503,7 @@ app.post('/webhook', async (req, res) => {
                 });
                 results.push({
                     type: 'article',
-                    id: 'show_reminders_inline',
+                    id: 'show_reminders_inline_v2',
                     thumbnail_url: 'https://em-content.zobj.net/source/microsoft-teams/337/speaking-head_1f5e3-fe0f.png',
                     reply_markup: {
                         inline_keyboard: [[{ text: '⏳ Loading...', callback_data: 'noop' }]]
@@ -551,11 +551,11 @@ app.post('/webhook', async (req, res) => {
             const chatId = chosenResult.chat_id || userId;
             const parts = resultId.split(':');
 
-            if (resultId === 'show_reminders_dm') {
+            if (resultId.startsWith('show_reminders_dm')) {
                 const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
                 const dashData = await getRemindersDashboardData(userId, userTz);
                 await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
-            } else if (resultId === 'show_reminders_inline') {
+            } else if (resultId.startsWith('show_reminders_inline')) {
                 const inlineMessageId = chosenResult.inline_message_id;
                 const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
                 const dashData = await getRemindersDashboardData(userId, userTz);
@@ -588,7 +588,7 @@ app.post('/webhook', async (req, res) => {
                         }
                     }, 30000);
                 }
-            } else if (resultId === 'show_reminders_inline') {
+            } else if (resultId.startsWith('show_reminders_inline')) {
                 const inlineMessageId = chosenResult.inline_message_id;
                 const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
                 const dashData = await getRemindersDashboardData(userId, userTz);
