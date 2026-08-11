@@ -472,7 +472,16 @@ app.post('/webhook', async (req, res) => {
                     id: 'show_reminders_dm',
                     title: '📋 View Active Reminders (DM)',
                     description: 'Tap to view and manage your active reminders.',
-                    input_message_content: { message_text: '📋 Requesting active reminders list...' }
+                    thumbnail_url: 'https://img.icons8.com/emoji/96/open-file-folder-emoji.png',
+                input_message_content: { message_text: '📋 Requesting active reminders list...' }
+                });
+                results.push({
+                    type: 'article',
+                    id: 'show_reminders_inline',
+                    title: '📋 View Active Reminders (Inline)',
+                    description: 'Posts active reminders in chat, collapses in 30s',
+                    thumbnail_url: 'https://img.icons8.com/emoji/96/open-file-folder-emoji.png',
+                    input_message_content: { message_text: 'Fetching active reminders...' }
                 });
             } else {
                 const parsed = parseFlexibleDate(queryText, userTz);
