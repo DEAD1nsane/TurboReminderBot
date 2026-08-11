@@ -203,9 +203,7 @@ function parseFlexibleDate(text, timeZone) {
 
             if (dt <= nowInZone.plus({ seconds: 59 })) return null;
             const reminderText = (match[2] && match[2].trim()) ? match[2].trim() : clean;
-            return { dt, date: dt.toJSDate(), text: reminderText, wantRepeatMenu };
-        }
-            return { date: dt.toJSDate(), reminderText: match[2].trim(), wantRepeatMenu };
+            return { dt, date: dt.toJSDate(), text: reminderText, reminderText, wantRepeatMenu };
         }
     }
 
@@ -241,7 +239,7 @@ function parseFlexibleDate(text, timeZone) {
         let reminderText = clean.replace(parsedResult.text, '').trim();
         if (!reminderText) reminderText = 'Reminder';
 
-        return { dt, date: dt.toJSDate(), text: reminderText, reminderText: reminderText, wantRepeatMenu };
+        return { dt, date: dt.toJSDate(), text: reminderText, reminderText, wantRepeatMenu };
     }
     return null;
 }
@@ -377,12 +375,12 @@ app.post('/webhook', async (req, res) => {
                 }
                 return res.sendStatus(200);
             }
-        await pool.query('INSERT INTO reminders (user_id, chat_id, text, remind_at) VALUES ($1, $2, $3, $4)', [userId, chatId, parsed.reminderText, parsed.date]);
+
             const userTz = await getUserTimezone(userId);
             const parsed = parseFlexibleDate(text, userTz);
 
             if (parsed) {
-        await pool.query('INSERT INTO reminders (user_id, chat_id, text, remind_at) VALUES ($1, $2, $3, $4)', [userId, chatId, parsed.reminderText, parsed.date]);
+                await pool.query('INSERT INTO reminders (user_id, chat_id, text, remind_at) VALUES ($1, $2, $3, $4)', [userId, chatId, parsed.reminderText, parsed.date]);
                 const dashData = await getRemindersDashboardData(userId, userTz);
                 await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard, msgId);
             }
@@ -416,19 +414,18 @@ app.post('/webhook', async (req, res) => {
                     await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
                 }
             } else if (data.startsWith('del:')) {
-            const id = data.split(':')[1];
-            await fetch(`https://api.telegram.org/bot${TOKEN}/answerCallbackQuery`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    callback_query_id: req.body.callback_query.id,
-                    text: 'Tap Del again to confirm deletion',
-                    show_alert: true
-                })
-            });
-            return res.sendStatus(200);
-        } else if (data.startsWith('confirm_del:')) {
-                const reminderId = data.replace('del:', '');
+                await fetch(`https://api.telegram.org/bot${TOKEN}/answerCallbackQuery`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        callback_query_id: callbackQuery.id,
+                        text: 'Tap Del again to confirm deletion',
+                        show_alert: true
+                    })
+                });
+                return res.sendStatus(200);
+            } else if (data.startsWith('confirm_del:')) {
+                const reminderId = data.replace('confirm_del:', '');
                 await pool.query('DELETE FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
                 await answerCallbackQuery(callbackQuery.id, '🗑️ Reminder deleted!', true);
                 const dashData = await getRemindersDashboardData(userId, userTz);
@@ -440,12 +437,12 @@ app.post('/webhook', async (req, res) => {
                     const r = result.rows[0];
                     const dt = DateTime.fromJSDate(new Date(r.remind_at)).setZone(userTz);
                     const formattedTime = dt.toFormat("LLL d, yyyy 'at' h:mm a");
-      let repeatInfo = r.recurring ? `\n🔄 Repeat: ${formatRepeatText(r.recurring)}${r.total_occurrences ? ` (${r.current_occurrence || 0}/${r.total_occurrences})` : ""}` : "";
+                    let repeatInfo = r.recurring ? `\n🔄 Repeat: ${formatRepeatText(r.recurring)}${r.total_occurrences ? ` (${r.current_occurrence || 0}/${r.total_occurrences})` : ""}` : "";
 
                     await answerCallbackQuery(callbackQuery.id, `━━━━━━━━━━━━━━━━━━\n🔔 ${r.text}\n🕒 ${formattedTime}${repeatInfo}`, true);
                 }
-                                                            } else if (data.startsWith('edit:')) {
-                const inlineMsgId = req.body.callback_query.inline_message_id;
+            } else if (data.startsWith('edit:')) {
+                const inlineMsgId = callbackQuery.inline_message_id;
                 const reminderId = data.replace('edit:', '');
                 
                 if (inlineMsgId) {
@@ -461,9 +458,7 @@ app.post('/webhook', async (req, res) => {
                                 await deleteTelegramMessage(userId, activeMsgId);
                                 await setActiveMenuMsgId(userId, null);
                             }
-                            await sendOrUpdateDashboard(userId, `✏️ Editing Reminder: "<b>${r.text}</b>"
-━━━━━━━━━━━━━━━━━━
-Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occurrences));
+                            await sendOrUpdateDashboard(userId, `✏️ Editing Reminder: "<b>${r.text}</b>"\n━━━━━━━━━━━━━━━━━━\nSelect options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occurrences));
                         }
                     } else {
                         pendingInlineEdits.add(key);
@@ -472,7 +467,7 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
-                                callback_query_id: req.body.callback_query.id,
+                                callback_query_id: callbackQuery.id,
                                 text: '⚠️ Tap Edit again within 10s to send options to your DM',
                                 show_alert: true
                             })
@@ -542,7 +537,6 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                     title: '👀 View Active Reminders (DM)',
                     description: 'Tap to view and manage your active reminders.',
                     thumbnail_url: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/2709.png',
-                    thumbnail_url: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/2709.png',
                     thumb_width: 72,
                     thumb_height: 72,
                     input_message_content: { message_text: '📋 Requesting active reminders list...' }
@@ -562,10 +556,11 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                 const parsed = parseFlexibleDate(queryText, userTz);
                 if (parsed) {
                     const dt = DateTime.fromJSDate(parsed.date).setZone(userTz);
+                    const reminderText = parsed.text || parsed.reminderText || queryText;
                     results.push({
                         type: 'article',
                         id: `create_inline_${encodeURIComponent(queryText)}`,
-                        title: `🔔 Set Reminder: "${parsed.text}"`,
+                        title: `🔔 Set Reminder: "${reminderText}"`,
                         thumbnail_url: "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f0.png",
                         description: `Scheduled for: ${dt.toFormat('ff')}`,
                         input_message_content: { message_text: `⏳ Creating reminder...` }
@@ -641,13 +636,14 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                     const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
                     const parsed = parseFlexibleDate(rawQuery, userTz);
                     if (parsed) {
-                        const targetUtc = parsed.dt.toUTC().toJSDate();
-                        const remText = (parsed.text && parsed.text.trim()) ? parsed.text.trim() : rawQuery;
+                        const targetUtc = parsed.date;
+                        const remText = parsed.text || parsed.reminderText || rawQuery;
                         await pool.query(
-                            'INSERT INTO reminders (user_id, text, target_time, recurring) VALUES ($1, $2, $3, $4)',
-                            [userId, remText, targetUtc, 'none']
+                            'INSERT INTO reminders (user_id, text, remind_at) VALUES ($1, $2, $3)',
+                            [userId, remText, targetUtc]
                         );
-                        const formattedTime = parsed.dt.toFormat("LLL d, yyyy 'at' h:mm a");
+                        const localDt = DateTime.fromJSDate(parsed.date).setZone(userTz);
+                        const formattedTime = localDt.toFormat("LLL d, yyyy 'at' h:mm a");
                         await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
