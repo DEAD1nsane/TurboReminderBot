@@ -372,7 +372,7 @@ app.post('/webhook', async (req, res) => {
             const data = callbackQuery.data;
             let userTz = (await getUserTimezone(userId)) || 'America/Chicago';
 
-            await setActiveMenuMsgId(userId, messageId);
+            if (messageId) { await setActiveMenuMsgId(userId, messageId); }
 
             if (data.startsWith('settz:')) {
                 const tz = data.replace('settz:', '');
