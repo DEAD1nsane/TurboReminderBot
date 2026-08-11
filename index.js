@@ -388,7 +388,7 @@ app.post('/webhook', async (req, res) => {
                 const dashData = await getRemindersDashboardData(userId, userTz);
                 await editTelegramMessage(chatId, messageId, dashData.text, dashData.keyboard);
             } else if (data.startsWith('del:')) {
-            const id = data.split(:\)[1];
+            const id = data.split(':')[1];
             await fetch(`https://api.telegram.org/bot${TOKEN}/answerCallbackQuery`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
