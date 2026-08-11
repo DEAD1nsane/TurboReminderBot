@@ -557,8 +557,6 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                     }
                     return res.sendStatus(200);
                 }
-            }
-                }
             } else if (data.startsWith('prompt_edit_text:')) {
                 const reminderId = data.replace('prompt_edit_text:', '');
                 await setPendingEdit(userId, `text:${reminderId}`);
