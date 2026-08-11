@@ -417,18 +417,11 @@ app.post('/webhook', async (req, res) => {
                     await answerCallbackQuery(callbackQuery.id, `━━━━━━━━━━━━━━━━━━\n🔔 ${r.text}\n🕒 ${formattedTime}${repeatInfo}`, true);
                 }
             } else if (data.startsWith('edit:')) {
-            const inlineMsgId = req.body.callback_query.inline_message_id;
-            if (inlineMsgId) {
-                await fetch(`https://api.telegram.org/bot${TOKEN}/answerCallbackQuery`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        callback_query_id: req.body.callback_query.id,
-                        url: 'https://t.me/TurbosRbot'
-                    })
-                });
-                return res.sendStatus(200);
-            }
+                const inlineMsgId = req.body.callback_query.inline_message_id;
+                if (inlineMsgId) {
+                    await answerCallbackQuery(callbackQuery.id, '💬 Please edit reminders directly inside DM with @TurbosRbot', true);
+                    return res.sendStatus(200);
+                }
                 const reminderId = data.replace('edit:', '');
                 const result = await pool.query('SELECT text, recurring, total_occurrences FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
                 if (result.rows.length > 0) {
