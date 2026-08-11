@@ -585,7 +585,7 @@ app.post('/webhook', async (req, res) => {
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({
                                     inline_message_id: inlineMessageId,
-                                    text: '👻 <code>Active reminders flatlined from neglect.</code>',
+                                    text: '🫈 <code>Active reminders flatlined from neglect.</code>',
                                     parse_mode: 'HTML'
                                 })
                             });
