@@ -1,3 +1,4 @@
+const dmCollapseTimers = new Map();
 const pendingInlineEdits = new Set();
 const express = require('express');
 const { Telegraf } = require('telegraf');
@@ -268,6 +269,11 @@ async function getRemindersDashboardData(userId, userTz) {
 }
 
 async function sendOrUpdateDashboard(userId, text, markup, triggerMsgId = null) {
+    if (dmCollapseTimers.has(userId)) {
+        clearTimeout(dmCollapseTimers.get(userId));
+        dmCollapseTimers.delete(userId);
+    }
+
     const existingMsgId = await getActiveMenuMsgId(userId);
     let targetMsgId = null;
 
@@ -290,6 +296,19 @@ async function sendOrUpdateDashboard(userId, text, markup, triggerMsgId = null) 
             targetMsgId = newMsg.message_id;
             await setActiveMenuMsgId(userId, targetMsgId, triggerMsgId);
         }
+    }
+
+    if (targetMsgId) {
+        const timer = setTimeout(async () => {
+            try {
+                await deleteTelegramMessage(userId, targetMsgId);
+                await setActiveMenuMsgId(userId, null);
+                dmCollapseTimers.delete(userId);
+            } catch (err) {
+                console.error('Failed to auto-delete DM dashboard:', err);
+            }
+        }, 30000);
+        dmCollapseTimers.set(userId, timer);
     }
 }
 
