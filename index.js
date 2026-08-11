@@ -505,11 +505,14 @@ app.post('/webhook', async (req, res) => {
                 });
                 results.push({
                     type: 'article',
-                    id: 'show_reminders_inline_v5',
+                    id: 'show_reminders_inline_v6',
                     title: '👀 View Active Reminders (Inline)',
                     description: 'Posts active reminders in chat, collapses in 30s',
                     thumbnail_url: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f3.png',
-                    input_message_content: { message_text: '📋 Requesting active reminders list...' }
+                    input_message_content: { message_text: '📋 Fetching active reminders...' },
+                    reply_markup: {
+                        inline_keyboard: [[{ text: '⏳ Loading...', callback_data: 'noop' }]]
+                    }
                 });
             } else {
                 const parsed = parseFlexibleDate(queryText, userTz);
@@ -550,7 +553,7 @@ app.post('/webhook', async (req, res) => {
                 const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
                 const dashData = await getRemindersDashboardData(userId, userTz);
                 await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
-                        } else if (resultId === 'show_reminders_inline_v5') {
+                        } else if (resultId === 'show_reminders_inline_v6') {
                 const inlineMessageId = chosenResult.inline_message_id;
                 const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
                 const dashData = await getRemindersDashboardData(userId, userTz);
