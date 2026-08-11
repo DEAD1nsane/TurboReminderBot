@@ -593,7 +593,7 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                 const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
                 const dashData = await getRemindersDashboardData(userId, userTz);
                 await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
-            } else if (resultId === 'show_reminders_inline_v6') {
+                        } else if (resultId === 'show_reminders_inline_v6') {
                 const inlineMessageId = chosenResult.inline_message_id;
                 const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
                 const dashData = await getRemindersDashboardData(userId, userTz);
@@ -622,6 +622,40 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                                 })
                             });
                         } catch (err) {
+                            console.error('Failed to collapse inline message:', err);
+                        }
+                    }, 30000);
+                } else {
+                    await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
+                }
+            } else if (resultId.startsWith('create_inline_')) {
+                const inlineMessageId = chosenResult.inline_message_id;
+                if (inlineMessageId) {
+                    const rawQuery = resultId.replace('create_inline_', '');
+                    const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
+                    const parsed = parseFlexibleDate(rawQuery, userTz);
+                    if (parsed) {
+                        const targetUtc = parsed.dt.toUTC().toJSDate();
+                        await pool.query(
+                            'INSERT INTO reminders (user_id, text, target_time, recurring) VALUES ($1, $2, $3, $4)',
+                            [userId, parsed.text, targetUtc, 'none']
+                        );
+                        const formattedTime = parsed.dt.toFormat("LLL d, yyyy 'at' h:mm a");
+                        await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                inline_message_id: inlineMessageId,
+                                text: `✅ <b>Reminder set!</b>
+📝 <i>${parsed.text}</i>
+⏰ ${formattedTime}`,
+                                parse_mode: 'HTML'
+                            })
+                        });
+                    }
+                }
+            }
+        }} catch (err) {
                             console.error('Failed to collapse inline message:', err);
                         }
                     }, 30000);
