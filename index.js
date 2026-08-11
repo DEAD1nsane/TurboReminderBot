@@ -368,7 +368,7 @@ app.post('/webhook', async (req, res) => {
         if (callbackQuery) {
             const userId = callbackQuery.from.id;
             const chatId = callbackQuery.message?.chat.id;
-            const messageId = callbackQuery.message.message_id;
+            const messageId = callbackQuery.message?.message_id;
             const data = callbackQuery.data;
             let userTz = (await getUserTimezone(userId)) || 'America/Chicago';
 
