@@ -593,7 +593,7 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                 const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
                 const dashData = await getRemindersDashboardData(userId, userTz);
                 await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
-                        } else if (resultId === 'show_reminders_inline_v6') {
+            } else if (resultId === 'show_reminders_inline_v6') {
                 const inlineMessageId = chosenResult.inline_message_id;
                 const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
                 const dashData = await getRemindersDashboardData(userId, userTz);
@@ -646,21 +646,11 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 inline_message_id: inlineMessageId,
-                                text: `✅ <b>Reminder set!</b>
-📝 <i>${parsed.text}</i>
-⏰ ${formattedTime}`,
+                                text: `✅ <b>Reminder set!</b>\n📝 <i>${parsed.text}</i>\n⏰ ${formattedTime}`,
                                 parse_mode: 'HTML'
                             })
                         });
                     }
-                }
-            }
-        }} catch (err) {
-                            console.error('Failed to collapse inline message:', err);
-                        }
-                    }, 30000);
-                } else {
-                    await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
                 }
             }
         }
