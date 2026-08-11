@@ -479,6 +479,9 @@ app.post('/webhook', async (req, res) => {
                 results.push({
                     type: 'article',
                     id: 'show_reminders_inline',
+                    reply_markup: {
+                        inline_keyboard: [[{ text: '⏳ Loading...', callback_data: 'noop' }]]
+                    },
                     title: '📋 View Active Reminders (Inline)',
                     description: 'Posts active reminders in chat, collapses in 30s',
                     thumbnail_url: 'https://img.icons8.com/emoji/96/open-file-folder-emoji.png',
