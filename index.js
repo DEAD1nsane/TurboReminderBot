@@ -202,6 +202,9 @@ function parseFlexibleDate(text, timeZone) {
             if (seconds) dt = dt.plus({ seconds });
 
             if (dt <= nowInZone.plus({ seconds: 59 })) return null;
+            const reminderText = (match[2] && match[2].trim()) ? match[2].trim() : clean;
+            return { dt, date: dt.toJSDate(), text: reminderText, wantRepeatMenu };
+        }
             return { date: dt.toJSDate(), reminderText: match[2].trim(), wantRepeatMenu };
         }
     }
