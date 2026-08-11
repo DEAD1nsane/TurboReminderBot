@@ -418,11 +418,16 @@ app.post('/webhook', async (req, res) => {
                 }
             } else if (data.startsWith('edit:')) {
                 const inlineMsgId = req.body.callback_query.inline_message_id;
+                const reminderId = data.replace('edit:', '');
                 if (inlineMsgId) {
-                    await answerCallbackQuery(callbackQuery.id, '💬 Please edit reminders directly inside DM with @TurbosRbot', true);
+                    await answerCallbackQuery(callbackQuery.id, '📩 Sent edit options to DM!');
+                    const result = await pool.query('SELECT text, recurring, total_occurrences FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
+                    if (result.rows.length > 0) {
+                        const r = result.rows[0];
+                        await sendTelegramMessage(userId, `✏️ Editing Reminder: "<b>${r.text}</b>"\n━━━━━━━━━━━━━━━━━━\nSelect options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occurrences));
+                    }
                     return res.sendStatus(200);
                 }
-                const reminderId = data.replace('edit:', '');
                 const result = await pool.query('SELECT text, recurring, total_occurrences FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
                 if (result.rows.length > 0) {
                     await answerCallbackQuery(callbackQuery.id);
