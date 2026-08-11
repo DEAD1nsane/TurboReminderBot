@@ -497,14 +497,21 @@ app.post('/webhook', async (req, res) => {
                     id: 'show_reminders_dm',
                     title: '👀 View Active Reminders (DM)',
                     description: 'Tap to view and manage your active reminders.',
+                    thumb_url: 'https://em-content.zobj.net/source/microsoft-teams/337/envelope-with-arrow_1f838.png',
                     thumbnail_url: 'https://em-content.zobj.net/source/microsoft-teams/337/envelope-with-arrow_1f838.png',
-                input_message_content: { message_text: '📋 Requesting active reminders list...' }
+                    thumb_width: 72,
+                    thumb_height: 72,
+                    input_message_content: { message_text: '📋 Requesting active reminders list...' }
                 });
                 results.push({
                     type: 'article',
                     id: 'show_reminders_inline',
                     title: '👀 View Active Reminders (Inline)',
                     description: 'Posts active reminders in chat, collapses in 30s',
+                    thumb_url: 'https://em-content.zobj.net/source/microsoft-teams/337/cheering-megaphone_1f4e3.png',
+                    thumbnail_url: 'https://em-content.zobj.net/source/microsoft-teams/337/cheering-megaphone_1f4e3.png',
+                    thumb_width: 72,
+                    thumb_height: 72,
                     thumbnail_url: 'https://em-content.zobj.net/source/microsoft-teams/337/cheering-megaphone_1f4e3.png',
                     title: '👀 View Active Reminders (Inline)',
                     description: 'Posts active reminders in chat, collapses in 30s',
