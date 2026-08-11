@@ -545,7 +545,6 @@ app.post('/webhook', async (req, res) => {
             const userId = chosenResult.from.id;
             const resultId = chosenResult.result_id;
             const chatId = chosenResult.chat_id || userId;
-            const parts = resultId.split(':');
 
             if (resultId === 'show_reminders_dm') {
                 const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
@@ -563,8 +562,8 @@ app.post('/webhook', async (req, res) => {
                         body: JSON.stringify({
                             inline_message_id: inlineMessageId,
                             text: dashData.text,
-                            parse_mode: 'HTML',
-                            reply_markup: dashData.keyboard
+                            reply_markup: dashData.keyboard,
+                            parse_mode: 'HTML'
                         })
                     });
 
@@ -575,7 +574,7 @@ app.post('/webhook', async (req, res) => {
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({
                                     inline_message_id: inlineMessageId,
-                                    text: '🫈 <code>Active reminders flatlined from neglect.</code>',
+                                    text: '🫈 Squatch spotted! List collapsed before anyone got proof.',
                                     parse_mode: 'HTML'
                                 })
                             });
@@ -584,107 +583,11 @@ app.post('/webhook', async (req, res) => {
                         }
                     }, 30000);
                 }
-            } else if (resultId === 'show_reminders_inline_v5') {
-                const inlineMessageId = chosenResult.inline_message_id;
-                const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
-                const dashData = await getRemindersDashboardData(userId, userTz);
-
-                if (inlineMessageId) {
-                    await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            inline_message_id: inlineMessageId,
-                            text: dashData.text,
-                            parse_mode: 'Markdown',
-                            reply_markup: dashData.keyboard
-                        })
-                    });
-
-                    setTimeout(async () => {
-                        try {
-                            await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    inline_message_id: inlineMessageId,
-                                    text: '📂 *Active Reminders (Collapsed)*',
-                                    parse_mode: 'Markdown',
-                                    reply_markup: {
-                                        inline_keyboard: [[{ text: 'Expand', callback_data: `expand_inline:${userId}` }]]
-                                    }
-                                })
-                            });
-                        } catch (err) {
-                            console.error('Failed to collapse inline message:', err);
-                        }
-                    }, 30000);
-                }
-            } else if (parts.length >= 2 && parts[0] !== 'invalid_time') {
-                const timestamp = parseInt(parts[1], 10);
-                const wantRepeat = parts[2] === '1';
-                const text = parts.slice(3).join(':') || 'Reminder';
-                const remindAt = new Date(timestamp);
-                const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
-                const dt = DateTime.fromJSDate(remindAt).setZone(userTz);
-
-                if (process.env.DATABASE_URL) {
-        await pool.query('INSERT INTO reminders (user_id, chat_id, text, remind_at) VALUES ($1, $2, $3, $4)', [userId, chatId, parsed.reminderText, parsed.date]);
-                    const newId = dbRes.rows[0].id;
-
-                    if (wantRepeat) {
-                        await sendTelegramMessage(userId, `🔔 Reminder Created: "<b>${text}</b>"\nSet a repeat pattern below:`, getEditMenuKeyboard(newId, null, null), 10000);
-                    } else {
-                        await sendTelegramMessage(userId, `🔔 Reminder set for: <b>${text}</b> (${dt.toFormat('ff')})`, null, 10000);
-                    }
-                }
             }
         }
-    } catch (globalErr) {
-        console.error('Unhandled webhook execution error:', globalErr);
+        res.sendStatus(200);
+    } catch (error) {
+        console.error('[WEBHOOK ERROR]:', error);
+        res.sendStatus(500);
     }
-
-    res.sendStatus(200);
 });
-
-setInterval(async () => {
-    if (!process.env.DATABASE_URL) return;
-    try {
-        const res = await pool.query("SELECT user_id, active_menu_msg_id, trigger_msg_id, EXTRACT(EPOCH FROM collapse_at) as collapse_epoch FROM user_settings WHERE collapse_at IS NOT NULL");
-        const nowSec = Date.now() / 1000;
-        for (const row of res.rows) {
-            if (row.collapse_epoch && row.collapse_epoch <= nowSec) {
-                if (row.active_menu_msg_id) {
-                    try {
-                        await deleteTelegramMessage(row.user_id, row.active_menu_msg_id);
-                    } catch (e) {
-                        console.error("Dashboard cleanup failed:", e);
-                    }
-                }
-                if (row.trigger_msg_id) {
-                    try { await deleteTelegramMessage(row.user_id, row.trigger_msg_id); } catch(e) {}
-                }
-                await pool.query("UPDATE user_settings SET active_menu_msg_id = NULL, trigger_msg_id = NULL, collapse_at = NULL WHERE user_id = $1", [row.user_id]);
-            }
-        }
-    } catch(err) { console.error("Collapse loop error:", err); }
-}, 3000);
-
-
-// Background Worker: Poll and send due reminders every 10 seconds
-setInterval(async () => {
-    if (!process.env.DATABASE_URL) return;
-    try {
-        const dueReminders = await pool.query("SELECT * FROM reminders WHERE sent = false AND remind_at <= NOW()");
-        for (const r of dueReminders.rows) {
-            try {
-                await sendTelegramMessage(r.user_id, `⏰ **Reminder:** ${r.text}`);
-                await pool.query("UPDATE reminders SET sent = true WHERE id = $1", [r.id]);
-            } catch (err) {
-                console.error(`Failed to send reminder ${r.id}:`, err);
-            }
-        }
-    } catch (err) {
-        if (!err.message?.includes("Connection terminated")) console.error("Error processing due reminders:", err);
-    }
-}, 10000);
