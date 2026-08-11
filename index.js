@@ -314,7 +314,6 @@ async function sendOrUpdateDashboard(userId, text, markup, triggerMsgId = null) 
     }
 }
 
-
 app.post('/webhook', async (req, res) => {
     console.log('[WEBHOOK LOG]:', JSON.stringify(req.body));
     try {
@@ -563,7 +562,10 @@ app.post('/webhook', async (req, res) => {
                         title: `🔔 Set Reminder: "${reminderText}"`,
                         thumbnail_url: "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f0.png",
                         description: `Scheduled for: ${dt.toFormat('ff')}`,
-                        input_message_content: { message_text: `⏳ Creating reminder...` }
+                        input_message_content: { message_text: `⏳ Creating reminder...` },
+                        reply_markup: {
+                            inline_keyboard: [[{ text: '⏳ Processing...', callback_data: 'noop' }]]
+                        }
                     });
                 } else {
                     results.push({
