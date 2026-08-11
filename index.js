@@ -482,7 +482,10 @@ app.post('/webhook', async (req, res) => {
                     title: '📋 View Active Reminders (Inline)',
                     description: 'Posts active reminders in chat, collapses in 30s',
                     thumbnail_url: 'https://img.icons8.com/emoji/96/open-file-folder-emoji.png',
-                    input_message_content: { message_text: 'Fetching active reminders...' }
+                    input_message_content: { message_text: '📋 *Fetching active reminders...* ', parse_mode: 'Markdown' },
+                    reply_markup: {
+                        inline_keyboard: [[{ text: '⏳ Loading...', callback_data: 'noop' }]]
+                    }
                 });
             } else {
                 const parsed = parseFlexibleDate(queryText, userTz);
