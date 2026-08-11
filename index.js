@@ -497,7 +497,7 @@ app.post('/webhook', async (req, res) => {
                     id: 'show_reminders_dm',
                     title: '📋 View Active Reminders (DM)',
                     description: 'Tap to view and manage your active reminders.',
-                    thumbnail_url: 'https://img.icons8.com/emoji/96/open-file-folder-emoji.png',
+                    thumbnail_url: 'https://img.icons8.com/emoji/96/incoming-envelope-emoji.png',
                 input_message_content: { message_text: '📋 Requesting active reminders list...' }
                 });
                 results.push({
@@ -577,7 +577,7 @@ app.post('/webhook', async (req, res) => {
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({
                                     inline_message_id: inlineMessageId,
-                                    text: '💤 <i>Reminders collapsed due to inactivity.</i>',
+                                    text: '👻 <code>Active reminders flatlined from neglect.</code>',
                                     parse_mode: 'HTML'
                                 })
                             });
