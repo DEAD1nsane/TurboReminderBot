@@ -628,17 +628,21 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                 } else {
                     await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
                 }
-            } else if (resultId.startsWith('create_inline_')) {
+            } else if (resultId.startsWith('create_inline_') || resultId.startsWith('custom:')) {
                 const inlineMessageId = chosenResult.inline_message_id;
                 if (inlineMessageId) {
-                    const rawQuery = decodeURIComponent(resultId.replace('create_inline_', ''));
+                    let rawQuery = chosenResult.query;
+                    if (resultId.startsWith('create_inline_')) {
+                        rawQuery = decodeURIComponent(resultId.replace('create_inline_', ''));
+                    }
                     const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
                     const parsed = parseFlexibleDate(rawQuery, userTz);
                     if (parsed) {
                         const targetUtc = parsed.dt.toUTC().toJSDate();
+                        const remText = (parsed.text && parsed.text.trim()) ? parsed.text.trim() : rawQuery;
                         await pool.query(
                             'INSERT INTO reminders (user_id, text, target_time, recurring) VALUES ($1, $2, $3, $4)',
-                            [userId, parsed.text, targetUtc, 'none']
+                            [userId, remText, targetUtc, 'none']
                         );
                         const formattedTime = parsed.dt.toFormat("LLL d, yyyy 'at' h:mm a");
                         await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
@@ -646,7 +650,7 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 inline_message_id: inlineMessageId,
-                                text: `✅ <b>Reminder set!</b>\n📝 <i>${parsed.text}</i>\n⏰ ${formattedTime}`,
+                                text: `✅ <b>Reminder set!</b>\n📝 <i>${remText}</i>\n⏰ ${formattedTime}`,
                                 parse_mode: 'HTML'
                             })
                         });
