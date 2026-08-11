@@ -417,7 +417,7 @@ app.post('/webhook', async (req, res) => {
 
                     await answerCallbackQuery(callbackQuery.id, `━━━━━━━━━━━━━━━━━━\n🔔 ${r.text}\n🕒 ${formattedTime}${repeatInfo}`, true);
                 }
-                                    } else if (data.startsWith('edit:')) {
+                                                } else if (data.startsWith('edit:')) {
                 const inlineMsgId = req.body.callback_query.inline_message_id;
                 const reminderId = data.replace('edit:', '');
                 
@@ -429,7 +429,7 @@ app.post('/webhook', async (req, res) => {
                         const result = await pool.query('SELECT text, recurring, total_occurrences FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
                         if (result.rows.length > 0) {
                             const r = result.rows[0];
-                            await sendTelegramMessage(userId, `✏️ Editing Reminder: "<b>${r.text}</b>"
+                            await sendOrUpdateDashboard(userId, `✏️ Editing Reminder: "<b>${r.text}</b>"
 ━━━━━━━━━━━━━━━━━━
 Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occurrences));
                         }
@@ -448,19 +448,35 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                     }
                     return res.sendStatus(200);
                 }
-} else if (data.startsWith('edit:')) {
+            } else if (data.startsWith('edit:')) {
                 const inlineMsgId = req.body.callback_query.inline_message_id;
                 const reminderId = data.replace('edit:', '');
+                
                 if (inlineMsgId) {
-                    await fetch(`https://api.telegram.org/bot${TOKEN}/answerCallbackQuery`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            callback_query_id: req.body.callback_query.id,
-                            text: '⚠️ Tap Edit again to confirm sending options to your DM',
-                            show_alert: true
-                        })
-                    });
+                    const key = `${userId}:${reminderId}`;
+                    if (pendingInlineEdits.has(key)) {
+                        pendingInlineEdits.delete(key);
+                        await answerCallbackQuery(callbackQuery.id, '📩 Sent edit options to DM!');
+                        const result = await pool.query('SELECT text, recurring, total_occurrences FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
+                        if (result.rows.length > 0) {
+                            const r = result.rows[0];
+                            await sendOrUpdateDashboard(userId, `✏️ Editing Reminder: "<b>${r.text}</b>"
+━━━━━━━━━━━━━━━━━━
+Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occurrences));
+                        }
+                    } else {
+                        pendingInlineEdits.add(key);
+                        setTimeout(() => pendingInlineEdits.delete(key), 10000);
+                        await fetch(`https://api.telegram.org/bot${TOKEN}/answerCallbackQuery`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                callback_query_id: req.body.callback_query.id,
+                                text: '⚠️ Tap Edit again within 10s to send options to your DM',
+                                show_alert: true
+                            })
+                        });
+                    }
                     return res.sendStatus(200);
                 }
 } else if (data.startsWith('prompt_edit_text:')) {
@@ -579,7 +595,7 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                 const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
                 const dashData = await getRemindersDashboardData(userId, userTz);
                 await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
-            } else if (resultId === 'show_reminders_inline_v6') {
+                        } else if (resultId === 'show_reminders_inline_v6') {
                 const inlineMessageId = chosenResult.inline_message_id;
                 const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
                 const dashData = await getRemindersDashboardData(userId, userTz);
@@ -608,6 +624,14 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                                 })
                             });
                         } catch (err) {
+                            console.error('Failed to collapse inline message:', err);
+                        }
+                    }, 30000);
+                } else {
+                    await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
+                }
+            }
+        }} catch (err) {
                             console.error('Failed to collapse inline message:', err);
                         }
                     }, 30000);
