@@ -618,9 +618,9 @@ bot.on("chosen_inline_result", async (ctx) => {
       [userId]
     );
 
-    let text = "📋 *Your Active Reminders:*
+    let text = `📋 *Your Active Reminders:*
 
-";
+`;
     if (rows.length === 0) {
       text = "🎉 No active reminders!";
     } else {
