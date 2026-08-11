@@ -294,6 +294,7 @@ async function sendOrUpdateDashboard(userId, text, markup, triggerMsgId = null) 
 
 
 app.post('/webhook', async (req, res) => {
+    console.log('[WEBHOOK LOG]:', JSON.stringify(req.body));
     try {
         const { message, callback_query: callbackQuery, inline_query: inlineQuery, chosen_inline_result: chosenResult } = req.body;
 
