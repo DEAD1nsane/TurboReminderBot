@@ -495,22 +495,22 @@ app.post('/webhook', async (req, res) => {
                 results.push({
                     type: 'article',
                     id: 'show_reminders_dm',
-                    thumbnail_url: 'https://img.icons8.com/emoji/96/incoming-envelope-emoji.png',
+                    thumb_url: 'https://img.icons8.com/emoji/96/incoming-envelope-emoji.png',
                     title: '📋 View Active Reminders (DM)',
                     description: 'Tap to view and manage your active reminders.',
-                    thumbnail_url: 'https://img.icons8.com/emoji/96/incoming-envelope-emoji.png',
+                    thumb_url: 'https://img.icons8.com/emoji/96/incoming-envelope-emoji.png',
                 input_message_content: { message_text: '📋 Requesting active reminders list...' }
                 });
                 results.push({
                     type: 'article',
                     id: 'show_reminders_inline',
-                    thumbnail_url: 'https://img.icons8.com/emoji/96/speaking-head-emoji.png',
+                    thumb_url: 'https://img.icons8.com/emoji/96/speaking-head-emoji.png',
                     reply_markup: {
                         inline_keyboard: [[{ text: '⏳ Loading...', callback_data: 'noop' }]]
                     },
                     title: '📋 View Active Reminders (Inline)',
                     description: 'Posts active reminders in chat, collapses in 30s',
-                    thumbnail_url: 'https://img.icons8.com/emoji/96/open-file-folder-emoji.png',
+                    thumb_url: 'https://img.icons8.com/emoji/96/incoming-envelope-emoji.png',
                     input_message_content: { message_text: '📋 *Fetching active reminders...* ', parse_mode: 'Markdown' },
                     reply_markup: {
                         inline_keyboard: [[{ text: '⏳ Loading...', callback_data: 'noop' }]]
