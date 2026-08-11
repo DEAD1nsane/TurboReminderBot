@@ -553,11 +553,8 @@ app.post('/webhook', async (req, res) => {
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({
                                     inline_message_id: inlineMessageId,
-                                    text: '📂 *Active Reminders (Collapsed)*',
-                                    parse_mode: 'Markdown',
-                                    reply_markup: {
-                                        inline_keyboard: [[{ text: 'Expand', callback_data: `expand_inline:${userId}` }]]
-                                    }
+                                    text: '💤 <i>Reminders collapsed due to inactivity.</i>',
+                                    parse_mode: 'HTML'
                                 })
                             });
                         } catch (err) {
