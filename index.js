@@ -666,6 +666,22 @@ app.post('/webhook', async (req, res) => {
                                 parse_mode: 'HTML'
                             })
                         });
+
+                        setTimeout(async () => {
+                            try {
+                                await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        inline_message_id: inlineMessageId,
+                                        text: '🫈 Squatch spotted! Reminder confirmation collapsed before anyone got proof.',
+                                        parse_mode: 'HTML'
+                                    })
+                                });
+                            } catch (err) {
+                                console.error('Failed to collapse inline reminder creation message:', err);
+                            }
+                        }, 30000);
                     }
                 }
             }
