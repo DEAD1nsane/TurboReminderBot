@@ -628,7 +628,7 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                 } else {
                     await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
                 }
-                        } else if (resultId.startsWith('custom:') || resultId.startsWith('create_inline_')) {
+            } else if (resultId.startsWith('custom:') || resultId.startsWith('create_inline_')) {
                 const inlineMessageId = chosenResult.inline_message_id;
                 if (inlineMessageId) {
                     const rawQuery = chosenResult.query;
@@ -646,16 +646,13 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 inline_message_id: inlineMessageId,
-                                text: `✅ <b>Reminder set!</b>
-📝 <i>${parsed.text}</i>
-⏰ ${formattedTime}`,
+                                text: `✅ <b>Reminder set!</b>\n📝 <i>${parsed.text}</i>\n⏰ ${formattedTime}`,
                                 parse_mode: 'HTML'
                             })
                         });
                     }
                 }
             }
-        }}
         }
         res.sendStatus(200);
     } catch (error) {
