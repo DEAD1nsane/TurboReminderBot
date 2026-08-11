@@ -559,7 +559,7 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                 }
             }
                 }
-            } } catch (err) { console.error('Callback error:', err); } else if (data.startsWith('prompt_edit_text:')) {
+            } else if (data.startsWith('prompt_edit_text:')) {
                 const reminderId = data.replace('prompt_edit_text:', '');
                 await setPendingEdit(userId, `text:${reminderId}`);
                 await editTelegramMessage(chatId, messageId, `📝 <b>Please type the new note/text for this reminder:</b>\n━━━━━━━━━━━━━━━━━━`, { inline_keyboard: [[{ text: '⬅️ Cancel', callback_data: `edit:${reminderId}` }]] });
