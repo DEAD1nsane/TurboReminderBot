@@ -452,16 +452,33 @@ app.post('/webhook', async (req, res) => {
                 if (chatId && messageId) {
                     await editTelegramMessage(chatId, messageId, dashData.text, dashData.keyboard);
                 } else if (callbackQuery.inline_message_id) {
+                    const inlineMsgId = callbackQuery.inline_message_id;
                     await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            inline_message_id: callbackQuery.inline_message_id,
+                            inline_message_id: inlineMsgId,
                             text: dashData.text,
                             reply_markup: dashData.keyboard,
                             parse_mode: 'HTML'
                         })
                     });
+
+                    setTimeout(async () => {
+                        try {
+                            await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    inline_message_id: inlineMsgId,
+                                    text: '🫈 Squatch spotted! List collapsed before anyone got proof.',
+                                    parse_mode: 'HTML'
+                                })
+                            });
+                        } catch (err) {
+                            console.error('Failed to collapse inline message after deletion:', err);
+                        }
+                    }, 30000);
                 }
                 return res.sendStatus(200);
             } else if (data.startsWith('view:')) {
