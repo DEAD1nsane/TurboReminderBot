@@ -94,7 +94,10 @@ setInterval(async () => {
         const res = await pool.query('SELECT * FROM reminders WHERE remind_at <= NOW() AND sent = FALSE');
         for (const r of res.rows) {
             if (r.chat_id) {
-                await sendTelegramMessage(r.chat_id, `🔔 <b>Reminder:</b>\n${r.text}`);
+                await sendTelegramMessage(r.chat_id || r.user_id, `🔔 <b>REMINDER ALERT</b>
+━━━━━━━━━━━━━━━━━━
+<blockquote><b>${r.text}</b></blockquote>
+<i>${formattedTime}</i>`);
             } else {
                 await sendTelegramMessage(r.user_id, `🔔 <b>Reminder:</b>\n${r.text}`);
             }
