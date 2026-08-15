@@ -97,7 +97,7 @@ setInterval(async () => {
                 await sendTelegramMessage(r.chat_id || r.user_id, `🔔 <b>REMINDER ALERT</b>
 ━━━━━━━━━━━━━━━━━━
 <blockquote><b>${r.text}</b></blockquote>
-<i>${localDt.toFormat(\"MMM d, yyyy 'at' h:mm a\")}</i>`);
+<i>${localDt.toFormat("MMM d, yyyy 'at' h:mm a")}</i>`);
             } else {
                 await sendTelegramMessage(r.user_id, `🔔 <b>Reminder:</b>\n${r.text}`);
             }
