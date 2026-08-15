@@ -350,6 +350,9 @@ async function sendOrUpdateDashboard(userId, text, markup, triggerMsgId = null) 
 }
 
 app.post('/webhook', async (req, res) => {
+    if (process.env.WEBHOOK_SECRET && req.headers['x-telegram-bot-api-secret-token'] !== process.env.WEBHOOK_SECRET) {
+        return res.sendStatus(403);
+    }
     // Webhook log removed for privacy
     try {
         const { message, callback_query: callbackQuery, inline_query: inlineQuery, chosen_inline_result: chosenResult } = req.body;
