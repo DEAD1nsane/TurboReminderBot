@@ -359,7 +359,7 @@ app.post('/webhook', async (req, res) => {
     // Webhook log removed for privacy
     try {
         const { message, callback_query
-console.log('Button Data:', JSON.stringify(req.body.callback_query));: callbackQuery, inline_query: inlineQuery, chosen_inline_result: chosenResult } = req.body;
+callback_query: callbackQuery, inline_query: inlineQuery, chosen_inline_result: chosenResult } = req.body;
 
         if (message && message.text) {
             const userId = message.from.id;
