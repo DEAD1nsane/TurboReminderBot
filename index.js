@@ -358,7 +358,6 @@ app.post('/webhook', async (req, res) => {
     }
     // Webhook log removed for privacy
     try {
-        const { message, callback_query
 const { message, callback_query: callbackQuery, inline_query: inlineQuery, chosen_inline_result: chosenResult } = req.body;
   console.log('Webhook Payload:', JSON.stringify(req.body));
 
