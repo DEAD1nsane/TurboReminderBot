@@ -380,7 +380,7 @@ app.post('/webhook', async (req, res) => {
                 } else if (field === 'time') {
                     const parsed = parseFlexibleDate(text, userTz);
                     if (parsed) {
-                await deleteTelegramMessage(chatId, msgId);
+                if (typeof chatId !== 'undefined' && typeof msgId !== 'undefined') { await deleteTelegramMessage(chatId, msgId); }
                         await pool.query('UPDATE reminders SET remind_at = $1 WHERE id = $2 AND user_id = $3', [parsed.date, reminderId, userId]);
                         const localDt = DateTime.fromJSDate(parsed.date).setZone(userTz);
                         await sendTelegramMessage(userId, `✅ Reminder time updated to: <i>${localDt.toFormat("LLL d, yyyy 'at' h:mm a")}</i>`, null, 5000);
@@ -391,7 +391,7 @@ app.post('/webhook', async (req, res) => {
                 }
 
                 await setPendingEdit(userId, null);
-                await deleteTelegramMessage(chatId, msgId);
+                if (typeof chatId !== 'undefined' && typeof msgId !== 'undefined') { await deleteTelegramMessage(chatId, msgId); }
                 const existingMenuId = await getActiveMenuMsgId(userId);
                 if (existingMenuId) await deleteTelegramMessage(userId, existingMenuId);
                 await setActiveMenuMsgId(userId, null);
@@ -401,7 +401,7 @@ app.post('/webhook', async (req, res) => {
             }
 
             if (text.startsWith('/start') || text.toLowerCase() === 'view') {
-                await deleteTelegramMessage(chatId, msgId);
+                if (typeof chatId !== 'undefined' && typeof msgId !== 'undefined') { await deleteTelegramMessage(chatId, msgId); }
                 const existingTz = await getUserTimezone(userId);
                 if (existingTz) {
                     const dashData = await getRemindersDashboardData(userId, existingTz);
@@ -416,7 +416,7 @@ app.post('/webhook', async (req, res) => {
                 const replyMsg = message.reply_to_message;
                 if (replyMsg?.from?.is_bot) {
                     await deleteTelegramMessage(chatId, replyMsg.message_id);
-                    await deleteTelegramMessage(chatId, msgId);
+                    if (typeof chatId !== 'undefined' && typeof msgId !== 'undefined') { await deleteTelegramMessage(chatId, msgId); }
                 }
                 return res.sendStatus(200);
             }
@@ -425,7 +425,7 @@ app.post('/webhook', async (req, res) => {
             const parsed = parseFlexibleDate(text, userTz);
 
             if (parsed) {
-                await deleteTelegramMessage(chatId, msgId);
+                if (typeof chatId !== 'undefined' && typeof msgId !== 'undefined') { await deleteTelegramMessage(chatId, msgId); }
                 const insertRes = await pool.query('INSERT INTO reminders (user_id, chat_id, text, remind_at) VALUES ($1, $2, $3, $4) RETURNING id', [userId, chatId, parsed.reminderText, parsed.date]);
                 if (parsed.wantRepeatMenu) {
                     await sendOrUpdateDashboard(userId, `📝 Editing Reminder: "<b>${parsed.reminderText}</b>"
@@ -687,7 +687,7 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
             } else {
                 const parsed = parseFlexibleDate(queryText, userTz);
                 if (parsed) {
-                await deleteTelegramMessage(chatId, msgId);
+                if (typeof chatId !== 'undefined' && typeof msgId !== 'undefined') { await deleteTelegramMessage(chatId, msgId); }
                     const dt = DateTime.fromJSDate(parsed.date).setZone(userTz);
                     const reminderText = parsed.text || parsed.reminderText || queryText;
                     results.push({
@@ -772,7 +772,7 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                     const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
                     const parsed = parseFlexibleDate(rawQuery, userTz);
                     if (parsed) {
-                await deleteTelegramMessage(chatId, msgId);
+                if (typeof chatId !== 'undefined' && typeof msgId !== 'undefined') { await deleteTelegramMessage(chatId, msgId); }
                         const targetUtc = parsed.date;
                         const remText = parsed.text || parsed.reminderText || rawQuery;
                         const insertRes = await pool.query('INSERT INTO reminders (user_id, text, remind_at) VALUES ($1, $2, $3) RETURNING id', [userId, remText, targetUtc]);
