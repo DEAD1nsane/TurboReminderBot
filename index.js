@@ -513,7 +513,7 @@ Select options below:`, getEditMenuKeyboard(insertRes.rows[0].id, null, null));
                     const result = await pool.query('SELECT text, recurring, total_occurrences FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
                     if (result.rows.length > 0) {
                         const r = result.rows[0];
-                        await sendOrUpdateDashboard(userId, `✏️ Editing Reminder: "<b>${r.text}</b>"
+                        await editTelegramMessage(callbackQuery.message.chat.id, callbackQuery.message.message_id, `✏️ Editing Reminder: "<b>${r.text}</b>"
 ━━━━━━━━━━━━━━━━━━
 Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occurrences));
                     }
