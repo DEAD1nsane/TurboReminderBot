@@ -89,6 +89,36 @@ async function initDb() {
 }
 initDb();
 
+setInterval(async () => {
+    try {
+        const res = await pool.query('SELECT * FROM reminders WHERE remind_at <= NOW() AND sent = FALSE');
+        for (const r of res.rows) {
+            if (r.chat_id) {
+                await sendTelegramMessage(r.chat_id, `🔔 <b>Reminder:</b>\n${r.text}`);
+            } else {
+                await sendTelegramMessage(r.user_id, `🔔 <b>Reminder:</b>\n${r.text}`);
+            }
+            
+            if (r.recurring) {
+                const userTz = (await getUserTimezone(r.user_id)) || 'America/Chicago';
+                const nextDate = calculateNextOccurrence(new Date(), r.recurring, userTz);
+                const newCount = (r.current_occurrence || 0) + 1;
+                
+                if (!r.total_occurrences || newCount < r.total_occurrences) {
+                    await pool.query('UPDATE reminders SET remind_at = $1, current_occurrence = $2 WHERE id = $3', [nextDate, newCount, r.id]);
+                } else {
+                    await pool.query('UPDATE reminders SET sent = TRUE WHERE id = $1', [r.id]);
+                }
+            } else {
+                await pool.query('UPDATE reminders SET sent = TRUE WHERE id = $1', [r.id]);
+            }
+        }
+    } catch (err) {
+        console.error('Reminder execution error:', err);
+    }
+}, 30000); // Check every 30 seconds
+
+
 async function getUserTimezone(userId) {
     if (!process.env.DATABASE_URL) return 'America/Chicago';
     try {
@@ -320,7 +350,7 @@ async function sendOrUpdateDashboard(userId, text, markup, triggerMsgId = null) 
 }
 
 app.post('/webhook', async (req, res) => {
-    console.log('[WEBHOOK LOG]:', JSON.stringify(req.body));
+    // Webhook log removed for privacy
     try {
         const { message, callback_query: callbackQuery, inline_query: inlineQuery, chosen_inline_result: chosenResult } = req.body;
 
