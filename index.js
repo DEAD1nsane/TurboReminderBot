@@ -568,14 +568,12 @@ Select options below:`, getEditMenuKeyboard(insertRes.rows[0].id, null, null));
 Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occurrences));
                         }
 
-                        const dashData = await getRemindersDashboardData(userId, userTz);
                         await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 inline_message_id: inlineMsgId,
-                                text: dashData.text,
-                                reply_markup: dashData.keyboard,
+                                text: '📝 <i>Edit menu sent to your DM!</i>',
                                 parse_mode: 'HTML'
                             })
                         });
