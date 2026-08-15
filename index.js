@@ -382,7 +382,7 @@ app.post('/webhook', async (req, res) => {
                     if (parsed) {
                 if (typeof chatId !== 'undefined' && typeof msgId !== 'undefined') { await deleteTelegramMessage(chatId, msgId); }
                         await pool.query('UPDATE reminders SET remind_at = $1 WHERE id = $2 AND user_id = $3', [parsed.date, reminderId, userId]);
-                        const localDt = DateTime.fromJSDate(parsed.date).setZone(userTz);
+                        const localDt = DateTime.fromJSDate(parsed.date).setZone('America/Chicago');
                         await sendTelegramMessage(userId, `✅ Reminder time updated to: <i>${localDt.toFormat("LLL d, yyyy 'at' h:mm a")}</i>`, null, 5000);
                     } else {
                         await sendTelegramMessage(userId, '⚠️ Could not parse new time. Please try again or tap Cancel.', null, 5000);
@@ -539,7 +539,7 @@ Select options below:`, getEditMenuKeyboard(insertRes.rows[0].id, null, null));
                 const result = await pool.query('SELECT text, remind_at, recurring, total_occurrences, current_occurrence FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
                 if (result.rows.length > 0) {
                     const r = result.rows[0];
-                    const dt = DateTime.fromJSDate(new Date(r.remind_at)).setZone(userTz);
+                    const dt = DateTime.fromJSDate(new Date(r.remind_at)).setZone('America/Chicago');
                     const formattedTime = dt.toFormat("LLL d, yyyy 'at' h:mm a");
                     let repeatInfo = r.recurring ? `\n🔄 Repeat: ${formatRepeatText(r.recurring)}${r.total_occurrences ? ` (${r.current_occurrence || 0}/${r.total_occurrences})` : ""}` : "";
 
@@ -688,7 +688,7 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                 const parsed = parseFlexibleDate(queryText, userTz);
                 if (parsed) {
                 if (typeof chatId !== 'undefined' && typeof msgId !== 'undefined') { await deleteTelegramMessage(chatId, msgId); }
-                    const dt = DateTime.fromJSDate(parsed.date).setZone(userTz);
+                    const dt = DateTime.fromJSDate(parsed.date).setZone('America/Chicago');
                     const reminderText = parsed.text || parsed.reminderText || queryText;
                     results.push({
                         type: 'article',
@@ -780,7 +780,7 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                             await sendOrUpdateDashboard(userId, `📝 Editing Reminder: "<b>${remText}</b>"
 Select options below:`, getEditMenuKeyboard(insertRes.rows[0].id, null, null));
                         }
-                        const localDt = DateTime.fromJSDate(parsed.date).setZone(userTz);
+                        const localDt = DateTime.fromJSDate(parsed.date).setZone('America/Chicago');
                         const formattedTime = localDt.toFormat("LLL d, yyyy 'at' h:mm a");
                         const editRes = await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
                             method: 'POST',
