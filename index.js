@@ -507,6 +507,18 @@ Select options below:`, getEditMenuKeyboard(insertRes.rows[0].id, null, null));
                     await editTelegramMessage(chatId, messageId, dashData.text, dashData.keyboard);
                 } else if (callbackQuery.inline_message_id) {
                     const inlineMsgId = callbackQuery.inline_message_id;
+
+                if (!inlineMsgId) {
+                    await answerCallbackQuery(callbackQuery.id);
+                    const result = await pool.query('SELECT text, recurring, total_occurrences FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
+                    if (result.rows.length > 0) {
+                        const r = result.rows[0];
+                        await sendOrUpdateDashboard(userId, `✏️ Editing Reminder: "<b>${r.text}</b>"
+━━━━━━━━━━━━━━━━━━
+Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occurrences));
+                    }
+                    return res.sendStatus(200);
+                }
                     await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
