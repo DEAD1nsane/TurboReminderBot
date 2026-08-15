@@ -563,6 +563,18 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                 const reminderId = data.replace('edit:', '');
                 const inlineMsgId = callbackQuery.inline_message_id;
 
+                if (!inlineMsgId) {
+                    await answerCallbackQuery(callbackQuery.id);
+                    const result = await pool.query('SELECT text, recurring, total_occurrences FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
+                    if (result.rows.length > 0) {
+                        const r = result.rows[0];
+                        await editTelegramMessage(userId, callbackQuery.message.message_id, `✏️ Editing Reminder: "<b>${r.text}</b>"
+━━━━━━━━━━━━━━━━━━
+Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occurrences));
+                    }
+                    return res.sendStatus(200);
+                }
+
                 if (inlineMsgId) {
                     const key = `edit_confirm:${userId}:${reminderId}`;
                     if (pendingInlineEdits.has(key)) {
