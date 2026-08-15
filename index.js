@@ -423,9 +423,14 @@ app.post('/webhook', async (req, res) => {
             const parsed = parseFlexibleDate(text, userTz);
 
             if (parsed) {
-                await pool.query('INSERT INTO reminders (user_id, chat_id, text, remind_at) VALUES ($1, $2, $3, $4)', [userId, chatId, parsed.reminderText, parsed.date]);
-                const dashData = await getRemindersDashboardData(userId, userTz);
-                await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard, msgId);
+                const insertRes = await pool.query('INSERT INTO reminders (user_id, chat_id, text, remind_at) VALUES ($1, $2, $3, $4) RETURNING id', [userId, chatId, parsed.reminderText, parsed.date]);
+                if (parsed.wantRepeatMenu) {
+                    await sendOrUpdateDashboard(userId, `📝 Editing Reminder: "<b>${parsed.reminderText}</b>"
+Select options below:`, getEditMenuKeyboard(insertRes.rows[0].id, null, null));
+                } else {
+                    const dashData = await getRemindersDashboardData(userId, userTz);
+                    await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard, msgId);
+                }
             }
             return res.sendStatus(200);
         }
@@ -767,10 +772,11 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                     if (parsed) {
                         const targetUtc = parsed.date;
                         const remText = parsed.text || parsed.reminderText || rawQuery;
-                        await pool.query(
-                            'INSERT INTO reminders (user_id, text, remind_at) VALUES ($1, $2, $3)',
-                            [userId, remText, targetUtc]
-                        );
+                        const insertRes = await pool.query('INSERT INTO reminders (user_id, text, remind_at) VALUES ($1, $2, $3) RETURNING id', [userId, remText, targetUtc]);
+                        if (parsed.wantRepeatMenu) {
+                            await sendOrUpdateDashboard(userId, `📝 Editing Reminder: "<b>${remText}</b>"
+Select options below:`, getEditMenuKeyboard(insertRes.rows[0].id, null, null));
+                        }
                         const localDt = DateTime.fromJSDate(parsed.date).setZone(userTz);
                         const formattedTime = localDt.toFormat("LLL d, yyyy 'at' h:mm a");
                         const editRes = await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
