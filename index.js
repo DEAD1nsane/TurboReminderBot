@@ -578,12 +578,13 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                 return res.sendStatus(200);
             } else if (data.startsWith('view:')) {
                 const reminderId = data.replace('view:', '');
-                const result = await pool.query('SELECT text, remind_at, recurring, total_occurrences, current_occurrence FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
+                const result = await pool.query('SELECT text, remind_at, recurring, total_occurrences, current_occurrence, early_offset FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
                 if (result.rows.length > 0) {
                     const r = result.rows[0];
                     const dt = DateTime.fromJSDate(new Date(r.remind_at)).setZone('America/Chicago');
                     const formattedTime = dt.toFormat("LLL d, yyyy 'at' h:mm a");
                     let repeatInfo = r.recurring ? `\n🔄 Repeat: ${formatRepeatText(r.recurring)}${r.total_occurrences ? ` (${r.current_occurrence || 0}/${r.total_occurrences})` : ""}` : "";
+                    const earlyLabel = r.early_offset ? `\n⚡ Early Warning: ${r.early_offset}m` : "";
 
                     await answerCallbackQuery(callbackQuery.id, `━━━━━━━━━━━━━━━━━━\n🔔 ${r.text}\n🕒 ${formattedTime}${repeatInfo}${earlyLabel}`, true);
                 }
