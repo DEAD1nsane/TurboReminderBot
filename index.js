@@ -832,7 +832,6 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
 
         
         if (chosenResult) {
-            const resultId = chosenResult.result_id;
             const queryText = chosenResult.query;
 
             if (resultId.startsWith('create_inline_')) {
@@ -860,6 +859,7 @@ Reminder set for <b>${formattedDate}</b>`,
                     }
                 }
             }
+            const resultId = chosenResult.result_id;
             const userId = chosenResult.from.id;
 
             if (resultId === 'show_reminders_dm') {
