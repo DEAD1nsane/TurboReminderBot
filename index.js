@@ -99,8 +99,6 @@ initDb();
 
 setInterval(async () => {
     try {
-        let uName = passedName || 'Your';
-        let titleName = uName === 'Your' ? 'Your' : `${uName}'s`;
 
         const res = await pool.query(`SELECT * FROM reminders WHERE (remind_at <= NOW() AND sent = FALSE) OR (early_offset IS NOT NULL AND early_alert_sent = FALSE AND remind_at - (early_offset * INTERVAL '1 minute') <= NOW())`);
         for (const r of res.rows) {
