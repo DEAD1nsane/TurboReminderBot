@@ -875,7 +875,6 @@ Select options below:`, getEditMenuKeyboard(insertRes.rows[0].id, null, null));
                         }
                         const localDt = DateTime.fromJSDate(parsed.date).setZone('America/Chicago');
                         const formattedTime = localDt.toFormat("LLL d, yyyy 'at' h:mm a");
-                const earlyLabel = (typeof r !== "undefined" && r && r.early_offset) ? ` (⚡ -${r.early_offset}m)` : "";
                         const editRes = await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
