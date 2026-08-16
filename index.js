@@ -520,7 +520,7 @@ const { message, callback_query: callbackQuery, inline_query: inlineQuery, chose
                 await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ inline_message_id: inlineMsgId, text: '🫈 Squatch spotted! List collapsed before anyone got proof.', parse_mode: 'HTML' })
+                    body: JSON.stringify({ inline_message_id: inlineMsgId, text: '<b>🫈 Squatch spotted! List collapsed before anyone got proof.</b>', parse_mode: 'HTML' })
                 });
             });
         } else if (messageId && chatId) {
@@ -618,18 +618,24 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                 }
                 return res.sendStatus(200);
             } else if (data.startsWith('view:')) {
-                const reminderId = data.replace('view:', '');
-                const result = await pool.query('SELECT text, remind_at, recurring, total_occurrences, current_occurrence, early_offset FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
-                if (result.rows.length > 0) {
-                    const r = result.rows[0];
-                    const dt = DateTime.fromJSDate(new Date(r.remind_at)).setZone('America/Chicago');
-                    const formattedTime = dt.toFormat("EEE, LLL d, yyyy 'at' h:mm a");
-                    let repeatInfo = r.recurring ? `\n🔄| Repeat: ${formatRepeatText(r.recurring)}${r.total_occurrences ? ` (${r.current_occurrence || 0}/${r.total_occurrences})` : ""}` : "";
-                    const earlyLabel = r.early_offset ? `\n⚡| Early Warning: ${r.early_offset}m` : "";
+            const reminderId = data.replace('view:', '');
+            const result = await pool.query('SELECT text, remind_at, recurring, total_occurrences, current_occurrence, early_offset FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
+            if (result.rows.length > 0) {
+                const r = result.rows[0];
+                const dt = DateTime.fromJSDate(new Date(r.remind_at)).setZone('America/Chicago');
+                
+                const formattedTime = dt.toFormat("EEE, LLL d, yyyy 'at' h:mm a")
+                    .replace(/:00\s?(AM|PM)/i, '$1')
+                    .replace(/\s?(AM|PM)/i, m => m.toLowerCase().trim());
+                
+                let extras = [];
+                if (r.recurring) extras.push(`🔄 | Repeat: ${formatRepeatText(r.recurring)}${r.total_occurrences ? ` (${r.current_occurrence || 0}/${r.total_occurrences})` : ""}`);
+                if (r.early_offset) extras.push(`⚡ | Early Warning: ${r.early_offset}m`);
+                const extrasStr = extras.length > 0 ? `\n\n—\n${extras.join('\n')}` : "";
 
-                    await answerCallbackQuery(callbackQuery.id, `━━━━━━━━━━━━━━━━━━\n🔔 ${r.text}\n🕒 ${formattedTime}${repeatInfo}${earlyLabel}`, true);
-                }
-            } else if (data.startsWith('edit:')) {
+                await answerCallbackQuery(callbackQuery.id, `🔔 | ${r.text}\n🕒 | ${formattedTime}${extrasStr}`, true);
+            }
+        } else if (data.startsWith('edit:')) {
                 const reminderId = data.replace('edit:', '');
                 const inlineMsgId = callbackQuery.inline_message_id;
 
@@ -949,7 +955,7 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                                         headers: { 'Content-Type': 'application/json' },
                                         body: JSON.stringify({
                                             inline_message_id: inlineMessageId,
-                                            text: `✅ Reminder Created for ${chosenResult.from?.first_name || 'you'}!`,
+                                            text: `<b>✅ Reminder Created for ${chosenResult.from?.first_name || 'you'}!</b>`,
                                             parse_mode: 'HTML'
                                         })
                                     });
@@ -993,7 +999,7 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({
                                         inline_message_id: inlineMessageId,
-                                        text: '🫈 Squatch spotted! List collapsed before anyone got proof.',
+                                        text: '<b>🫈 Squatch spotted! List collapsed before anyone got proof.</b>',
                                         parse_mode: 'HTML'
                                     })
                                 });
