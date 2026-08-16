@@ -143,8 +143,6 @@ setInterval(async () => {
 async function getUserTimezone(userId) {
     if (!process.env.DATABASE_URL) return 'America/Chicago';
     try {
-        let uName = passedName || 'Your';
-        let titleName = uName === 'Your' ? 'Your' : `${uName}'s`;
 
         const res = await pool.query('SELECT timezone FROM user_settings WHERE user_id = $1', [userId]);
         return res.rows.length > 0 ? res.rows[0].timezone : 'America/Chicago';
