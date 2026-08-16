@@ -632,10 +632,10 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                 
                 let extras = [];
                 if (r.recurring) extras.push(`🔄 | Repeat: ${formatRepeatText(r.recurring)}${r.total_occurrences ? ` (${r.current_occurrence || 0}/${r.total_occurrences})` : ""}`);
-                if (r.early_offset) extras.push(`⚡ | Early Warning: ${r.early_offset}m`);
-                const extrasStr = extras.length > 0 ? `\n\n—\n${extras.join('\n')}` : "";
+                if (r.early_offset) extras.push(`⏳ | Early Warning: ${r.early_offset}m`);
+                const extrasStr = extras.length > 0 ? `\n━━━━━━━━━━━━━━━━━━\n${extras.join('\n')}` : "";
 
-                await answerCallbackQuery(callbackQuery.id, `🔔 | ${r.text}\n🕒 | ${formattedTime}${extrasStr}`, true);
+                await answerCallbackQuery(callbackQuery.id, `━━━━━━━━━━━━━━━━━━\n🔔 | ${r.text}\n\n🕒 | ${formattedTime}${extrasStr}`, true);
             }
         } else if (data.startsWith('edit:')) {
                 const reminderId = data.replace('edit:', '');
