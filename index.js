@@ -831,7 +831,6 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
 
         
         if (chosenResult) {
-            const userId = chosenResult.from.id;
             const resultId = chosenResult.result_id;
             const queryText = chosenResult.query;
 
