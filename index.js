@@ -841,6 +841,17 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                             parse_mode: 'HTML'
                         })
                     });
+                    resetMenuTimer(`inline_${inlineMessageId}`, async () => {
+                        await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                inline_message_id: inlineMessageId,
+                                text: '🫈 Squatch spotted! List collapsed before anyone got proof.',
+                                parse_mode: 'HTML'
+                            })
+                        });
+                    });
                 } else {
                     await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
                 }
