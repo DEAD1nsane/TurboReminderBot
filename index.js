@@ -1,5 +1,7 @@
 const chrono = require('chrono-node');
+const crypto = require('crypto');
 const pendingInlineEdits = new Set();
+const inlineQueryCache = new Map();
 const express = require('express');
 const { Telegraf } = require('telegraf');
 const { Pool } = require('pg');
@@ -87,8 +89,12 @@ async function initDb() {
         sent BOOLEAN DEFAULT FALSE,
         recurring TEXT DEFAULT NULL,
         total_occurrences INT DEFAULT NULL,
-        current_occurrence INT DEFAULT 0
+        current_occurrence INT DEFAULT 0,
+        early_offset INT DEFAULT NULL,
+        early_alert_sent BOOLEAN DEFAULT FALSE
       );
+      ALTER TABLE reminders ADD COLUMN IF NOT EXISTS early_offset INT DEFAULT NULL;
+      ALTER TABLE reminders ADD COLUMN IF NOT EXISTS early_alert_sent BOOLEAN DEFAULT FALSE;
     `);
     console.log("Database initialized successfully!");
   } catch (err) {
@@ -197,9 +203,6 @@ async function setActiveMenuMsgId(userId, msgId, triggerMsgId = null) {
 async function getPendingEdit(userId) {
     if (!process.env.DATABASE_URL) return null;
     try {
-        let uName = passedName || 'Your';
-        let titleName = uName === 'Your' ? 'Your' : `${uName}'s`;
-
         const res = await pool.query('SELECT pending_edit FROM user_settings WHERE user_id = $1', [userId]);
         return res.rows.length > 0 ? res.rows[0].pending_edit : null;
     } catch (err) {
@@ -252,17 +255,28 @@ function calculateNextOccurrence(currentDate, recurringStr, timeZone) {
 
 function parseFlexibleDate(text, timeZone) {
     let clean = text.trim().replace(/^reminder\s*/i, '');
-    const cleanNoEmoji = clean.replace(/\p{Extended_Pictographic}/gu, ' ').replace(/\s+/g, ' ').trim();
+    // Chrono can choke on an emoji at the beginning of the query. Strip only
+    // leading emoji sequences for date parsing, while keeping the original
+    // text intact so the reminder itself can still start with an emoji.
+    const cleanNoEmoji = clean
+        .replace(/^(?:(?:\p{Extended_Pictographic})(?:\uFE0F|\u200D(?:\p{Extended_Pictographic}))*(?:\s|$))+/u, '')
+        .replace(/^(?:[\p{Extended_Pictographic}\uFE0F\u200D]+\s*)+/u, '')
+        .trim();
+    let dateInput = cleanNoEmoji || clean;
     const nowInZone = DateTime.now().setZone(timeZone);
 
     let wantRepeatMenu = false;
     if (/\brepeat\b$/i.test(clean)) {
         wantRepeatMenu = true;
         clean = clean.replace(/\brepeat\b$/i, '').trim();
+        dateInput = clean
+            .replace(/^(?:(?:\p{Extended_Pictographic})(?:\uFE0F|\u200D(?:\p{Extended_Pictographic}))*(?:\s|$))+/u, '')
+            .replace(/^(?:[\p{Extended_Pictographic}\uFE0F\u200D]+\s*)+/u, '')
+            .trim() || clean;
     }
 
     const compoundRegex = /^((?:\d+d)?\s*(?:\d+h)?\s*(?:\d+m)?\s*(?:\d+s)?)\s+(.+)$/i;
-    const match = clean.match(compoundRegex);
+    const match = dateInput.match(compoundRegex);
 
     if (match && match[1].trim().length > 0) {
         const timePart = match[1];
@@ -279,13 +293,14 @@ function parseFlexibleDate(text, timeZone) {
             if (seconds) dt = dt.plus({ seconds });
 
             if (dt <= nowInZone.plus({ seconds: 59 })) return null;
-            const reminderText = (match[2] && match[2].trim()) ? match[2].trim() : clean;
+            const leadingEmoji = (clean.match(/^(?:[\p{Extended_Pictographic}\uFE0F\u200D]+\s*)+/u) || [''])[0];
+            const reminderText = (match[2] && match[2].trim()) ? `${leadingEmoji}${match[2].trim()}`.trim() : clean;
             return { dt, date: dt.toJSDate(), text: reminderText, reminderText, wantRepeatMenu };
         }
     }
 
     const referenceDate = new Date(nowInZone.year, nowInZone.month - 1, nowInZone.day, nowInZone.hour, nowInZone.minute, nowInZone.second);
-    const parsed = chrono.parse(cleanNoEmoji, referenceDate, { forwardDate: true });
+    const parsed = chrono.parse(dateInput, referenceDate, { forwardDate: true });
     if (parsed.length > 0) {
         const parsedResult = parsed[0];
         const parsedComp = parsedResult.start;
@@ -313,7 +328,21 @@ function parseFlexibleDate(text, timeZone) {
             }
         }
 
-        let reminderText = clean.replace(parsedResult.text, '').trim();
+        let reminderText = clean;
+        if (parsedResult.text) {
+            const dateText = parsedResult.text.trim();
+            const idx = dateInput.toLowerCase().indexOf(dateText.toLowerCase());
+            if (idx >= 0) {
+                // dateInput may have leading emoji removed, so remove the same
+                // date text from the original input without losing those emoji.
+                const originalIdx = clean.toLowerCase().indexOf(dateText.toLowerCase());
+                if (originalIdx >= 0) {
+                    reminderText = `${clean.slice(0, originalIdx)} ${clean.slice(originalIdx + dateText.length)}`.trim();
+                } else {
+                    reminderText = clean.replace(dateText, '').trim();
+                }
+            }
+        }
         if (!reminderText) reminderText = 'Reminder';
 
         return { dt, date: dt.toJSDate(), text: reminderText, reminderText, wantRepeatMenu };
@@ -380,16 +409,14 @@ async function sendOrUpdateDashboard(userId, text, markup, triggerMsgId = null) 
     }
 
     if (targetMsgId) {
-        const timer = setTimeout(async () => {
+        resetMenuTimer(`dm_dashboard_${userId}`, async () => {
             try {
                 await deleteTelegramMessage(userId, targetMsgId);
                 await setActiveMenuMsgId(userId, null);
-                
             } catch (err) {
                 console.error('Failed to auto-delete DM dashboard:', err);
             }
-        }, 30000);
-        dmCollapseTimers.set(userId, timer);
+        });
     }
 }
 
@@ -400,7 +427,10 @@ app.post('/webhook', async (req, res) => {
     // Webhook log removed for privacy
     try {
 const { message, callback_query: callbackQuery, inline_query: inlineQuery, chosen_inline_result: chosenResult } = req.body;
-  console.log('Webhook Payload:', JSON.stringify(req.body));
+        const userId = message?.from?.id || callbackQuery?.from?.id || inlineQuery?.from?.id || chosenResult?.from?.id || null;
+        console.log('Webhook Payload:', JSON.stringify(req.body));
+
+        if (!userId) return res.sendStatus(200);
 
         if (message && message.text) {
             const chatId = message.chat.id;
@@ -800,7 +830,12 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                     const reminderText = parsed.text || parsed.reminderText || queryText;
                     results.push({
                         type: 'article',
-                        id: `create_inline_${Buffer.from(queryText).toString('base64').replace(/[^a-zA-Z0-9]/g, '').substring(0, 40)}`,
+                        id: (() => {
+                            const resultId = `create_inline_${crypto.createHash('sha256').update(queryText).digest('hex').slice(0, 24)}`;
+                            inlineQueryCache.set(resultId, queryText);
+                            setTimeout(() => inlineQueryCache.delete(resultId), 10 * 60 * 1000);
+                            return resultId;
+                        })(),
                         title: `🔔 Set Reminder: "${reminderText}"`,
                         thumbnail_url: "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f0.png",
                         description: `Scheduled for: ${dt.toFormat("EEEE, MMM d, yyyy 'at' h:mm a")}`,
@@ -812,7 +847,7 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                 } else {
                     results.push({
                         type: 'article',
-                        id: `invalid_${Buffer.from(queryText).toString('base64').replace(/[^a-zA-Z0-9]/g, '').substring(0, 40)}`,
+                        id: `invalid_${Buffer.from(queryText).toString('base64url').substring(0, 100)}`,
                         title: '⚠️ Min 1 min ahead',
                         description: 'Time must be >= 1 min.',
                         input_message_content: { message_text: '❌ Reminders must be set for at least 1 minute from now.' }
@@ -829,101 +864,84 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
 
         
         if (chosenResult) {
-            const resultId = chosenResult ? chosenResult.result_id : null;
-            const userId = chosenResult.from ? chosenResult.from.id : null;
-            const queryText = chosenResult.query;
+            // chosen_inline_result is the event fired after a user selects an
+            // inline result. Keep the result id in one local variable and never
+            // redeclare it inside nested branches. The previous handler could
+            // hit a temporal-dead-zone ReferenceError here and abort the update.
+            const selectedResultId = chosenResult.result_id || '';
+            const chosenUserId = chosenResult.from?.id || userId;
+            const inlineMessageId = chosenResult.inline_message_id || null;
 
-            if (resultId.startsWith('create_inline_')) {
-                const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
-                const parsed = parseFlexibleDate(queryText, userTz);
-                if (parsed) {
-                    const inlineMessageId = chosenResult.inline_message_id;
-                    const res = await pool.query(
-                        'INSERT INTO reminders (user_id, text, remind_at, recurring) VALUES ($1, $2, $3, $4) RETURNING id',
-                        [userId, parsed.reminderText, parsed.date, parsed.wantRepeatMenu ? 'daily' : null]
-                    );
-                    const dt = DateTime.fromJSDate(parsed.date).setZone('America/Chicago');
-                    const formattedDate = dt.toFormat("EEEE, MMM d, yyyy 'at' h:mm a");
+            if (selectedResultId.startsWith('create_inline_')) {
+                let rawQuery = chosenResult.query || '';
+                if (!rawQuery) {
+                    const cachedQuery = inlineQueryCache.get(selectedResultId);
+                    if (cachedQuery) {
+                        rawQuery = cachedQuery;
+                    } else {
+                        const encoded = selectedResultId.slice('create_inline_'.length);
+                        // The result id is a hash, so it cannot be decoded back into
+                        // the original query. If Telegram did not provide the query
+                        // and the cache expired, we cannot safely create the reminder.
+                    }
+                }
+
+                const userTz = (await getUserTimezone(chosenUserId)) || 'America/Chicago';
+                const parsed = parseFlexibleDate(rawQuery, userTz);
+
+                if (!parsed) {
                     if (inlineMessageId) {
                         await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 inline_message_id: inlineMessageId,
-                                text: `📌 <b>Squatch spotted!</b>
-Reminder set for <b>${formattedDate}</b>`,
+                                text: '❌ I could not parse that reminder time. Please try again.',
                                 parse_mode: 'HTML'
                             })
                         });
                     }
-                }
-            }
-
-            if (resultId === 'show_reminders_dm') {
-                const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
-                const dashData = await getRemindersDashboardData(userId, userTz, ( (typeof chosenInlineResult !== 'undefined' && chosenInlineResult) ? chosenInlineResult.from.first_name : ((typeof inlineQuery !== 'undefined' && inlineQuery) ? inlineQuery.from.first_name : ((typeof callbackQuery !== 'undefined' && callbackQuery && callbackQuery.inline_message_id) ? callbackQuery.from.first_name : null)) ));
-                await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
-            } else if (resultId === 'show_reminders_inline_v6') {
-                const inlineMessageId = chosenResult.inline_message_id;
-                const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
-                const dashData = await getRemindersDashboardData(userId, userTz, ( (typeof chosenInlineResult !== 'undefined' && chosenInlineResult) ? chosenInlineResult.from.first_name : ((typeof inlineQuery !== 'undefined' && inlineQuery) ? inlineQuery.from.first_name : ((typeof callbackQuery !== 'undefined' && callbackQuery && callbackQuery.inline_message_id) ? callbackQuery.from.first_name : null)) ));
-
-                if (inlineMessageId) {
-                    await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            inline_message_id: inlineMessageId,
-                            text: dashData.text,
-                            reply_markup: dashData.keyboard,
-                            parse_mode: 'HTML'
-                        })
-                    });
-                    resetMenuTimer(`inline_${inlineMessageId}`, async () => {
-                        await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                inline_message_id: inlineMessageId,
-                                text: '🫈 Squatch spotted! List collapsed before anyone got proof.',
-                                parse_mode: 'HTML'
-                            })
-                        });
-                    });
                 } else {
-                    await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
-                }
-            } else if (resultId.startsWith('create_inline_') || resultId.startsWith('custom:')) {
-                const inlineMessageId = chosenResult.inline_message_id;
-                if (inlineMessageId) {
-                    let rawQuery = chosenResult.query;
-                    if (resultId.startsWith('create_inline_')) {
-                        rawQuery = decodeURIComponent(resultId.replace('create_inline_', ''));
+                    // Create the reminder exactly once. Do not run a second legacy
+                    // create branch after this one, which previously caused duplicate
+                    // reminders and conflicting confirmation messages.
+                    const insertRes = await pool.query(
+                        'INSERT INTO reminders (user_id, text, remind_at, recurring) VALUES ($1, $2, $3, $4) RETURNING id',
+                        [chosenUserId, parsed.reminderText, parsed.date, null]
+                    );
+
+                    if (parsed.wantRepeatMenu) {
+                        const safeText = String(parsed.reminderText || 'Reminder')
+                            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                        await sendOrUpdateDashboard(
+                            chosenUserId,
+                            `📝 Editing Reminder: "<b>${safeText}</b>"\nSelect options below:`,
+                            getEditMenuKeyboard(insertRes.rows[0].id, null, null)
+                        );
                     }
-                    const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
-                    const parsed = parseFlexibleDate(rawQuery, userTz);
-                    if (parsed) {
-                if (typeof chatId !== 'undefined' && typeof msgId !== 'undefined') { await deleteTelegramMessage(chatId, msgId); }
-                        const targetUtc = parsed.date;
-                        const remText = parsed.text || parsed.reminderText || rawQuery;
-                        const insertRes = await pool.query('INSERT INTO reminders (user_id, text, remind_at) VALUES ($1, $2, $3) RETURNING id', [userId, remText, targetUtc]);
-                        if (parsed.wantRepeatMenu) {
-                            await sendOrUpdateDashboard(userId, `📝 Editing Reminder: "<b>${remText}</b>"
-Select options below:`, getEditMenuKeyboard(insertRes.rows[0].id, null, null));
-                        }
-                        const localDt = DateTime.fromJSDate(parsed.date).setZone('America/Chicago');
-                        const formattedTime = localDt.toFormat("LLL d, yyyy 'at' h:mm a");
+
+                    const localDt = DateTime.fromJSDate(parsed.date).setZone('America/Chicago');
+                    const formattedTime = localDt.toFormat("LLL d, yyyy 'at' h:mm a");
+                    const safeText = String(parsed.reminderText || 'Reminder')
+                        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+                    if (inlineMessageId) {
+                        // This is the intended inline confirmation. The old
+                        // "Squatch spotted" text belonged to the list-collapse
+                        // behavior, not reminder creation.
                         const editRes = await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 inline_message_id: inlineMessageId,
-                                text: `✅ <b>Reminder set!</b>\n📝 <i>${remText}</i>\n⏰ ${formattedTime}`,
+                                text: `✅ <b>Reminder set!</b>\n📝 <i>${safeText}</i>\n⏰ ${formattedTime}`,
                                 parse_mode: 'HTML'
                             })
                         });
-                        const editData = await editRes.json();
-                        if (editData.ok) {
+
+                        if (!editRes.ok) {
+                            console.error('Failed to update inline reminder confirmation:', await editRes.text());
+                        } else {
                             setTimeout(async () => {
                                 try {
                                     await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
@@ -931,7 +949,7 @@ Select options below:`, getEditMenuKeyboard(insertRes.rows[0].id, null, null));
                                         headers: { 'Content-Type': 'application/json' },
                                         body: JSON.stringify({
                                             inline_message_id: inlineMessageId,
-                                            text: `✅ Reminder Created for ${typeof chosenInlineResult !== 'undefined' && chosenInlineResult ? chosenInlineResult.from.first_name : 'you'}!`,
+                                            text: `✅ Reminder Created for ${chosenResult.from?.first_name || 'you'}!`,
                                             parse_mode: 'HTML'
                                         })
                                     });
@@ -941,6 +959,51 @@ Select options below:`, getEditMenuKeyboard(insertRes.rows[0].id, null, null));
                             }, 30000);
                         }
                     }
+                }
+            } else if (selectedResultId === 'show_reminders_dm') {
+                const userTz = (await getUserTimezone(chosenUserId)) || 'America/Chicago';
+                const dashData = await getRemindersDashboardData(chosenUserId, userTz, chosenResult.from?.first_name || null);
+                await sendOrUpdateDashboard(chosenUserId, dashData.text, dashData.keyboard);
+            } else if (selectedResultId === 'show_reminders_inline_v6') {
+                // Fetch from Postgres at selection time. Do not use the inline
+                // query's result text as the source of truth, since the list can
+                // change between searching and selecting.
+                const userTz = (await getUserTimezone(chosenUserId)) || 'America/Chicago';
+                const dashData = await getRemindersDashboardData(chosenUserId, userTz, chosenResult.from?.first_name || null);
+
+                if (inlineMessageId) {
+                    const editRes = await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            inline_message_id: inlineMessageId,
+                            text: dashData.text,
+                            reply_markup: dashData.keyboard,
+                            parse_mode: 'HTML'
+                        })
+                    });
+
+                    if (!editRes.ok) {
+                        console.error('Failed to populate inline active reminders:', await editRes.text());
+                    } else {
+                        resetMenuTimer(`inline_${inlineMessageId}`, async () => {
+                            try {
+                                await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        inline_message_id: inlineMessageId,
+                                        text: '🫈 Squatch spotted! List collapsed before anyone got proof.',
+                                        parse_mode: 'HTML'
+                                    })
+                                });
+                            } catch (err) {
+                                console.error('Failed to collapse inline reminders list:', err);
+                            }
+                        });
+                    }
+                } else {
+                    await sendOrUpdateDashboard(chosenUserId, dashData.text, dashData.keyboard);
                 }
             }
         }
