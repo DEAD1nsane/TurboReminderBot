@@ -99,6 +99,9 @@ initDb();
 
 setInterval(async () => {
     try {
+        let uName = passedName || 'Your';
+        let titleName = uName === 'Your' ? 'Your' : `${uName}'s`;
+
         const res = await pool.query(`SELECT * FROM reminders WHERE (remind_at <= NOW() AND sent = FALSE) OR (early_offset IS NOT NULL AND early_alert_sent = FALSE AND remind_at - (early_offset * INTERVAL '1 minute') <= NOW())`);
         for (const r of res.rows) {
             const now = new Date();
@@ -142,6 +145,9 @@ setInterval(async () => {
 async function getUserTimezone(userId) {
     if (!process.env.DATABASE_URL) return 'America/Chicago';
     try {
+        let uName = passedName || 'Your';
+        let titleName = uName === 'Your' ? 'Your' : `${uName}'s`;
+
         const res = await pool.query('SELECT timezone FROM user_settings WHERE user_id = $1', [userId]);
         return res.rows.length > 0 ? res.rows[0].timezone : 'America/Chicago';
     } catch (err) {
@@ -165,6 +171,9 @@ async function setUserTimezone(userId, tz) {
 async function getActiveMenuMsgId(userId) {
     if (!process.env.DATABASE_URL) return null;
     try {
+        let uName = passedName || 'Your';
+        let titleName = uName === 'Your' ? 'Your' : `${uName}'s`;
+
         const res = await pool.query('SELECT active_menu_msg_id FROM user_settings WHERE user_id = $1', [userId]);
         return (res.rows.length > 0 && res.rows[0].active_menu_msg_id) ? res.rows[0].active_menu_msg_id : null;
     } catch (err) {
@@ -194,6 +203,9 @@ async function setActiveMenuMsgId(userId, msgId, triggerMsgId = null) {
 async function getPendingEdit(userId) {
     if (!process.env.DATABASE_URL) return null;
     try {
+        let uName = passedName || 'Your';
+        let titleName = uName === 'Your' ? 'Your' : `${uName}'s`;
+
         const res = await pool.query('SELECT pending_edit FROM user_settings WHERE user_id = $1', [userId]);
         return res.rows.length > 0 ? res.rows[0].pending_edit : null;
     } catch (err) {
@@ -314,12 +326,18 @@ function parseFlexibleDate(text, timeZone) {
     return null;
 }
 
-async function getRemindersDashboardData(userId, userTz) {
+async function getRemindersDashboardData(userId, userTz, passedName = null) {
     try {
+        let uName = passedName || 'Your';
+        let titleName = uName === 'Your' ? 'Your' : `${uName}'s`;
+
         const res = await pool.query('SELECT id, text, remind_at, recurring, total_occurrences FROM reminders WHERE user_id = $1 AND sent = FALSE ORDER BY remind_at ASC', [userId]);
         if (res.rows.length === 0) {
             return {
-                text: '📋 <b>Your Active Reminders:</b>\n━━━━━━━━━━━━━━━━━━\n\n<i>📭 No active reminders found.</i>',
+                text: `📋 <b>${titleName} Active Reminders:</b>
+━━━━━━━━━━━━━━━━━━
+
+<i>📭 No active reminders found.</i>`,
                 keyboard: { inline_keyboard: [[{ text: '📭 No active reminders', callback_data: 'noop' }]] }
             };
         }
@@ -333,7 +351,7 @@ async function getRemindersDashboardData(userId, userTz) {
             ];
         });
 
-        return { text: '📋 <b>Your Active Reminders:</b>', keyboard: { inline_keyboard: buttons } };
+        return { text: `📋 <b>${titleName} Active Reminders:</b>`, keyboard: { inline_keyboard: buttons } };
     } catch (err) {
         console.error('Error fetching reminders for dashboard:', err);
         return { text: '⚠️ Error loading reminders.', keyboard: { inline_keyboard: [[{ text: '⚠️ Error loading reminders', callback_data: 'noop' }]] } };
@@ -424,7 +442,7 @@ const { message, callback_query: callbackQuery, inline_query: inlineQuery, chose
                 const existingMenuId = await getActiveMenuMsgId(userId);
                 if (existingMenuId) await deleteTelegramMessage(userId, existingMenuId);
                 await setActiveMenuMsgId(userId, null);
-                const dashData = await getRemindersDashboardData(userId, userTz);
+                const dashData = await getRemindersDashboardData(userId, userTz, (typeof callbackQuery !== 'undefined' && callbackQuery ? callbackQuery.from.first_name : (typeof chosenResult !== 'undefined' && chosenResult ? chosenResult.from.first_name : (typeof chosenInlineResult !== 'undefined' && chosenInlineResult ? chosenInlineResult.from.first_name : (typeof inlineQuery !== 'undefined' && inlineQuery ? inlineQuery.from.first_name : (typeof message !== 'undefined' && message ? message.from.first_name : (typeof msg !== 'undefined' && msg ? msg.from.first_name : null)))))));
                 await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
                 return res.sendStatus(200);
             }
@@ -460,7 +478,7 @@ const { message, callback_query: callbackQuery, inline_query: inlineQuery, chose
                     await sendOrUpdateDashboard(userId, `📝 Editing Reminder: "<b>${parsed.reminderText}</b>"
 Select options below:`, getEditMenuKeyboard(insertRes.rows[0].id, null, null));
                 } else {
-                    const dashData = await getRemindersDashboardData(userId, userTz);
+                    const dashData = await getRemindersDashboardData(userId, userTz, (typeof callbackQuery !== 'undefined' && callbackQuery ? callbackQuery.from.first_name : (typeof chosenResult !== 'undefined' && chosenResult ? chosenResult.from.first_name : (typeof chosenInlineResult !== 'undefined' && chosenInlineResult ? chosenInlineResult.from.first_name : (typeof inlineQuery !== 'undefined' && inlineQuery ? inlineQuery.from.first_name : (typeof message !== 'undefined' && message ? message.from.first_name : (typeof msg !== 'undefined' && msg ? msg.from.first_name : null)))))));
                     await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard, msgId);
                 }
             }
@@ -496,14 +514,14 @@ let userTz = (await getUserTimezone(userId)) || 'America/Chicago';
                 const tz = data.replace('settz:', '');
                 await setUserTimezone(userId, tz);
                 await answerCallbackQuery(callbackQuery.id, `✅ Timezone saved: ${tz}`, true);
-                const dashData = await getRemindersDashboardData(userId, tz);
+                const dashData = await getRemindersDashboardData(userId, tz, (typeof callbackQuery !== 'undefined' && callbackQuery ? callbackQuery.from.first_name : (typeof chosenResult !== 'undefined' && chosenResult ? chosenResult.from.first_name : (typeof chosenInlineResult !== 'undefined' && chosenInlineResult ? chosenInlineResult.from.first_name : (typeof inlineQuery !== 'undefined' && inlineQuery ? inlineQuery.from.first_name : (typeof message !== 'undefined' && message ? message.from.first_name : (typeof msg !== 'undefined' && msg ? msg.from.first_name : null)))))));
                 await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
             } else if (data === 'noop') {
                 await answerCallbackQuery(callbackQuery.id);
             } else if (data === 'menu:list') {
                 await answerCallbackQuery(callbackQuery.id);
                 await setPendingEdit(userId, null);
-                const dashData = await getRemindersDashboardData(userId, userTz);
+                const dashData = await getRemindersDashboardData(userId, userTz, (typeof callbackQuery !== 'undefined' && callbackQuery ? callbackQuery.from.first_name : (typeof chosenResult !== 'undefined' && chosenResult ? chosenResult.from.first_name : (typeof chosenInlineResult !== 'undefined' && chosenInlineResult ? chosenInlineResult.from.first_name : (typeof inlineQuery !== 'undefined' && inlineQuery ? inlineQuery.from.first_name : (typeof message !== 'undefined' && message ? message.from.first_name : (typeof msg !== 'undefined' && msg ? msg.from.first_name : null)))))));
                 if (chatId && messageId) {
                     await editTelegramMessage(chatId, messageId, dashData.text, dashData.keyboard);
                 } else {
@@ -513,7 +531,7 @@ let userTz = (await getUserTimezone(userId)) || 'America/Chicago';
                 const reminderId = data.replace('del:', '');
                 await answerCallbackQuery(callbackQuery.id, '⚠️ Tap again to confirm deletion!', false);
                 
-                const dashData = await getRemindersDashboardData(userId, userTz);
+                const dashData = await getRemindersDashboardData(userId, userTz, (typeof callbackQuery !== 'undefined' && callbackQuery ? callbackQuery.from.first_name : (typeof chosenResult !== 'undefined' && chosenResult ? chosenResult.from.first_name : (typeof chosenInlineResult !== 'undefined' && chosenInlineResult ? chosenInlineResult.from.first_name : (typeof inlineQuery !== 'undefined' && inlineQuery ? inlineQuery.from.first_name : (typeof message !== 'undefined' && message ? message.from.first_name : (typeof msg !== 'undefined' && msg ? msg.from.first_name : null)))))));
                 if (dashData && dashData.keyboard && dashData.keyboard.inline_keyboard) {
                     dashData.keyboard.inline_keyboard = dashData.keyboard.inline_keyboard.map(row => {
                         return row.map(btn => {
@@ -546,7 +564,7 @@ let userTz = (await getUserTimezone(userId)) || 'America/Chicago';
                 await pool.query('DELETE FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
                 await answerCallbackQuery(callbackQuery.id, '🗑️ Reminder deleted!', false);
 
-                const dashData = await getRemindersDashboardData(userId, userTz);
+                const dashData = await getRemindersDashboardData(userId, userTz, (typeof callbackQuery !== 'undefined' && callbackQuery ? callbackQuery.from.first_name : (typeof chosenResult !== 'undefined' && chosenResult ? chosenResult.from.first_name : (typeof chosenInlineResult !== 'undefined' && chosenInlineResult ? chosenInlineResult.from.first_name : (typeof inlineQuery !== 'undefined' && inlineQuery ? inlineQuery.from.first_name : (typeof message !== 'undefined' && message ? message.from.first_name : (typeof msg !== 'undefined' && msg ? msg.from.first_name : null)))))));
                 if (chatId && messageId) {
                     await editTelegramMessage(chatId, messageId, dashData.text, dashData.keyboard);
                 } else if (callbackQuery.inline_message_id) {
@@ -637,7 +655,7 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                         setTimeout(() => pendingInlineEdits.delete(key), 10000);
                         await answerCallbackQuery(callbackQuery.id, '⚠️ Tap Edit again within 10s to send options to your DM', false);
 
-                        const dashData = await getRemindersDashboardData(userId, userTz);
+                        const dashData = await getRemindersDashboardData(userId, userTz, (typeof callbackQuery !== 'undefined' && callbackQuery ? callbackQuery.from.first_name : (typeof chosenResult !== 'undefined' && chosenResult ? chosenResult.from.first_name : (typeof chosenInlineResult !== 'undefined' && chosenInlineResult ? chosenInlineResult.from.first_name : (typeof inlineQuery !== 'undefined' && inlineQuery ? inlineQuery.from.first_name : (typeof message !== 'undefined' && message ? message.from.first_name : (typeof msg !== 'undefined' && msg ? msg.from.first_name : null)))))));
                         if (dashData && dashData.keyboard && dashData.keyboard.inline_keyboard) {
                             dashData.keyboard.inline_keyboard = dashData.keyboard.inline_keyboard.map(row => {
                                 return row.map(btn => {
@@ -823,12 +841,12 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
 
             if (resultId === 'show_reminders_dm') {
                 const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
-                const dashData = await getRemindersDashboardData(userId, userTz);
+                const dashData = await getRemindersDashboardData(userId, userTz, (typeof callbackQuery !== 'undefined' && callbackQuery ? callbackQuery.from.first_name : (typeof chosenResult !== 'undefined' && chosenResult ? chosenResult.from.first_name : (typeof chosenInlineResult !== 'undefined' && chosenInlineResult ? chosenInlineResult.from.first_name : (typeof inlineQuery !== 'undefined' && inlineQuery ? inlineQuery.from.first_name : (typeof message !== 'undefined' && message ? message.from.first_name : (typeof msg !== 'undefined' && msg ? msg.from.first_name : null)))))));
                 await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
             } else if (resultId === 'show_reminders_inline_v6') {
                 const inlineMessageId = chosenResult.inline_message_id;
                 const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
-                const dashData = await getRemindersDashboardData(userId, userTz);
+                const dashData = await getRemindersDashboardData(userId, userTz, (typeof callbackQuery !== 'undefined' && callbackQuery ? callbackQuery.from.first_name : (typeof chosenResult !== 'undefined' && chosenResult ? chosenResult.from.first_name : (typeof chosenInlineResult !== 'undefined' && chosenInlineResult ? chosenInlineResult.from.first_name : (typeof inlineQuery !== 'undefined' && inlineQuery ? inlineQuery.from.first_name : (typeof message !== 'undefined' && message ? message.from.first_name : (typeof msg !== 'undefined' && msg ? msg.from.first_name : null)))))));
 
                 if (inlineMessageId) {
                     await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
