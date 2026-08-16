@@ -59,7 +59,7 @@ function getNumberMenuKeyboard(reminderId, unit) {
     return { inline_keyboard: buttons };
 }
 
-function getLimitMenuKeyboard, getDowMenuKeyboard(reminderId, totalOccurrences) {
+function getLimitMenuKeyboard(reminderId, totalOccurrences) {
     const current = totalOccurrences || 0;
     const limits = [0, 2, 3, 5, 10, 15, 20, 30, 50, 100];
     let buttons = [], row = [];
