@@ -882,7 +882,7 @@ Select options below:`, getEditMenuKeyboard(insertRes.rows[0].id, null, null));
                                         headers: { 'Content-Type': 'application/json' },
                                         body: JSON.stringify({
                                             inline_message_id: inlineMessageId,
-                                            text: '✅ Reminder Created!',
+                                            text: `✅ Reminder Created for ${typeof chosenInlineResult !== 'undefined' && chosenInlineResult ? chosenInlineResult.from.first_name : 'you'}!`,
                                             parse_mode: 'HTML'
                                         })
                                     });
