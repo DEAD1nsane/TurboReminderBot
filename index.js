@@ -217,6 +217,21 @@ function calculateNextOccurrence(currentDate, recurringStr, timeZone) {
     else if (type === 'weekly' || type === 'weeks') dt = dt.plus({ weeks: interval });
     else if (type === 'monthly' || type === 'months') dt = dt.plus({ months: interval });
     else if (type === 'hourly' || type === 'hours') dt = dt.plus({ hours: interval });
+    else if (type === 'dow') {
+        const selectedDays = parts[1].split(',').map(Number).sort();
+        const currentDay = dt.weekday; 
+        let daysToAdd = -1;
+        for (const day of selectedDays) {
+            if (day > currentDay) {
+                daysToAdd = day - currentDay;
+                break;
+            }
+        }
+        if (daysToAdd === -1) {
+            daysToAdd = (7 - currentDay) + selectedDays[0];
+        }
+        dt = dt.plus({ days: daysToAdd });
+    }
 
     return dt.toJSDate();
 }
@@ -669,7 +684,33 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                 await setPendingEdit(userId, `time:${reminderId}`);
                 await editTelegramMessage(chatId, messageId, `🕒 <b>Please type the new time/date for this reminder:</b>\n<i>Example: tomorrow at 8am, 2h, or Aug 12 5pm</i>\n━━━━━━━━━━━━━━━━━━`, { inline_keyboard: [[{ text: '⬅️ Cancel', callback_data: `edit:${reminderId}` }]] });
                 await answerCallbackQuery(callbackQuery.id);
-            } else if (data.startsWith('unitmenu:')) {
+            } else if (data.startsWith('dowmenu:')) {
+            const reminderId = data.replace('dowmenu:', '');
+            const result = await pool.query('SELECT recurring FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
+            if (result.rows.length > 0) {
+                await answerCallbackQuery(callbackQuery.id);
+                await editTelegramMessage(chatId, messageId, `📅 <b>Select specific days to repeat:</b>\n━━━━━━━━━━━━━━━━━━`, getDowMenuKeyboard(reminderId, result.rows[0].recurring));
+            }
+        } else if (data.startsWith('toggledow:')) {
+            const parts = data.split(':');
+            const reminderId = parts[1];
+            const dayNum = parseInt(parts[2], 10);
+            const result = await pool.query('SELECT recurring FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
+            if (result.rows.length > 0) {
+                let current = result.rows[0].recurring;
+                let selected = (current && current.startsWith('dow:')) ? current.split(':')[1].split(',').map(Number) : [];
+                if (selected.includes(dayNum)) {
+                    selected = selected.filter(n => n !== dayNum);
+                } else {
+                    selected.push(dayNum);
+                }
+                selected.sort();
+                let newRec = selected.length > 0 ? `dow:${selected.join(',')}` : null;
+                await pool.query('UPDATE reminders SET recurring = $1 WHERE id = $2 AND user_id = $3', [newRec, reminderId, userId]);
+                await answerCallbackQuery(callbackQuery.id);
+                await editTelegramMessage(chatId, messageId, `📅 <b>Select specific days to repeat:</b>\n━━━━━━━━━━━━━━━━━━`, getDowMenuKeyboard(reminderId, newRec));
+            }
+        } else if (data.startsWith('unitmenu:')) {
                 const reminderId = data.replace('unitmenu:', '');
                 await answerCallbackQuery(callbackQuery.id);
                 await editTelegramMessage(chatId, messageId, `⚙️ <b>Select Custom Interval Unit:</b>\n━━━━━━━━━━━━━━━━━━`, getUnitMenuKeyboard(reminderId));
