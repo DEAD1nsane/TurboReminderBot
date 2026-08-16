@@ -802,10 +802,10 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                     const reminderText = parsed.text || parsed.reminderText || queryText;
                     results.push({
                         type: 'article',
-                        id: `create_inline_${encodeURIComponent(queryText)}`,
+                        id: 'create_inline',
                         title: `🔔 Set Reminder: "${reminderText}"`,
                         thumbnail_url: "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f0.png",
-                        description: `Scheduled for: ${dt.toFormat('ff')}`,
+                        description: `Scheduled for: ${dt.toFormat("EEEE, MMM d, yyyy 'at' h:mm a")}`,
                         input_message_content: { message_text: `⏳ Creating reminder...` },
                         reply_markup: {
                             inline_keyboard: [[{ text: '⏳ Processing...', callback_data: 'noop' }]]
