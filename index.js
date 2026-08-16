@@ -829,7 +829,37 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
             });
         }
 
+        
         if (chosenResult) {
+            const userId = chosenResult.from.id;
+            const resultId = chosenResult.result_id;
+            const queryText = chosenResult.query;
+
+            if (resultId.startsWith('create_inline_')) {
+                const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
+                const parsed = parseFlexibleDate(queryText, userTz);
+                if (parsed) {
+                    const inlineMessageId = chosenResult.inline_message_id;
+                    const res = await pool.query(
+                        'INSERT INTO reminders (user_id, text, remind_at, recurring) VALUES ($1, $2, $3, $4) RETURNING id',
+                        [userId, parsed.reminderText, parsed.date, parsed.wantRepeatMenu ? 'daily' : null]
+                    );
+                    const dt = DateTime.fromJSDate(parsed.date).setZone('America/Chicago');
+                    const formattedDate = dt.toFormat("EEEE, MMM d, yyyy 'at' h:mm a");
+                    if (inlineMessageId) {
+                        await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                inline_message_id: inlineMessageId,
+                                text: `📌 <b>Squatch spotted!</b>
+Reminder set for <b>${formattedDate}</b>`,
+                                parse_mode: 'HTML'
+                            })
+                        });
+                    }
+                }
+            }
             const userId = chosenResult.from.id;
             const resultId = chosenResult.result_id;
 
