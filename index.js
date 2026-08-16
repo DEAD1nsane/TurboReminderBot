@@ -500,8 +500,7 @@ const { message, callback_query: callbackQuery, inline_query: inlineQuery, chose
                 if (typeof chatId !== 'undefined' && typeof msgId !== 'undefined') { await deleteTelegramMessage(chatId, msgId); }
                 const insertRes = await pool.query('INSERT INTO reminders (user_id, chat_id, text, remind_at) VALUES ($1, $2, $3, $4) RETURNING id', [userId, chatId, parsed.reminderText, parsed.date]);
                 if (parsed.wantRepeatMenu) {
-                    await sendOrUpdateDashboard(userId, `📝 Editing Reminder: "<b>${parsed.reminderText}</b>"
-Select options below:`, getEditMenuKeyboard(insertRes.rows[0].id, null, null));
+                    await sendOrUpdateDashboard(userId, `📝 Editing Reminder: "<b>${parsed.reminderText}</b>"\nSelect options below:`, getEditMenuKeyboard(insertRes.rows[0].id, null, null));
                 } else {
                     const dashData = await getRemindersDashboardData(userId, userTz, ( (typeof chosenInlineResult !== 'undefined' && chosenInlineResult) ? chosenInlineResult.from.first_name : ((typeof inlineQuery !== 'undefined' && inlineQuery) ? inlineQuery.from.first_name : ((typeof callbackQuery !== 'undefined' && callbackQuery && callbackQuery.inline_message_id) ? callbackQuery.from.first_name : null)) ));
                     await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard, msgId);
