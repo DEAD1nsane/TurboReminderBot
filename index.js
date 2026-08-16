@@ -20,6 +20,15 @@ const {
     answerCallbackQuery 
 } = require('./telegram');
 
+const activityTimers = new Map();
+function resetMenuTimer(key, action) {
+    if (activityTimers.has(key)) clearTimeout(activityTimers.get(key));
+    activityTimers.set(key, setTimeout(() => {
+        activityTimers.delete(key);
+        action();
+    }, 30000));
+}
+
 const app = express();
 app.use(express.json());
 
@@ -468,7 +477,23 @@ Select options below:`, getEditMenuKeyboard(insertRes.rows[0].id, null, null));
             const chatId = callbackQuery.message?.chat.id;
             const messageId = callbackQuery.message?.message_id;
             const data = callbackQuery.data;
-            let userTz = (await getUserTimezone(userId)) || 'America/Chicago';
+            
+        const inlineMsgId = callbackQuery.inline_message_id;
+        if (inlineMsgId) {
+            resetMenuTimer(`inline_${inlineMsgId}`, async () => {
+                await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ inline_message_id: inlineMsgId, text: '🫈 Squatch spotted! List collapsed before anyone got proof.', parse_mode: 'HTML' })
+                });
+            });
+        } else if (messageId && chatId) {
+            resetMenuTimer(`dm_${messageId}`, async () => {
+                await deleteTelegramMessage(chatId, messageId);
+                await setActiveMenuMsgId(userId, null);
+            });
+        }
+let userTz = (await getUserTimezone(userId)) || 'America/Chicago';
 
             if (messageId) { await setActiveMenuMsgId(userId, messageId); }
 
@@ -554,22 +579,6 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                             parse_mode: 'HTML'
                         })
                     });
-
-                    setTimeout(async () => {
-                        try {
-                            await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    inline_message_id: inlineMsgId,
-                                    text: '🫈 Squatch spotted! List collapsed before anyone got proof.',
-                                    parse_mode: 'HTML'
-                                })
-                            });
-                        } catch (err) {
-                            console.error('Failed to collapse inline message after deletion:', err);
-                        }
-                    }, 30000);
                 }
                 return res.sendStatus(200);
             } else if (data.startsWith('view:')) {
@@ -836,22 +845,6 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                             parse_mode: 'HTML'
                         })
                     });
-
-                    setTimeout(async () => {
-                        try {
-                            await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    inline_message_id: inlineMessageId,
-                                    text: '🫈 Squatch spotted! List collapsed before anyone got proof.',
-                                    parse_mode: 'HTML'
-                                })
-                            });
-                        } catch (err) {
-                            console.error('Failed to collapse inline message:', err);
-                        }
-                    }, 30000);
                 } else {
                     await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
                 }
