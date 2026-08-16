@@ -91,29 +91,38 @@ initDb();
 
 setInterval(async () => {
     try {
-        const res = await pool.query('SELECT * FROM reminders WHERE remind_at <= NOW() AND sent = FALSE');
+        const res = await pool.query(`SELECT * FROM reminders WHERE (remind_at <= NOW() AND sent = FALSE) OR (early_offset IS NOT NULL AND early_alert_sent = FALSE AND remind_at - (early_offset * INTERVAL '1 minute') <= NOW())`);
         for (const r of res.rows) {
-            if (r.chat_id) {
+            const now = new Date();
+            const remindAt = new Date(r.remind_at);
+            const tz = r.timezone || 'America/Chicago';
+            const formattedTime = DateTime.fromJSDate(remindAt).setZone(tz).toFormat("MMM d, yyyy 'at' h:mm a");
+
+            if (r.early_offset && !r.early_alert_sent && now >= new Date(remindAt.getTime() - r.early_offset * 60000)) {
+                await sendTelegramMessage(r.chat_id || r.user_id, `⚡ <b>EARLY WARNING: ${r.early_offset}m</b>
+━━━━━━━━━━━━━━━━━━
+<blockquote><b>${r.text}</b></blockquote>
+<i>Scheduled for: ${formattedTime}</i>`);
+                await pool.query('UPDATE reminders SET early_alert_sent = TRUE WHERE id = $1', [r.id]);
+            } else if (now >= remindAt && !r.sent) {
                 await sendTelegramMessage(r.chat_id || r.user_id, `🔔 <b>REMINDER ALERT</b>
 ━━━━━━━━━━━━━━━━━━
 <blockquote><b>${r.text}</b></blockquote>
-<i>${DateTime.fromJSDate(new Date(r.remind_at)).setZone(r.timezone || 'America/Chicago').toFormat("MMM d, yyyy 'at' h:mm a")}</i>`);
-            } else {
-                await sendTelegramMessage(r.user_id, `🔔 <b>Reminder:</b>\n${r.text}`);
-            }
-            
-            if (r.recurring) {
-                const userTz = (await getUserTimezone(r.user_id)) || 'America/Chicago';
-                const nextDate = calculateNextOccurrence(new Date(), r.recurring, userTz);
-                const newCount = (r.current_occurrence || 0) + 1;
-                
-                if (!r.total_occurrences || newCount < r.total_occurrences) {
-                    await pool.query('UPDATE reminders SET remind_at = $1, current_occurrence = $2 WHERE id = $3', [nextDate, newCount, r.id]);
+<i>${formattedTime}</i>`);
+
+                if (r.recurring) {
+                    const userTz = tz;
+                    const nextDate = calculateNextOccurrence(new Date(), r.recurring, userTz);
+                    const newCount = (r.current_occurrence || 0) + 1;
+
+                    if (!r.total_occurrences || newCount < r.total_occurrences) {
+                        await pool.query('UPDATE reminders SET remind_at = $1, current_occurrence = $2, early_alert_sent = FALSE WHERE id = $3', [nextDate, newCount, r.id]);
+                    } else {
+                        await pool.query('UPDATE reminders SET sent = TRUE WHERE id = $1', [r.id]);
+                    }
                 } else {
                     await pool.query('UPDATE reminders SET sent = TRUE WHERE id = $1', [r.id]);
                 }
-            } else {
-                await pool.query('UPDATE reminders SET sent = TRUE WHERE id = $1', [r.id]);
             }
         }
     } catch (err) {
@@ -510,13 +519,13 @@ Select options below:`, getEditMenuKeyboard(insertRes.rows[0].id, null, null));
 
                 if (!inlineMsgId) {
                     await answerCallbackQuery(callbackQuery.id);
-                    const result = await pool.query('SELECT text, recurring, total_occurrences FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
+                    const result = await pool.query('SELECT text, recurring, total_occurrences, early_offset FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
                     if (result.rows.length > 0) {
                         const r = result.rows[0];
                         const targetMsgId = callbackQuery.message.message_id;
                         await editTelegramMessage(userId, targetMsgId, `✏️ Editing Reminder: "<b>${r.text}</b>"
 ━━━━━━━━━━━━━━━━━━
-Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occurrences));
+Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occurrences, r.early_offset));
                     }
                     return res.sendStatus(200);
                 }
@@ -557,7 +566,7 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                     const formattedTime = dt.toFormat("LLL d, yyyy 'at' h:mm a");
                     let repeatInfo = r.recurring ? `\n🔄 Repeat: ${formatRepeatText(r.recurring)}${r.total_occurrences ? ` (${r.current_occurrence || 0}/${r.total_occurrences})` : ""}` : "";
 
-                    await answerCallbackQuery(callbackQuery.id, `━━━━━━━━━━━━━━━━━━\n🔔 ${r.text}\n🕒 ${formattedTime}${repeatInfo}`, true);
+                    await answerCallbackQuery(callbackQuery.id, `━━━━━━━━━━━━━━━━━━\n🔔 ${r.text}\n🕒 ${formattedTime}${repeatInfo}${earlyLabel}`, true);
                 }
             } else if (data.startsWith('edit:')) {
                 const reminderId = data.replace('edit:', '');
@@ -565,12 +574,12 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
 
                 if (!inlineMsgId) {
                     await answerCallbackQuery(callbackQuery.id);
-                    const result = await pool.query('SELECT text, recurring, total_occurrences FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
+                    const result = await pool.query('SELECT text, recurring, total_occurrences, early_offset FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
                     if (result.rows.length > 0) {
                         const r = result.rows[0];
                         await editTelegramMessage(userId, callbackQuery.message.message_id, `✏️ Editing Reminder: "<b>${r.text}</b>"
 ━━━━━━━━━━━━━━━━━━
-Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occurrences));
+Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occurrences, r.early_offset));
                     }
                     return res.sendStatus(200);
                 }
@@ -581,7 +590,7 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                         pendingInlineEdits.delete(key);
                         await answerCallbackQuery(callbackQuery.id, '📩 Sent edit options to DM!', false);
 
-                        const result = await pool.query('SELECT text, recurring, total_occurrences FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
+                        const result = await pool.query('SELECT text, recurring, total_occurrences, early_offset FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
                         if (result.rows.length > 0) {
                             const r = result.rows[0];
                             const activeMsgId = await getActiveMenuMsgId(userId);
@@ -591,7 +600,7 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                             }
                             await sendOrUpdateDashboard(userId, `✏️ Editing Reminder: "<b>${r.text}</b>"
 ━━━━━━━━━━━━━━━━━━
-Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occurrences));
+Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occurrences, r.early_offset));
                         }
 
                         await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
@@ -633,7 +642,24 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                     }
                     return res.sendStatus(200);
                 }
-            } else if (data.startsWith('prompt_edit_text:')) {
+            } else if (data.startsWith('setearly:')) {
+            const parts = data.split(':');
+            const reminderId = parts[1];
+            const mins = parseInt(parts[2], 10);
+            const offsetVal = mins === 0 ? null : mins;
+            await pool.query('UPDATE reminders SET early_offset = $1, early_alert_sent = FALSE WHERE id = $2 AND user_id = $3', [offsetVal, reminderId, userId]);
+            await answerCallbackQuery(callbackQuery.id, '⚡ Early warning updated!', true);
+            const result = await pool.query('SELECT recurring, total_occurrences, early_offset FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
+            if (result.rows.length > 0) {
+                const r = result.rows[0];
+                await editTelegramMessage(chatId, messageId, `✏️ Editing Reminder\n━━━━━━━━━━━━━━━━━━\nSelect options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occurrences, r.early_offset));
+            }
+        } else if (data.startsWith('prompt_early:')) {
+            const reminderId = data.replace('prompt_early:', '');
+            await setPendingEdit(userId, `early:${reminderId}`);
+            await editTelegramMessage(chatId, messageId, `⚡ <b>How many minutes early should the warning be?</b>\n<i>Example: 15, 45, 120</i>\n━━━━━━━━━━━━━━━━━━`, { inline_keyboard: [[{ text: '⬅️ Cancel', callback_data: `edit:${reminderId}` }]] });
+            await answerCallbackQuery(callbackQuery.id);
+        } else if (data.startsWith('prompt_edit_text:')) {
                 const reminderId = data.replace('prompt_edit_text:', '');
                 await setPendingEdit(userId, `text:${reminderId}`);
                 await editTelegramMessage(chatId, messageId, `📝 <b>Please type the new note/text for this reminder:</b>\n━━━━━━━━━━━━━━━━━━`, { inline_keyboard: [[{ text: '⬅️ Cancel', callback_data: `edit:${reminderId}` }]] });
@@ -653,7 +679,7 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                 await editTelegramMessage(chatId, messageId, `⚙️ <b>Select Every How Many ${unit.toUpperCase()}:</b>\n━━━━━━━━━━━━━━━━━━`, getNumberMenuKeyboard(reminderId, unit));
             } else if (data.startsWith('limitmenu:')) {
                 const reminderId = data.replace('limitmenu:', '');
-                const result = await pool.query('SELECT total_occurrences FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
+                const result = await pool.query('SELECT total_occurrences, early_offset FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
                 if (result.rows.length > 0) {
                     await answerCallbackQuery(callbackQuery.id);
                     await editTelegramMessage(chatId, messageId, `🔁 <b>Select How Many Times to Repeat:</b>\n━━━━━━━━━━━━━━━━━━`, getLimitMenuKeyboard(reminderId, result.rows[0].total_occurrences));
@@ -665,9 +691,9 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                 await pool.query('UPDATE reminders SET recurring = $1 WHERE id = $2 AND user_id = $3', [recurringVal, reminderId, userId]);
                 await answerCallbackQuery(callbackQuery.id, '✅ Recurrence updated!', true);
 
-                const result = await pool.query('SELECT total_occurrences FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
+                const result = await pool.query('SELECT total_occurrences, early_offset FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
                 const totalOcc = result.rows.length > 0 ? result.rows[0].total_occurrences : null;
-                await editTelegramMessage(chatId, messageId, `✏️ Editing Reminder\n━━━━━━━━━━━━━━━━━━\nSelect options below:`, getEditMenuKeyboard(reminderId, recurringVal, totalOcc));
+                await editTelegramMessage(chatId, messageId, `✏️ Editing Reminder\n━━━━━━━━━━━━━━━━━━\nSelect options below:`, getEditMenuKeyboard(reminderId, recurringVal, result.rows[0].total_occurrences, result.rows[0].early_offset));
             } else if (data.startsWith('setlimit:')) {
                 const [, reminderId, countStr] = data.split(':');
                 const count = parseInt(countStr, 10);
@@ -676,9 +702,9 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                 await pool.query('UPDATE reminders SET total_occurrences = $1 WHERE id = $2 AND user_id = $3', [limitVal, reminderId, userId]);
                 await answerCallbackQuery(callbackQuery.id, '✅ Repeat limit updated!', true);
 
-                const result = await pool.query('SELECT recurring FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
+                const result = await pool.query('SELECT recurring, early_offset FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
                 const currentRec = result.rows.length > 0 ? result.rows[0].recurring : null;
-                await editTelegramMessage(chatId, messageId, `✏️ Editing Reminder\n━━━━━━━━━━━━━━━━━━\nSelect options below:`, getEditMenuKeyboard(reminderId, currentRec, limitVal));
+                await editTelegramMessage(chatId, messageId, `✏️ Editing Reminder\n━━━━━━━━━━━━━━━━━━\nSelect options below:`, getEditMenuKeyboard(reminderId, result.rows[0].recurring, limitVal, result.rows[0].early_offset));
             }
         }
 
@@ -808,6 +834,7 @@ Select options below:`, getEditMenuKeyboard(insertRes.rows[0].id, null, null));
                         }
                         const localDt = DateTime.fromJSDate(parsed.date).setZone('America/Chicago');
                         const formattedTime = localDt.toFormat("LLL d, yyyy 'at' h:mm a");
+                const earlyLabel = r.early_offset ? ` (⚡ -${r.early_offset}m)` : "";
                         const editRes = await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },

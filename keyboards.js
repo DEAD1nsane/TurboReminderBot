@@ -21,15 +21,16 @@ function getTimezonePickerKeyboard() {
     };
 }
 
-function getEditMenuKeyboard(reminderId, currentRecurring, totalOccurrences) {
+function getEditMenuKeyboard(reminderId, currentRecurring, totalOccurrences, earlyOffset) {
     const recType = formatRepeatText(currentRecurring);
     const limitLabel = totalOccurrences ? `${totalOccurrences}x` : 'Forever';
     return {
         inline_keyboard: [
             [{ text: '📝 Edit Note/Text', callback_data: `prompt_edit_text:${reminderId}` }, { text: '🕒 Edit Time/Date', callback_data: `prompt_edit_time:${reminderId}` }],
-            [{ text: currentRecurring === null ? '✅ None' : 'None', callback_data: `setrec:${reminderId}:none` }, { text: currentRecurring === 'daily:1' ? '✅ Daily' : 'Daily', callback_data: `setrec:${reminderId}:daily:1` }],
+            [{ text: currentRecurring === null ? ' ✅ None' : 'None', callback_data: `setrec:${reminderId}:none` }, { text: currentRecurring === 'daily:1' ? '✅ Daily' : 'Daily', callback_data: `setrec:${reminderId}:daily:1` }],
             [{ text: currentRecurring === 'weekly:1' ? '✅ Weekly' : 'Weekly', callback_data: `setrec:${reminderId}:weekly:1` }, { text: currentRecurring === 'monthly:1' ? '✅ Monthly' : 'Monthly', callback_data: `setrec:${reminderId}:monthly:1` }],
             [{ text: `⚙️ Custom Interval (${recType})`, callback_data: `unitmenu:${reminderId}` }, { text: `🔁 Repeat Limit (${limitLabel})`, callback_data: `limitmenu:${reminderId}` }],
+            [{ text: earlyOffset === 5 ? '✅ 5m ⚡' : '5m ⚡', callback_data: `setearly:${reminderId}:5` }, { text: earlyOffset === 10 ? '✅ 10m ⚡' : '10m ⚡', callback_data: `setearly:${reminderId}:10` }, { text: (earlyOffset && earlyOffset !== 5 && earlyOffset !== 10) ? `✅ ${earlyOffset}m ⚡` : 'Custom ⚡', callback_data: `prompt_early:${reminderId}` }, { text: !earlyOffset ? '✅ Off' : 'Off ❌', callback_data: `setearly:${reminderId}:0` }],
             [{ text: '⬅️ Back to Reminders', callback_data: 'menu:list' }]
         ]
     };
