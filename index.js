@@ -403,7 +403,6 @@ const { message, callback_query: callbackQuery, inline_query: inlineQuery, chose
   console.log('Webhook Payload:', JSON.stringify(req.body));
 
         if (message && message.text) {
-            const userId = message.from.id;
             const chatId = message.chat.id;
             const msgId = message.message_id;
             const text = message.text.trim();
@@ -481,7 +480,6 @@ Select options below:`, getEditMenuKeyboard(insertRes.rows[0].id, null, null));
         }
 
         if (callbackQuery) {
-            const userId = callbackQuery.from.id;
             const chatId = callbackQuery.message?.chat.id;
             const messageId = callbackQuery.message?.message_id;
             const data = callbackQuery.data;
@@ -768,7 +766,6 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
         }
 
         if (inlineQuery) {
-            const userId = inlineQuery.from.id;
             const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
             const queryText = inlineQuery.query.trim();
             let results = [];
@@ -832,6 +829,8 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
 
         
         if (chosenResult) {
+            const resultId = chosenResult ? chosenResult.result_id : null;
+            const userId = chosenResult.from ? chosenResult.from.id : null;
             const queryText = chosenResult.query;
 
             if (resultId.startsWith('create_inline_')) {
@@ -859,8 +858,6 @@ Reminder set for <b>${formattedDate}</b>`,
                     }
                 }
             }
-            const resultId = chosenResult.result_id;
-            const userId = chosenResult.from.id;
 
             if (resultId === 'show_reminders_dm') {
                 const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
