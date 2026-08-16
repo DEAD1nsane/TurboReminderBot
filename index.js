@@ -635,7 +635,7 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                 if (r.early_offset) extras.push(`⏳ | Early Warning: ${r.early_offset}m`);
                 const extrasStr = extras.length > 0 ? `\n━━━━━━━━━━━━━━━━━━\n${extras.join('\n')}` : "";
 
-                await answerCallbackQuery(callbackQuery.id, `━━━━━━━━━━━━━━━━━━\n🔔 | ${r.text}\n\n🕒 | ${formattedTime}${extrasStr}`, true);
+                await answerCallbackQuery(callbackQuery.id, `🔔 | ${r.text}\n🕒 | ${formattedTime}${extrasStr}`, true);
             }
         } else if (data.startsWith('edit:')) {
                 const reminderId = data.replace('edit:', '');
