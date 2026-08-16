@@ -861,7 +861,6 @@ Reminder set for <b>${formattedDate}</b>`,
                 }
             }
             const userId = chosenResult.from.id;
-            const resultId = chosenResult.result_id;
 
             if (resultId === 'show_reminders_dm') {
                 const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
