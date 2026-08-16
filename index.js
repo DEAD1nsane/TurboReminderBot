@@ -252,6 +252,7 @@ function calculateNextOccurrence(currentDate, recurringStr, timeZone) {
 
 function parseFlexibleDate(text, timeZone) {
     let clean = text.trim().replace(/^reminder\s*/i, '');
+    const cleanNoEmoji = clean.replace(/\p{Extended_Pictographic}/gu, ' ').replace(/\s+/g, ' ').trim();
     const nowInZone = DateTime.now().setZone(timeZone);
 
     let wantRepeatMenu = false;
@@ -284,7 +285,7 @@ function parseFlexibleDate(text, timeZone) {
     }
 
     const referenceDate = new Date(nowInZone.year, nowInZone.month - 1, nowInZone.day, nowInZone.hour, nowInZone.minute, nowInZone.second);
-    const parsed = chrono.parse(clean, referenceDate, { forwardDate: true });
+    const parsed = chrono.parse(cleanNoEmoji, referenceDate, { forwardDate: true });
     if (parsed.length > 0) {
         const parsedResult = parsed[0];
         const parsedComp = parsedResult.start;
