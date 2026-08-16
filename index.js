@@ -167,8 +167,6 @@ async function setUserTimezone(userId, tz) {
 async function getActiveMenuMsgId(userId) {
     if (!process.env.DATABASE_URL) return null;
     try {
-        let uName = passedName || 'Your';
-        let titleName = uName === 'Your' ? 'Your' : `${uName}'s`;
 
         const res = await pool.query('SELECT active_menu_msg_id FROM user_settings WHERE user_id = $1', [userId]);
         return (res.rows.length > 0 && res.rows[0].active_menu_msg_id) ? res.rows[0].active_menu_msg_id : null;
