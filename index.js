@@ -802,7 +802,7 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                     const reminderText = parsed.text || parsed.reminderText || queryText;
                     results.push({
                         type: 'article',
-                        id: 'create_inline',
+                        id: `create_${Buffer.from(queryText).toString('base64').replace(/[^a-zA-Z0-9]/g, '').substring(0, 40)}`,
                         title: `🔔 Set Reminder: "${reminderText}"`,
                         thumbnail_url: "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f0.png",
                         description: `Scheduled for: ${dt.toFormat("EEEE, MMM d, yyyy 'at' h:mm a")}`,
@@ -814,7 +814,7 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                 } else {
                     results.push({
                         type: 'article',
-                        id: 'invalid_time',
+                        id: `invalid_${Buffer.from(queryText).toString('base64').replace(/[^a-zA-Z0-9]/g, '').substring(0, 40)}`,
                         title: '⚠️ Min 1 min ahead',
                         description: 'Time must be >= 1 min.',
                         input_message_content: { message_text: '❌ Reminders must be set for at least 1 minute from now.' }
