@@ -802,7 +802,7 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                     const reminderText = parsed.text || parsed.reminderText || queryText;
                     results.push({
                         type: 'article',
-                        id: `create_${Buffer.from(queryText).toString('base64').replace(/[^a-zA-Z0-9]/g, '').substring(0, 40)}`,
+                        id: `create_inline_${Buffer.from(queryText).toString('base64').replace(/[^a-zA-Z0-9]/g, '').substring(0, 40)}`,
                         title: `🔔 Set Reminder: "${reminderText}"`,
                         thumbnail_url: "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f0.png",
                         description: `Scheduled for: ${dt.toFormat("EEEE, MMM d, yyyy 'at' h:mm a")}`,
