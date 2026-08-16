@@ -455,7 +455,7 @@ const { message, callback_query: callbackQuery, inline_query: inlineQuery, chose
                 if (typeof chatId !== 'undefined' && typeof msgId !== 'undefined') { await deleteTelegramMessage(chatId, msgId); }
                         await pool.query('UPDATE reminders SET remind_at = $1 WHERE id = $2 AND user_id = $3', [parsed.date, reminderId, userId]);
                         const localDt = DateTime.fromJSDate(parsed.date).setZone('America/Chicago');
-                        await sendTelegramMessage(userId, `✅ Reminder time updated to: <i>${localDt.toFormat("LLL d, yyyy 'at' h:mm a")}</i>`, null, 5000);
+                        await sendTelegramMessage(userId, `✅ Reminder time updated to: <i>${localDt.toFormat("EEE, LLL d, yyyy 'at' h:mm a")}</i>`, null, 5000);
                     } else {
                         await sendTelegramMessage(userId, '⚠️ Could not parse new time. Please try again or tap Cancel.', null, 5000);
                         return res.sendStatus(200);
@@ -623,9 +623,9 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                 if (result.rows.length > 0) {
                     const r = result.rows[0];
                     const dt = DateTime.fromJSDate(new Date(r.remind_at)).setZone('America/Chicago');
-                    const formattedTime = dt.toFormat("LLL d, yyyy 'at' h:mm a");
-                    let repeatInfo = r.recurring ? `\n🔄 Repeat: ${formatRepeatText(r.recurring)}${r.total_occurrences ? ` (${r.current_occurrence || 0}/${r.total_occurrences})` : ""}` : "";
-                    const earlyLabel = r.early_offset ? `\n⚡ Early Warning: ${r.early_offset}m` : "";
+                    const formattedTime = dt.toFormat("EEE, LLL d, yyyy 'at' h:mm a");
+                    let repeatInfo = r.recurring ? `\n🔄| Repeat: ${formatRepeatText(r.recurring)}${r.total_occurrences ? ` (${r.current_occurrence || 0}/${r.total_occurrences})` : ""}` : "";
+                    const earlyLabel = r.early_offset ? `\n⚡| Early Warning: ${r.early_offset}m` : "";
 
                     await answerCallbackQuery(callbackQuery.id, `━━━━━━━━━━━━━━━━━━\n🔔 ${r.text}\n🕒 ${formattedTime}${repeatInfo}${earlyLabel}`, true);
                 }
@@ -921,7 +921,7 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                     }
 
                     const localDt = DateTime.fromJSDate(parsed.date).setZone('America/Chicago');
-                    const formattedTime = localDt.toFormat("LLL d, yyyy 'at' h:mm a");
+                    const formattedTime = localDt.toFormat("EEE, LLL d, yyyy 'at' h:mm a");
                     const safeText = String(parsed.reminderText || 'Reminder')
                         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
