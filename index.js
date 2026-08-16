@@ -112,7 +112,9 @@ setInterval(async () => {
             const now = new Date();
             const remindAt = new Date(r.remind_at);
             const tz = r.timezone || 'America/Chicago';
-            const formattedTime = DateTime.fromJSDate(remindAt).setZone(tz).toFormat("MMM d, yyyy 'at' h:mm a");
+            const formattedTime = DateTime.fromJSDate(remindAt).setZone(tz).toFormat("EEE, MMM d, yyyy 'at' h:mm a")
+                .replace(/:00\s?(AM|PM)/i, '$1')
+                .replace(/\s?(AM|PM)/i, m => m.toLowerCase().trim());
 
             if (r.early_offset && !r.early_alert_sent && now >= new Date(remindAt.getTime() - r.early_offset * 60000)) {
                 await sendTelegramMessage(r.chat_id || r.user_id, `⚡ <b>EARLY WARNING: ${r.early_offset}m</b>
