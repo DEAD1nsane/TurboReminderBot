@@ -20,7 +20,15 @@ jobs:
           GDRIVE_JSON: ${{ secrets.GDRIVE_CREDENTIALS }}
         run: |
           mkdir -p ~/.config/rclone
-          python3 -c "import os, json; data=json.loads(os.environ['GDRIVE_JSON']); open('sa.json','w').write(json.dumps(data))"
+          python3 -c "
+import os, json
+raw = os.environ['GDRIVE_JSON']
+try:
+    data = json.loads(raw)
+except Exception:
+    data = json.loads(raw.replace('\n', '\\n'))
+open('sa.json','w').write(json.dumps(data))
+"
           cat <<RCLONE_EOF > ~/.config/rclone/rclone.conf
           [gdrive]
           type = drive
