@@ -29,19 +29,19 @@ async function uploadFiles() {
     try {
       const response = await drive.files.create({
         requestBody: {
-          name: fileName,
+          name: `${fileName}.txt`,
           parents: [FOLDER_ID],
         },
         media: {
-          mimeType: 'application/javascript',
+          mimeType: 'text/plain',
           body: fs.createReadStream(filePath),
         },
         fields: 'id',
       });
       
-      console.log(`Uploaded ${fileName}. File ID: ${response.data.id}`);
+      console.log(`Uploaded ${fileName}.txt. File ID: ${response.data.id}`);
     } catch (error) {
-      console.error(`Failed to upload ${fileName}:`, error.message);
+      console.error(`Failed to upload ${fileName}.txt:`, error.message);
     }
   }
 }
