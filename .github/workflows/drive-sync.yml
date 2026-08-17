@@ -21,10 +21,10 @@ jobs:
 
       - name: Configure Rclone and Sync
         env:
-          GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_CREDENTIALS }}
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
         run: |
           mkdir -p ~/.config/rclone
-          echo "$GDRIVE_CREDENTIALS" > sa.json
+          echo "$GOOGLE_CREDENTIALS" > sa.json
           
           cat <<RCLONE_EOF > ~/.config/rclone/rclone.conf
           [gdrive]
