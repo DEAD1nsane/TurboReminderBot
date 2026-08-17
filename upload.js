@@ -2,7 +2,6 @@ const { google } = require('googleapis');
 const fs = require('fs');
 const path = require('path');
 
-// 1. Authenticate using the Service Account JSON from your GitHub Secret
 const auth = new google.auth.GoogleAuth({
   credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS),
   scopes: ['https://www.googleapis.com/auth/drive.file'],
@@ -11,33 +10,35 @@ const auth = new google.auth.GoogleAuth({
 const drive = google.drive({ version: 'v3', auth });
 const FOLDER_ID = '1mxmLCbIEepp6XJyhzZxVzBTYCcKJI6CW';
 
-// 2. Define the file you want to upload and your target Drive Folder ID
-const FILE_PATH = path.join(__dirname, 'your-file.txt'); // Change to your target file
-const FOLDER_ID = 'YOUR_GOOGLE_DRIVE_FOLDER_ID'; // Change to your Google Drive folder ID
+const filesToUpload = ['index.js', 'keyboards.js', 'telegram.js'];
 
-async function uploadFile() {
-  try {
-    const fileMetaData = {
-      name: path.basename(FILE_PATH),
-      parents: [FOLDER_ID],
-    };
+async function uploadFiles() {
+  for (const fileName of filesToUpload) {
+    const filePath = path.join(__dirname, fileName);
     
-    const media = {
-      mimeType: 'text/plain', // Change to match your file's mime type
-      body: fs.createReadStream(FILE_PATH),
-    };
+    if (!fs.existsSync(filePath)) {
+      console.log(`Skipping ${fileName}: File not found.`);
+      continue;
+    }
     
-    const response = await drive.files.create({
-      resource: fileMetaData,
-      media: media,
-      fields: 'id',
-    });
-    
-    console.log('File uploaded successfully. File ID:', response.data.id);
-  } catch (error) {
-    console.error('Error uploading file:', error);
-    process.exit(1);
+    try {
+      const response = await drive.files.create({
+        requestBody: {
+          name: fileName,
+          parents: [FOLDER_ID],
+        },
+        media: {
+          mimeType: 'application/javascript',
+          body: fs.createReadStream(filePath),
+        },
+        fields: 'id',
+      });
+      
+      console.log(`Uploaded ${fileName}. File ID: ${response.data.id}`);
+    } catch (error) {
+      console.error(`Failed to upload ${fileName}:`, error.message);
+    }
   }
 }
 
-uploadFile();
+uploadFiles();
