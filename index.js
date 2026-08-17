@@ -872,6 +872,7 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
 
         
         if (chosenResult) {
+            const resultId = chosenResult.result_id;
             // chosen_inline_result is the event fired after a user selects an
             // inline result. Keep the result id in one local variable and never
             // redeclare it inside nested branches. The previous handler could
