@@ -24,6 +24,7 @@ async function uploadFiles() {
     
     try {
       const response = await drive.files.create({
+        supportsAllDrives: true,
         requestBody: {
           name: fileName,
           parents: [FOLDER_ID],
