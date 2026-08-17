@@ -18,12 +18,12 @@ jobs:
 
       - name: Setup Credentials & Sync
         env:
-          GDRIVE_JSON: ${{ secrets.GOOGLE_CREDENTIALS }}
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
         run: |
           mkdir -p ~/.config/rclone
           python3 -c "
           import os, json
-          raw = os.environ['GDRIVE_JSON']
+          raw = os.environ['GOOGLE_CREDENTIALS']
           try:
               data = json.loads(raw)
           except Exception:
