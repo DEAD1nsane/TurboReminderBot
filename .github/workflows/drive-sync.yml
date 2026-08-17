@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - main
-    paths:
-      - '*.js'
 
 jobs:
   sync:
@@ -17,17 +15,19 @@ jobs:
       - name: Install Rclone
         run: sudo apt-get update && sudo apt-get install -y rclone
 
-      - name: Configure Rclone & Sync Files
+      - name: Setup Credentials & Sync
+        env:
+          GDRIVE_JSON: ${{ secrets.GDRIVE_CREDENTIALS }}
         run: |
           mkdir -p ~/.config/rclone
-          echo '${{ secrets.GDRIVE_CREDENTIALS }}' > sa.json
-          cat <<EOF > ~/.config/rclone/rclone.conf
+          python3 -c "import os, json; data=json.loads(os.environ['GDRIVE_JSON']); open('sa.json','w').write(json.dumps(data))"
+          cat <<RCLONE_EOF > ~/.config/rclone/rclone.conf
           [gdrive]
           type = drive
           scope = drive
           service_account_file = sa.json
           root_folder_id = 1mxmLCbIEepp6XJyhzZxVzBTYCcKJI6CW
-          EOF
+          RCLONE_EOF
           [ -f index.js ] && rclone copyto index.js gdrive:index.js --verbose
           [ -f keyboards.js ] && rclone copyto keyboards.js gdrive:keyboards.js --verbose
           [ -f telegram.js ] && rclone copyto telegram.js gdrive:telegram.js --verbose
