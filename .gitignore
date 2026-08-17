@@ -1,3 +1,6 @@
 node_modules/
 gdrive-credentials.json
 sa.json
+gdrive-credentials.json
+sa.json
+secure-gdrive.json
