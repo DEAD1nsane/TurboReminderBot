@@ -1,0 +1,41 @@
+name: Sync Code to Google Drive
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '*.js' # Triggers when any JS file is updated
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Sync index.js
+        uses: adityak74/google-drive-upload-action@main
+        with:
+          credentials: ${{ secrets.GDRIVE_CREDENTIALS }}
+          filename: "index.js"
+          folderId: "1mxmLCbIEepp6XJyhzZxVzBTYCcKJI6CW"
+          overwrite: "true"
+
+      - name: Sync keyboards.js
+        uses: adityak74/google-drive-upload-action@main
+        continue-on-error: true
+        with:
+          credentials: ${{ secrets.GDRIVE_CREDENTIALS }}
+          filename: "keyboards.js"
+          folderId: "1mxmLCbIEepp6XJyhzZxVzBTYCcKJI6CW"
+          overwrite: "true"
+          
+      - name: Sync telegram.js
+        uses: adityak74/google-drive-upload-action@main
+        continue-on-error: true
+        with:
+          credentials: ${{ secrets.GDRIVE_CREDENTIALS }}
+          filename: "telegram.js"
+          folderId: "1mxmLCbIEepp6XJyhzZxVzBTYCcKJI6CW"
+          overwrite: "true"
