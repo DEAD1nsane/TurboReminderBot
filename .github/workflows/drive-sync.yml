@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - '*.js' # Triggers when any JS file is updated
+      - '*.js'
 
 jobs:
   sync:
