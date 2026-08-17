@@ -839,6 +839,7 @@ Select options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occ
                     results.push({
                         type: 'article',
                         id: (() => {
+                            const resultId = `create_inline_${crypto.createHash('sha256').update(queryText).digest('hex').slice(0, 24)}`;
                             inlineQueryCache.set(resultId, queryText);
                             setTimeout(() => inlineQueryCache.delete(resultId), 10 * 60 * 1000);
                             return resultId;
