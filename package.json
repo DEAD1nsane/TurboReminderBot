@@ -9,6 +9,7 @@
   "dependencies": {
     "chrono-node": "^2.7.5",
     "express": "^4.19.2",
+    "googleapis": "^174.0.1",
     "luxon": "^3.7.2",
     "pg": "^8.23.0",
     "telegraf": "^4.16.3"
