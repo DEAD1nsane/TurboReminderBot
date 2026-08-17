@@ -10,6 +10,7 @@ const auth = new google.auth.GoogleAuth({
 
 const drive = google.drive({ version: 'v3', auth });
 const FOLDER_ID = '1mxmLCbIEepp6XJyhzZxVzBTYCcKJI6CW';
+const YOUR_PERSONAL_EMAIL = 'turbolaceup@gmail.com'; // Replace with your actual Google email
 
 const filesToUpload = ['index.js', 'keyboards.js', 'telegram.js'];
 
@@ -34,6 +35,17 @@ async function uploadFiles() {
           body: fs.createReadStream(filePath),
         },
         fields: 'id',
+      });
+      
+      // Grant explicit ownership/access permission to your personal Google account
+      await drive.permissions.create({
+        fileId: response.data.id,
+        supportsAllDrives: true,
+        requestBody: {
+          role: 'writer',
+          type: 'user',
+          emailAddress: YOUR_PERSONAL_EMAIL,
+        },
       });
       
       console.log(`Uploaded ${fileName}. File ID: ${response.data.id}`);
