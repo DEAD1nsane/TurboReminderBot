@@ -14,28 +14,21 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Sync index.js
-        uses: jakejarvis/google-drive-upload-action@master
-        with:
-          credentials: ${{ secrets.GDRIVE_CREDENTIALS }}
-          filename: "index.js"
-          folderId: "1mxmLCbIEepp6XJyhzZxVzBTYCcKJI6CW"
-          overwrite: "true"
+      - name: Install Rclone
+        run: sudo apt-get update && sudo apt-get install -y rclone
 
-      - name: Sync keyboards.js
-        uses: jakejarvis/google-drive-upload-action@master
-        continue-on-error: true
-        with:
-          credentials: ${{ secrets.GDRIVE_CREDENTIALS }}
-          filename: "keyboards.js"
-          folderId: "1mxmLCbIEepp6XJyhzZxVzBTYCcKJI6CW"
-          overwrite: "true"
-          
-      - name: Sync telegram.js
-        uses: jakejarvis/google-drive-upload-action@master
-        continue-on-error: true
-        with:
-          credentials: ${{ secrets.GDRIVE_CREDENTIALS }}
-          filename: "telegram.js"
-          folderId: "1mxmLCbIEepp6XJyhzZxVzBTYCcKJI6CW"
-          overwrite: "true"
+      - name: Configure Rclone & Sync Files
+        run: |
+          mkdir -p ~/.config/rclone
+          echo '${{ secrets.GDRIVE_CREDENTIALS }}' > sa.json
+          cat <<EOF > ~/.config/rclone/rclone.conf
+          [gdrive]
+          type = drive
+          scope = drive
+          service_account_file = sa.json
+          root_folder_id = 1mxmLCbIEepp6XJyhzZxVzBTYCcKJI6CW
+          EOF
+          [ -f index.js ] && rclone copyto index.js gdrive:index.js --verbose
+          [ -f keyboards.js ] && rclone copyto keyboards.js gdrive:keyboards.js --verbose
+          [ -f telegram.js ] && rclone copyto telegram.js gdrive:telegram.js --verbose
+          rm -f sa.json
