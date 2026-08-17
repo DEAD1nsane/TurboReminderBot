@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+    paths:
+      - '*.js'
 
 jobs:
   sync:
@@ -13,22 +15,17 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Rclone
-        run: sudo apt-get update && sudo apt-get install -y rclone
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rclone
 
-      - name: Setup Credentials & Sync
+      - name: Configure Rclone and Sync
         env:
-          GDRIVE_JSON: ${{ secrets.GDRIVE_CREDENTIALS }}
+          GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_CREDENTIALS }}
         run: |
           mkdir -p ~/.config/rclone
-          python3 -c "
-import os, json
-raw = os.environ['GDRIVE_JSON']
-try:
-    data = json.loads(raw)
-except Exception:
-    data = json.loads(raw.replace('\n', '\\n'))
-open('sa.json','w').write(json.dumps(data))
-"
+          echo "$GDRIVE_CREDENTIALS" > sa.json
+          
           cat <<RCLONE_EOF > ~/.config/rclone/rclone.conf
           [gdrive]
           type = drive
@@ -36,7 +33,15 @@ open('sa.json','w').write(json.dumps(data))
           service_account_file = sa.json
           root_folder_id = 1mxmLCbIEepp6XJyhzZxVzBTYCcKJI6CW
           RCLONE_EOF
-          [ -f index.js ] && rclone copyto index.js gdrive:index.js --verbose
-          [ -f keyboards.js ] && rclone copyto keyboards.js gdrive:keyboards.js --verbose
-          [ -f telegram.js ] && rclone copyto telegram.js gdrive:telegram.js --verbose
+          
+          if [ -f index.js ]; then
+            rclone copyto index.js gdrive:index.js --verbose
+          fi
+          if [ -f keyboards.js ]; then
+            rclone copyto keyboards.js gdrive:keyboards.js --verbose
+          fi
+          if [ -f telegram.js ]; then
+            rclone copyto telegram.js gdrive:telegram.js --verbose
+          fi
+          
           rm -f sa.json
