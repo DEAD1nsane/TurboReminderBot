@@ -15,7 +15,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Sync index.js
-        uses: adityak74/google-drive-upload-action@main
+        uses: jakejarvis/google-drive-upload-action@master
         with:
           credentials: ${{ secrets.GDRIVE_CREDENTIALS }}
           filename: "index.js"
@@ -23,7 +23,7 @@ jobs:
           overwrite: "true"
 
       - name: Sync keyboards.js
-        uses: adityak74/google-drive-upload-action@main
+        uses: jakejarvis/google-drive-upload-action@master
         continue-on-error: true
         with:
           credentials: ${{ secrets.GDRIVE_CREDENTIALS }}
@@ -32,7 +32,7 @@ jobs:
           overwrite: "true"
           
       - name: Sync telegram.js
-        uses: adityak74/google-drive-upload-action@main
+        uses: jakejarvis/google-drive-upload-action@master
         continue-on-error: true
         with:
           credentials: ${{ secrets.GDRIVE_CREDENTIALS }}
