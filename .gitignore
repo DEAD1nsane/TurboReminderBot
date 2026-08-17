@@ -9,3 +9,7 @@ sa.json
 secure-gdrive.json
 google-cloud-sdk/
 sa-key.json
+sa-key.json
+node_modules/
+google-cloud-sdk/
+google-cloud-cli-linux-arm.tar.gz
