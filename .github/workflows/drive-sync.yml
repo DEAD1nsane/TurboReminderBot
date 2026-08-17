@@ -35,7 +35,7 @@ jobs:
           type = drive
           scope = drive
           service_account_file = sa.json
-          root_folder_id = 1mxmLCbIEepp6XJyhzZxVzBTYCcKJI6CW
+          root_folder_id = 1OlTaF0BhjGnSOlRlv7z6wGNzMazuqkrl
           RCLONE_EOF
           [ -f index.js ] && rclone copyto index.js gdrive:index.js --verbose
           [ -f keyboards.js ] && rclone copyto keyboards.js gdrive:keyboards.js --verbose
