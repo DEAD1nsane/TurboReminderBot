@@ -24,10 +24,10 @@ const filesToUpload = [
   { localPath: path.join(__dirname, 'index.js'), driveName: 'index.js.txt', mimeType: 'text/plain' },
   { localPath: path.join(__dirname, 'keyboards.js'), driveName: 'keyboards.js.txt', mimeType: 'text/plain' },
   { localPath: path.join(__dirname, 'telegram.js'), driveName: 'telegram.js.txt', mimeType: 'text/plain' },
-  { localPath: expandHome('~/storage/shared/Backups/Termux/.termux.properties.txt'), driveName: 'termux.properties.txt', mimeType: 'text/plain' },
-  { localPath: expandHome('~/storage/shared/Backups/Termux/.zshrc.txt'), driveName: 'zshrc.txt', mimeType: 'text/plain' }
+  { localPath: expandHome('/storage/emulated/0/Backups/Termux/.termux.properties.txt'), driveName: 'termux.properties.txt', mimeType: 'text/plain' },
+  { localPath: expandHome('/storage/emulated/0/Backups/Termux/.zshrc.txt'), driveName: 'zshrc.txt', mimeType: 'text/plain' }
 ];
-
+ 
 async function uploadFiles() {
   for (const file of filesToUpload) {
     if (!fs.existsSync(file.localPath)) {
