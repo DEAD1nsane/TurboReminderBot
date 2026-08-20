@@ -15,22 +15,29 @@ oauth2Client.setCredentials({
 const drive = google.drive({ version: 'v3', auth: oauth2Client });
 const FOLDER_ID = '1mxmLCbIEepp6XJyhzZxVzBTYCcKJI6CW';
 
-const filesToUpload = ['index.js', 'keyboards.js', 'telegram.js'];
+// Helper to translate '~' into the actual Termux home path
+const expandHome = (filepath) => 
+  filepath.startsWith('~') ? filepath.replace('~', process.env.HOME) : filepath;
+
+// 1. Specify exact local paths, Drive names, and MIME types here
+const filesToUpload = [
+  { localPath: path.join(__dirname, 'index.js'), driveName: 'index.js.txt', mimeType: 'text/plain' },
+  { localPath: path.join(__dirname, 'keyboards.js'), driveName: 'keyboards.js.txt', mimeType: 'text/plain' },
+  { localPath: path.join(__dirname, 'telegram.js'), driveName: 'telegram.js.txt', mimeType: 'text/plain' },
+  { localPath: expandHome('~/storage/shared/Backups/Termux/.termux.properties.txt'), driveName: 'termux.properties.txt', mimeType: 'text/plain' },
+  { localPath: expandHome('~/storage/shared/Backups/Termux/.zshrc.txt'), driveName: 'zshrc.txt', mimeType: 'text/plain' }
+];
 
 async function uploadFiles() {
-  for (const fileName of filesToUpload) {
-    const filePath = path.join(__dirname, fileName);
-    const driveName = `${fileName}.txt`;
-    
-    if (!fs.existsSync(filePath)) {
-      console.log(`Skipping ${fileName}: File not found.`);
+  for (const file of filesToUpload) {
+    if (!fs.existsSync(file.localPath)) {
+      console.log(`Skipping ${file.driveName}: File not found at ${file.localPath}`);
       continue;
     }
     
     try {
-      // 1. Search if the file already exists in the target folder
       const listResponse = await drive.files.list({
-        q: `name = '${driveName}' and '${FOLDER_ID}' in parents and trashed = false`,
+        q: `name = '${file.driveName}' and '${FOLDER_ID}' in parents and trashed = false`,
         fields: 'files(id, name)',
         spaces: 'drive',
       });
@@ -38,36 +45,34 @@ async function uploadFiles() {
       const existingFiles = listResponse.data.files || [];
       
       if (existingFiles.length > 0) {
-        // 2. If it exists, update the content of the existing file
         const fileId = existingFiles[0].id;
         const response = await drive.files.update({
           fileId: fileId,
           media: {
-            mimeType: 'text/plain',
-            body: fs.createReadStream(filePath),
+            mimeType: file.mimeType, // 2. Uses the correct MIME type
+            body: fs.createReadStream(file.localPath),
           },
           fields: 'id',
         });
         
-        console.log(`Updated existing ${driveName}. File ID: ${response.data.id}`);
+        console.log(`Updated existing ${file.driveName}. File ID: ${response.data.id}`);
       } else {
-        // 3. If it does not exist, create a new file
         const response = await drive.files.create({
           requestBody: {
-            name: driveName,
+            name: file.driveName, // 3. Uses the correct Drive name
             parents: [FOLDER_ID],
           },
           media: {
-            mimeType: 'text/plain',
-            body: fs.createReadStream(filePath),
+            mimeType: file.mimeType,
+            body: fs.createReadStream(file.localPath),
           },
           fields: 'id',
         });
         
-        console.log(`Uploaded new ${driveName}. File ID: ${response.data.id}`);
+        console.log(`Uploaded new ${file.driveName}. File ID: ${response.data.id}`);
       }
     } catch (error) {
-      console.error(`Failed to upload ${driveName}:`, error.message);
+      console.error(`Failed to upload ${file.driveName}:`, error.message);
     }
   }
 }
