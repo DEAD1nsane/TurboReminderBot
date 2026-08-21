@@ -4,4 +4,4 @@ google-cloud-cli-linux-arm.tar.gz
 sa.json
 gdrive-credentials.json
 secure-gdrive.json
-sa-key.json
+sa-key.json.env
