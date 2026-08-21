@@ -16,7 +16,7 @@ const drive = google.drive({ version: 'v3', auth: oauth2Client });
 const FOLDER_ID = '1mxmLCbIEepp6XJyhzZxVzBTYCcKJI6CW';
 
 // Helper to translate '~' into the actual Termux home path
-const expandHome = (filepath) => 
+const expandHome = (filepath) =>
   filepath.startsWith('~') ? filepath.replace('~', process.env.HOME) : filepath;
 
 // 1. Specify exact local paths, Drive names, and MIME types here
