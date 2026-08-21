@@ -406,7 +406,7 @@ async function sendOrUpdateDashboard(userId, text, markup, triggerMsgId = null) 
     if (targetMsgId) {
         resetMenuTimer(`dm_dashboard_${userId}`, async () => {
             try {
-                await editTelegramMessage(userId, targetMsgId, '<b>🫈 Squatch spotted! Menu collapsed due to inactivity.</b>\n<i>Type /start or /view to open again.</i>');
+                await deleteTelegramMessage(userId, targetMsgId);
                 await setActiveMenuMsgId(userId, null);
             } catch (err) {
                 console.error('Failed to auto-collapse DM dashboard:', err);
@@ -518,7 +518,7 @@ app.post('/webhook', async (req, res) => {
                 });
             } else if (messageId && chatId) {
                 resetMenuTimer(`dm_dashboard_${userId}`, async () => {
-                    await editTelegramMessage(chatId, messageId, '<b>🫈 Squatch spotted! Menu collapsed due to inactivity.</b>\n<i>Type /start or /view to open again.</i>');
+                    await deleteTelegramMessage(chatId, messageId);
                     await setActiveMenuMsgId(userId, null);
                 });
             }
