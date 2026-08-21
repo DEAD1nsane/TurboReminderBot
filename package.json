@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "chrono-node": "^2.7.5",
+    "dotenv": "^17.4.2",
     "express": "^4.19.2",
     "googleapis": "^174.0.1",
     "luxon": "^3.7.2",
