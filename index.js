@@ -1011,7 +1011,6 @@ app.post('/webhook', async (req, res) => {
                                 await sendOrUpdateDashboard(chosenUserId, dashData.text, dashData.keyboard);
                             }
                         }
-                    }
                     res.sendStatus(200);
                 } catch (error) {
                     console.error('[WEBHOOK ERROR]:', error);
