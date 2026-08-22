@@ -32,7 +32,7 @@ function getEditMenuKeyboard(reminderId, currentRecurring, totalOccurrences, ear
             [{ text: currentRecurring === 'weekly:1' ? '✅ Weekly' : 'Weekly', callback_data: `setrec:${reminderId}:weekly:1` }, { text: currentRecurring === 'monthly:1' ? '✅ Monthly' : 'Monthly', callback_data: `setrec:${reminderId}:monthly:1` }],
             [{ text: `⚙️ Interval (${recType})`, callback_data: `unitmenu:${reminderId}` }, { text: `📅 Pick Days`, callback_data: `dowmenu:${reminderId}` }],
             [{ text: `🔁 Repeat Limit (${limitLabel})`, callback_data: `limitmenu:${reminderId}` }],
-            [{ text: earlyOffset === 5 ? '✅ 5m ⚡' : '5m ⚡', callback_data: `setearly:${reminderId}:5` }, { text: earlyOffset === 10 ? '✅ 10m ⚡' : '10m ⚡', callback_data: `setearly:${reminderId}:10` }, { text: (earlyOffset && earlyOffset !== 5 && earlyOffset !== 10) ? `✅ ${earlyOffset}m ⚡` : 'Custom ⚡', callback_data: `prompt_early:${reminderId}` }, { text: !earlyOffset ? '✅ Off' : 'Off ❌', callback_data: `setearly:${reminderId}:0` }],
+            [{ text: earlyOffset === 5 ? '✅ 5m ⏳' : '5m ⏳', callback_data: `setearly:${reminderId}:5` }, { text: earlyOffset === 10 ? '✅ 10m ⏳' : '10m ⏳', callback_data: `setearly:${reminderId}:10` }, { text: (earlyOffset && earlyOffset !== 5 && earlyOffset !== 10) ? `✅ ${earlyOffset}m ⏳` : 'Custom ⏳', callback_data: `prompt_early:${reminderId}` }, { text: !earlyOffset ? '✅ Off' : 'Off ❌', callback_data: `setearly:${reminderId}:0` }],
             [{ text: '⬅️ Back to Reminders', callback_data: 'menu:list' }]
         ]
     };
@@ -55,6 +55,7 @@ function getNumberMenuKeyboard(reminderId, unit) {
         row.push({ text: `${n}`, callback_data: `setrec:${reminderId}:${unit}:${n}` });
         if (row.length === 4 || idx === nums.length - 1) { buttons.push(row); row = []; }
     });
+    buttons.push([{ text: '✍️ Custom Number...', callback_data: `prompt_rec:${reminderId}:${unit}` }]);
     buttons.push([{ text: '⬅️ Back to Units', callback_data: `unitmenu:${reminderId}` }]);
     return { inline_keyboard: buttons };
 }
@@ -71,7 +72,6 @@ function getLimitMenuKeyboard(reminderId, totalOccurrences) {
     buttons.push([{ text: '⬅️ Back to Edit', callback_data: `edit:${reminderId}` }]);
     return { inline_keyboard: buttons };
 }
-
 
 function getDowMenuKeyboard(reminderId, currentRecurring) {
     const selected = (currentRecurring && currentRecurring.startsWith('dow:')) ? currentRecurring.split(':')[1].split(',').map(Number) : [];
