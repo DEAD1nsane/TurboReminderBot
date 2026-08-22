@@ -972,50 +972,50 @@ app.post('/webhook', async (req, res) => {
                             const userTz = (await getUserTimezone(chosenUserId)) || 'America/Chicago';
                             const dashData = await getRemindersDashboardData(chosenUserId, userTz, chosenResult.from?.first_name || null);
                             await sendOrUpdateDashboard(chosenUserId, dashData.text, dashData.keyboard);
-                        } else if (selectedResultId === 'show_reminders_inline_v6') {
-                            const userTz = (await getUserTimezone(chosenUserId)) || 'America/Chicago';
-                            const dashData = await getRemindersDashboardData(chosenUserId, userTz, chosenResult.from?.first_name || null);
-                            
-                            if (inlineMessageId) {
-                                const editRes = await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+            } else if (selectedResultId === 'show_reminders_inline_v6') {
+                const userTz = (await getUserTimezone(chosenUserId)) || 'America/Chicago';
+                const dashData = await getRemindersDashboardData(chosenUserId, userTz, chosenResult.from?.first_name || null);
+                
+                if (inlineMessageId) {
+                    const editRes = await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            inline_message_id: inlineMessageId,
+                            text: dashData.text,
+                            reply_markup: dashData.keyboard,
+                            parse_mode: 'HTML'
+                        })
+                    });
+                    
+                    if (!editRes.ok) {
+                        console.error('Failed to populate inline active reminders:', await editRes.text());
+                    } else {
+                        resetMenuTimer(`inline_${inlineMessageId}`, async () => {
+                            try {
+                                await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({
                                         inline_message_id: inlineMessageId,
-                                        text: dashData.text,
-                                        reply_markup: dashData.keyboard,
+                                        text: '<b>🫈 Squatch spotted! List collapsed before anyone got proof.</b>',
                                         parse_mode: 'HTML'
                                     })
                                 });
-                                
-                                if (!editRes.ok) {
-                                    console.error('Failed to populate inline active reminders:', await editRes.text());
-                                } else {
-                                    resetMenuTimer(`inline_${inlineMessageId}`, async () => {
-                                        try {
-                                            await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
-                                                method: 'POST',
-                                                headers: { 'Content-Type': 'application/json' },
-                                                body: JSON.stringify({
-                                                    inline_message_id: inlineMessageId,
-                                                    text: '<b>🫈 Squatch spotted! List collapsed before anyone got proof.</b>',
-                                                    parse_mode: 'HTML'
-                                                })
-                                            });
-                                        } catch (err) {
-                                            console.error('Failed to collapse inline reminders list:', err);
-                                        }
-                                    });
-                                }
-                            } else {
-                                await sendOrUpdateDashboard(chosenUserId, dashData.text, dashData.keyboard);
+                            } catch (err) {
+                                console.error('Failed to collapse inline reminders list:', err);
                             }
-                        }
+                        });
                     }
-                    res.sendStatus(200);
+                } else {
+                    await sendOrUpdateDashboard(chosenUserId, dashData.text, dashData.keyboard);
                 }
-                catch (error) {
-                    console.error('[WEBHOOK ERROR]:', error);
-                    res.sendStatus(500);
-                }
+            }
+            }
+            res.sendStatus(200);
+            }
+            catch (error) {
+                console.error('[WEBHOOK ERROR]:', error);
+                res.sendStatus(500);
+            }
             });
