@@ -6,24 +6,23 @@ const express = require('express');
 const { Telegraf } = require('telegraf');
 const { Pool } = require('pg');
 const { DateTime } = require('luxon');
-const {
-    formatRepeatText,
-    getTimezonePickerKeyboard,
-    getEditMenuKeyboard,
-    getUnitMenuKeyboard,
-    getNumberMenuKeyboard,
+const { 
+    formatRepeatText, 
+    getTimezonePickerKeyboard, 
+    getEditMenuKeyboard, 
+    getUnitMenuKeyboard, 
+    getNumberMenuKeyboard, 
     getLimitMenuKeyboard,
     getDowMenuKeyboard
 } = require('./keyboards');
-const {
-    sendTelegramMessage,
-    editTelegramMessage,
-    deleteTelegramMessage,
-    answerCallbackQuery
+const { 
+    sendTelegramMessage, 
+    editTelegramMessage, 
+    deleteTelegramMessage, 
+    answerCallbackQuery 
 } = require('./telegram');
 
 const activityTimers = new Map();
-
 function resetMenuTimer(key, action) {
     if (activityTimers.has(key)) clearTimeout(activityTimers.get(key));
     activityTimers.set(key, setTimeout(() => {
@@ -40,7 +39,7 @@ const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const OWNER_ID = process.env.OWNER_ID ? parseInt(process.env.OWNER_ID, 10) : 6293437261;
 
 if (!TOKEN || !process.env.DATABASE_URL) {
-    console.error('CRITICAL: Missing TELEGRAM_BOT_TOKEN or DATABASE_URL environment variables.');
+    console.error('CRITICAL: Missing TELEGRAM_BOT_TOKEN or DATABASE_URL');
     process.exit(1);
 }
 
@@ -60,8 +59,8 @@ const pool = new Pool({
 pool.on('error', (err) => console.error('Unexpected Postgres pool error:', err));
 
 async function initDb() {
-    try {
-        await pool.query(`
+  try {
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS user_settings (
         user_id BIGINT PRIMARY KEY,
         timezone TEXT NOT NULL DEFAULT 'America/Chicago',
@@ -71,8 +70,8 @@ async function initDb() {
         collapse_at TIMESTAMPTZ DEFAULT NULL
       );
     `);
-        
-        await pool.query(`
+
+    await pool.query(`
       ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS pending_edit TEXT DEFAULT NULL;
       ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS trigger_msg_id BIGINT DEFAULT NULL;
       ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS active_menu_msg_id BIGINT DEFAULT NULL;
@@ -80,8 +79,8 @@ async function initDb() {
       ALTER TABLE user_settings ALTER COLUMN timezone SET DEFAULT 'America/Chicago';
       UPDATE user_settings SET timezone = 'America/Chicago' WHERE timezone IS NULL;
     `);
-        
-        await pool.query(`
+
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS reminders (
         id SERIAL PRIMARY KEY,
         user_id BIGINT NOT NULL,
@@ -98,16 +97,15 @@ async function initDb() {
       ALTER TABLE reminders ADD COLUMN IF NOT EXISTS early_offset INT DEFAULT NULL;
       ALTER TABLE reminders ADD COLUMN IF NOT EXISTS early_alert_sent BOOLEAN DEFAULT FALSE;
     `);
-        console.log("Database initialized successfully!");
-    } catch (err) {
-        console.error("Error initializing database:", err);
-    }
+    console.log("Database initialized successfully!");
+  } catch (err) {
+    console.error("Error initializing database:", err);
+  }
 }
 initDb();
 
 setInterval(async () => {
     try {
-        
         const res = await pool.query(`SELECT * FROM reminders WHERE (remind_at <= NOW() AND sent = FALSE) OR (early_offset IS NOT NULL AND early_alert_sent = FALSE AND remind_at - (early_offset * INTERVAL '1 minute') <= NOW())`);
         for (const r of res.rows) {
             const now = new Date();
@@ -116,22 +114,18 @@ setInterval(async () => {
             const formattedTime = DateTime.fromJSDate(remindAt).setZone(tz).toFormat("EEE, MMM d, yyyy 'at' h:mm a")
                 .replace(/:00\s?(AM|PM)/i, '$1')
                 .replace(/\s?(AM|PM)/i, m => m.toLowerCase().trim());
-            
+
             if (r.early_offset && !r.early_alert_sent && now >= new Date(remindAt.getTime() - r.early_offset * 60000)) {
-                await sendTelegramMessage(r.chat_id || r.user_id, `⚡ <b>EARLY WARNING: ${r.early_offset}m</b>
-━━━━━━━━━━━━━━━━━━
-<blockquote><b>${r.text}</b></blockquote>
-<i>Scheduled for: ${formattedTime}</i>`);
+                await sendTelegramMessage(r.chat_id || r.user_id, `⚡ <b>${r.text}</b>\n<i>Starts in ${r.early_offset}m (${formattedTime})</i>`);
                 await pool.query('UPDATE reminders SET early_alert_sent = TRUE WHERE id = $1', [r.id]);
-            } else if (now >= remindAt && !r.sent) {} else if (now >= remindAt && !r.sent) {
-                await sendTelegramMessage(r.chat_id || r.user_id, `🔔 <b>${r.text}</b>
-<i>${formattedTime}</i>`);
-                
+            } else if (now >= remindAt && !r.sent) {
+                await sendTelegramMessage(r.chat_id || r.user_id, `🔔 <b>${r.text}</b>\n<i>${formattedTime}</i>`);
+
                 if (r.recurring) {
                     const userTz = tz;
                     const nextDate = calculateNextOccurrence(new Date(), r.recurring, userTz);
                     const newCount = (r.current_occurrence || 0) + 1;
-                    
+
                     if (!r.total_occurrences || newCount < r.total_occurrences) {
                         await pool.query('UPDATE reminders SET remind_at = $1, current_occurrence = $2, early_alert_sent = FALSE WHERE id = $3', [nextDate, newCount, r.id]);
                     } else {
@@ -145,13 +139,11 @@ setInterval(async () => {
     } catch (err) {
         console.error('Reminder execution error:', err);
     }
-}, 30000); // Check every 30 seconds
-
+}, 30000);
 
 async function getUserTimezone(userId) {
     if (!process.env.DATABASE_URL) return 'America/Chicago';
     try {
-        
         const res = await pool.query('SELECT timezone FROM user_settings WHERE user_id = $1', [userId]);
         return res.rows.length > 0 ? res.rows[0].timezone : 'America/Chicago';
     } catch (err) {
@@ -175,7 +167,6 @@ async function setUserTimezone(userId, tz) {
 async function getActiveMenuMsgId(userId) {
     if (!process.env.DATABASE_URL) return null;
     try {
-        
         const res = await pool.query('SELECT active_menu_msg_id FROM user_settings WHERE user_id = $1', [userId]);
         return (res.rows.length > 0 && res.rows[0].active_menu_msg_id) ? res.rows[0].active_menu_msg_id : null;
     } catch (err) {
@@ -188,15 +179,15 @@ async function setActiveMenuMsgId(userId, msgId, triggerMsgId = null) {
     try {
         const collapseAt = msgId ? new Date(Date.now() + 30000) : null;
         await pool.query(
-            `INSERT INTO user_settings (user_id, active_menu_msg_id, trigger_msg_id, collapse_at, timezone)
+      `INSERT INTO user_settings (user_id, active_menu_msg_id, trigger_msg_id, collapse_at, timezone)
        VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (user_id) DO UPDATE SET 
          active_menu_msg_id = $2, 
          trigger_msg_id = COALESCE($3, user_settings.trigger_msg_id), 
          collapse_at = $4,
          timezone = COALESCE(user_settings.timezone, EXCLUDED.timezone)`,
-            [userId, msgId, triggerMsgId, collapseAt, 'America/Chicago']
-        );
+      [userId, msgId, triggerMsgId, collapseAt, 'America/Chicago']
+    );
     } catch (err) {
         console.error('Error setting active menu msg id:', err);
     }
@@ -231,14 +222,14 @@ function calculateNextOccurrence(currentDate, recurringStr, timeZone) {
     const parts = recurringStr.split(':');
     const type = parts[0];
     const interval = parseInt(parts[1] || '1', 10);
-    
+
     if (type === 'daily' || type === 'days') dt = dt.plus({ days: interval });
     else if (type === 'weekly' || type === 'weeks') dt = dt.plus({ weeks: interval });
     else if (type === 'monthly' || type === 'months') dt = dt.plus({ months: interval });
     else if (type === 'hourly' || type === 'hours') dt = dt.plus({ hours: interval });
     else if (type === 'dow') {
         const selectedDays = parts[1].split(',').map(Number).sort();
-        const currentDay = dt.weekday;
+        const currentDay = dt.weekday; 
         let daysToAdd = -1;
         for (const day of selectedDays) {
             if (day > currentDay) {
@@ -251,7 +242,7 @@ function calculateNextOccurrence(currentDate, recurringStr, timeZone) {
         }
         dt = dt.plus({ days: daysToAdd });
     }
-    
+
     return dt.toJSDate();
 }
 
@@ -263,7 +254,7 @@ function parseFlexibleDate(text, timeZone) {
         .trim();
     let dateInput = cleanNoEmoji || clean;
     const nowInZone = DateTime.now().setZone(timeZone);
-    
+
     let wantRepeatMenu = false;
     if (/\brepeat\b$/i.test(clean)) {
         wantRepeatMenu = true;
@@ -273,44 +264,44 @@ function parseFlexibleDate(text, timeZone) {
             .replace(/^(?:[\p{Extended_Pictographic}\uFE0F\u200D]+\s*)+/u, '')
             .trim() || clean;
     }
-    
+
     const compoundRegex = /^((?:\d+d)?\s*(?:\d+h)?\s*(?:\d+m)?\s*(?:\d+s)?)\s+(.+)$/i;
     const match = dateInput.match(compoundRegex);
-    
+
     if (match && match[1].trim().length > 0) {
         const timePart = match[1];
         const days = (timePart.match(/(\d+)d/i) || [])[1] ? parseInt(RegExp.$1, 10) : 0;
         const hours = (timePart.match(/(\d+)h/i) || [])[1] ? parseInt(RegExp.$1, 10) : 0;
         const minutes = (timePart.match(/(\d+)m/i) || [])[1] ? parseInt(RegExp.$1, 10) : 0;
         const seconds = (timePart.match(/(\d+)s/i) || [])[1] ? parseInt(RegExp.$1, 10) : 0;
-        
+
         if (days > 0 || hours > 0 || minutes > 0 || seconds > 0) {
             let dt = nowInZone;
             if (days) dt = dt.plus({ days });
             if (hours) dt = dt.plus({ hours });
             if (minutes) dt = dt.plus({ minutes });
             if (seconds) dt = dt.plus({ seconds });
-            
+
             if (dt <= nowInZone.plus({ seconds: 59 })) return null;
             const leadingEmoji = (clean.match(/^(?:[\p{Extended_Pictographic}\uFE0F\u200D]+\s*)+/u) || [''])[0];
             const reminderText = (match[2] && match[2].trim()) ? `${leadingEmoji}${match[2].trim()}`.trim() : clean;
             return { dt, date: dt.toJSDate(), text: reminderText, reminderText, wantRepeatMenu };
         }
     }
-    
+
     const referenceDate = new Date(nowInZone.year, nowInZone.month - 1, nowInZone.day, nowInZone.hour, nowInZone.minute, nowInZone.second);
     const parsed = chrono.parse(dateInput, referenceDate, { forwardDate: true });
     if (parsed.length > 0) {
         const parsedResult = parsed[0];
         const parsedComp = parsedResult.start;
-        
+
         let dt = nowInZone.set({
             hour: parsedComp.get('hour') !== null ? parsedComp.get('hour') : nowInZone.hour,
             minute: parsedComp.get('minute') !== null ? parsedComp.get('minute') : 0,
             second: 0,
             millisecond: 0
         });
-        
+
         if (parsedComp.get('day') !== null) {
             dt = dt.set({
                 year: parsedComp.get('year') || nowInZone.year,
@@ -318,7 +309,7 @@ function parseFlexibleDate(text, timeZone) {
                 day: parsedComp.get('day')
             });
         }
-        
+
         if (dt <= nowInZone) {
             if (parsedComp.get('day') === null && parsedComp.get('month') === null) {
                 dt = dt.plus({ days: 1 });
@@ -326,7 +317,7 @@ function parseFlexibleDate(text, timeZone) {
                 return null;
             }
         }
-        
+
         let reminderText = clean;
         if (parsedResult.text) {
             const dateText = parsedResult.text.trim();
@@ -341,7 +332,7 @@ function parseFlexibleDate(text, timeZone) {
             }
         }
         if (!reminderText) reminderText = 'Reminder';
-        
+
         return { dt, date: dt.toJSDate(), text: reminderText, reminderText, wantRepeatMenu };
     }
     return null;
@@ -351,19 +342,15 @@ async function getRemindersDashboardData(userId, userTz, passedName = null) {
     try {
         let uName = passedName || 'Your';
         let titleName = uName === 'Your' ? 'Your' : `${uName}'s`;
-        
+
         const res = await pool.query('SELECT id, text, remind_at, recurring, total_occurrences FROM reminders WHERE user_id = $1 AND sent = FALSE ORDER BY remind_at ASC', [userId]);
         if (res.rows.length === 0) {
             return {
                 text: `📋 <b>${titleName} Active Reminders:</b>\n━━━━━━━━━━━━━━━━━━\n\n<i>📭 No active reminders found.</i>`,
-                keyboard: {
-                    inline_keyboard: [
-                        [{ text: '📭 No active reminders', callback_data: 'noop' }]
-                    ]
-                }
+                keyboard: { inline_keyboard: [[{ text: '📭 No active reminders', callback_data: 'noop' }]] }
             };
         }
-        
+
         let buttons = res.rows.map(r => {
             let statusIcon = r.recurring ? (r.total_occurrences ? '🔢 ' : '🔄 ') : '';
             return [
@@ -372,26 +359,18 @@ async function getRemindersDashboardData(userId, userTz, passedName = null) {
                 { text: '❌ Del', callback_data: `del:${r.id}` }
             ];
         });
-        
+
         return { text: `📋 <b>${titleName} Active Reminders:</b>`, keyboard: { inline_keyboard: buttons } };
     } catch (err) {
         console.error('Error fetching reminders for dashboard:', err);
-        return {
-            text: '⚠️ Error loading reminders.',
-            keyboard: {
-                inline_keyboard: [
-                    [{ text: '⚠️ Error loading reminders', callback_data: 'noop' }]
-                ]
-            }
-        };
+        return { text: '⚠️ Error loading reminders.', keyboard: { inline_keyboard: [[{ text: '⚠️ Error loading reminders', callback_data: 'noop' }]] } };
     }
 }
 
 async function sendOrUpdateDashboard(userId, text, markup, triggerMsgId = null) {
-    
     const existingMsgId = await getActiveMenuMsgId(userId);
     let targetMsgId = null;
-    
+
     if (existingMsgId) {
         const success = await editTelegramMessage(userId, existingMsgId, text, markup);
         if (success) {
@@ -412,11 +391,11 @@ async function sendOrUpdateDashboard(userId, text, markup, triggerMsgId = null) 
             await setActiveMenuMsgId(userId, targetMsgId, triggerMsgId);
         }
     }
-    
+
     if (targetMsgId) {
         resetMenuTimer(`dm_dashboard_${userId}`, async () => {
             try {
-                await deleteTelegramMessage(userId, targetMsgId);
+                await editTelegramMessage(userId, targetMsgId, '<b>🫈 Squatch spotted! Menu collapsed due to inactivity.</b>\n<i>Type /start or /view to open again.</i>');
                 await setActiveMenuMsgId(userId, null);
             } catch (err) {
                 console.error('Failed to auto-collapse DM dashboard:', err);
@@ -431,8 +410,23 @@ app.post('/webhook', async (req, res) => {
     }
     try {
         const { message, callback_query: callbackQuery, inline_query: inlineQuery, chosen_inline_result: chosenResult } = req.body;
-        const userId = message?.from?.id || callbackQuery?.from?.id || inlineQuery?.from?.id || chosenResult?.from?.id || null;
-        console.log('Webhook Payload:', JSON.stringify(req.body));
+        
+        let userId = null;
+        let userFirstName = null;
+
+        if (message && message.from) {
+            userId = message.from.id;
+            userFirstName = message.from.first_name;
+        } else if (callbackQuery && callbackQuery.from) {
+            userId = callbackQuery.from.id;
+            userFirstName = callbackQuery.from.first_name;
+        } else if (inlineQuery && inlineQuery.from) {
+            userId = inlineQuery.from.id;
+            userFirstName = inlineQuery.from.first_name;
+        } else if (chosenResult && chosenResult.from) {
+            userId = chosenResult.from.id;
+            userFirstName = chosenResult.from.first_name;
+        }
 
         if (!userId) return res.sendStatus(200);
 
@@ -446,7 +440,9 @@ app.post('/webhook', async (req, res) => {
             }
             const pendingEdit = await getPendingEdit(userId);
             if (pendingEdit) {
-                const [field, reminderId] = pendingEdit.split(':');
+                const parts = pendingEdit.split(':');
+                const field = parts[0];
+                const reminderId = parts[1];
                 const userTz = await getUserTimezone(userId);
 
                 if (field === 'text') {
@@ -463,6 +459,17 @@ app.post('/webhook', async (req, res) => {
                         await sendTelegramMessage(userId, '⚠️ Could not parse new time. Please try again or tap Cancel.', null, 5000);
                         return res.sendStatus(200);
                     }
+                } else if (field === 'rec') {
+                    const unit = parts[2];
+                    const num = parseInt(text.trim(), 10);
+                    if (!isNaN(num) && num > 0) {
+                        const recurringVal = `${unit}:${num}`;
+                        await pool.query('UPDATE reminders SET recurring = $1 WHERE id = $2 AND user_id = $3', [recurringVal, reminderId, userId]);
+                        await sendTelegramMessage(userId, `✅ Recurrence set to <b>Every ${num} ${unit}</b>!`, null, 5000);
+                    } else {
+                        await sendTelegramMessage(userId, '⚠️ Invalid number. Please enter a valid number.', null, 5000);
+                        return res.sendStatus(200);
+                    }
                 }
 
                 await setPendingEdit(userId, null);
@@ -470,7 +477,7 @@ app.post('/webhook', async (req, res) => {
                 const existingMenuId = await getActiveMenuMsgId(userId);
                 if (existingMenuId) await deleteTelegramMessage(userId, existingMenuId);
                 await setActiveMenuMsgId(userId, null);
-                const dashData = await getRemindersDashboardData(userId, userTz, ( (typeof chosenResult !== 'undefined' && chosenResult) ? chosenResult.from.first_name : ((typeof inlineQuery !== 'undefined' && inlineQuery) ? inlineQuery.from.first_name : ((typeof callbackQuery !== 'undefined' && callbackQuery && callbackQuery.inline_message_id) ? callbackQuery.from.first_name : null)) ));
+                const dashData = await getRemindersDashboardData(userId, userTz, userFirstName);
                 await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
                 return res.sendStatus(200);
             }
@@ -505,7 +512,7 @@ app.post('/webhook', async (req, res) => {
                 if (parsed.wantRepeatMenu) {
                     await sendOrUpdateDashboard(userId, `📝 Editing Reminder: "<b>${parsed.reminderText}</b>"\nSelect options below:`, getEditMenuKeyboard(insertRes.rows[0].id, null, null));
                 } else {
-                    const dashData = await getRemindersDashboardData(userId, userTz, ( (typeof chosenResult !== 'undefined' && chosenResult) ? chosenResult.from.first_name : ((typeof inlineQuery !== 'undefined' && inlineQuery) ? inlineQuery.from.first_name : ((typeof callbackQuery !== 'undefined' && callbackQuery && callbackQuery.inline_message_id) ? callbackQuery.from.first_name : null)) ));
+                    const dashData = await getRemindersDashboardData(userId, userTz, userFirstName);
                     await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard, msgId);
                 }
             }
@@ -516,7 +523,7 @@ app.post('/webhook', async (req, res) => {
             const chatId = callbackQuery.message?.chat.id;
             const messageId = callbackQuery.message?.message_id;
             const data = callbackQuery.data;
-
+            
             const inlineMsgId = callbackQuery.inline_message_id;
             if (inlineMsgId) {
                 resetMenuTimer(`inline_${inlineMsgId}`, async () => {
@@ -541,14 +548,14 @@ app.post('/webhook', async (req, res) => {
                 const tz = data.replace('settz:', '');
                 await setUserTimezone(userId, tz);
                 await answerCallbackQuery(callbackQuery.id, `✅ Timezone saved: ${tz}`, true);
-                const dashData = await getRemindersDashboardData(userId, tz, ( (typeof chosenResult !== 'undefined' && chosenResult) ? chosenResult.from.first_name : ((typeof inlineQuery !== 'undefined' && inlineQuery) ? inlineQuery.from.first_name : ((typeof callbackQuery !== 'undefined' && callbackQuery && callbackQuery.inline_message_id) ? callbackQuery.from.first_name : null)) ));
+                const dashData = await getRemindersDashboardData(userId, tz, userFirstName);
                 await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
             } else if (data === 'noop') {
                 await answerCallbackQuery(callbackQuery.id);
             } else if (data === 'menu:list') {
                 await answerCallbackQuery(callbackQuery.id);
                 await setPendingEdit(userId, null);
-                const dashData = await getRemindersDashboardData(userId, userTz, ( (typeof chosenResult !== 'undefined' && chosenResult) ? chosenResult.from.first_name : ((typeof inlineQuery !== 'undefined' && inlineQuery) ? inlineQuery.from.first_name : ((typeof callbackQuery !== 'undefined' && callbackQuery && callbackQuery.inline_message_id) ? callbackQuery.from.first_name : null)) ));
+                const dashData = await getRemindersDashboardData(userId, userTz, userFirstName);
                 if (chatId && messageId) {
                     await editTelegramMessage(chatId, messageId, dashData.text, dashData.keyboard);
                 } else {
@@ -557,8 +564,8 @@ app.post('/webhook', async (req, res) => {
             } else if (data.startsWith('del:')) {
                 const reminderId = data.replace('del:', '');
                 await answerCallbackQuery(callbackQuery.id, '⚠️ Tap again to confirm deletion!', false);
-
-                const dashData = await getRemindersDashboardData(userId, userTz, ( (typeof chosenResult !== 'undefined' && chosenResult) ? chosenResult.from.first_name : ((typeof inlineQuery !== 'undefined' && inlineQuery) ? inlineQuery.from.first_name : ((typeof callbackQuery !== 'undefined' && callbackQuery && callbackQuery.inline_message_id) ? callbackQuery.from.first_name : null)) ));
+                
+                const dashData = await getRemindersDashboardData(userId, userTz, userFirstName);
                 if (dashData && dashData.keyboard && dashData.keyboard.inline_keyboard) {
                     dashData.keyboard.inline_keyboard = dashData.keyboard.inline_keyboard.map(row => {
                         return row.map(btn => {
@@ -587,17 +594,16 @@ app.post('/webhook', async (req, res) => {
                 return res.sendStatus(200);
             } else if (data.startsWith('confirm_del:')) {
                 const reminderId = data.replace('confirm_del:', '');
-                const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
                 await pool.query('DELETE FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
                 await answerCallbackQuery(callbackQuery.id, '🗑️ Reminder deleted!', false);
 
-                const dashData = await getRemindersDashboardData(userId, userTz, ( (typeof chosenResult !== 'undefined' && chosenResult) ? chosenResult.from.first_name : ((typeof inlineQuery !== 'undefined' && inlineQuery) ? inlineQuery.from.first_name : ((typeof callbackQuery !== 'undefined' && callbackQuery && callbackQuery.inline_message_id) ? callbackQuery.from.first_name : null)) ));
+                const dashData = await getRemindersDashboardData(userId, userTz, userFirstName);
                 if (chatId && messageId) {
                     await editTelegramMessage(chatId, messageId, dashData.text, dashData.keyboard);
                 } else if (callbackQuery.inline_message_id) {
-                    const inlineMsgId = callbackQuery.inline_message_id;
+                    const iMsgId = callbackQuery.inline_message_id;
 
-                    if (!inlineMsgId) {
+                    if (!iMsgId) {
                         await answerCallbackQuery(callbackQuery.id);
                         const result = await pool.query('SELECT text, recurring, total_occurrences, early_offset FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
                         if (result.rows.length > 0) {
@@ -611,7 +617,7 @@ app.post('/webhook', async (req, res) => {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            inline_message_id: inlineMsgId,
+                            inline_message_id: iMsgId,
                             text: dashData.text,
                             reply_markup: dashData.keyboard,
                             parse_mode: 'HTML'
@@ -633,15 +639,15 @@ app.post('/webhook', async (req, res) => {
                     let extras = [];
                     if (r.recurring) extras.push(`🔄 | Repeat: ${formatRepeatText(r.recurring)}${r.total_occurrences ? ` (${r.current_occurrence || 0}/${r.total_occurrences})` : ""}`);
                     if (r.early_offset) extras.push(`⏳ | Early Warning: ${r.early_offset}m`);
-                    const extrasStr = extras.length > 0 ? `\n━━━━━━━━━━━━━━━━━━\n${extras.join('\n')}` : "";
+                    const extrasStr = extras.length > 0 ? `\n\n━━━━━━━━━━━━━━━━━━\n${extras.join('\n')}` : "";
 
-                    await answerCallbackQuery(callbackQuery.id, `━━━━━━━━━━━━━━━━━━\n🔔 | ${r.text}\n🕒 | ${formattedTime}${extrasStr}`, true);
+                    await answerCallbackQuery(callbackQuery.id, `━━━━━━━━━━━━━━━━━━\n🔔 | ${r.text}\n\n🕒 | ${formattedTime}${extrasStr}`, true);
                 }
             } else if (data.startsWith('edit:')) {
                 const reminderId = data.replace('edit:', '');
-                const inlineMsgId = callbackQuery.inline_message_id;
+                const iMsgId = callbackQuery.inline_message_id;
 
-                if (!inlineMsgId) {
+                if (!iMsgId) {
                     await answerCallbackQuery(callbackQuery.id);
                     const result = await pool.query('SELECT text, recurring, total_occurrences, early_offset FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
                     if (result.rows.length > 0) {
@@ -651,7 +657,7 @@ app.post('/webhook', async (req, res) => {
                     return res.sendStatus(200);
                 }
 
-                if (inlineMsgId) {
+                if (iMsgId) {
                     const key = `edit_confirm:${userId}:${reminderId}`;
                     if (pendingInlineEdits.has(key)) {
                         pendingInlineEdits.delete(key);
@@ -672,7 +678,7 @@ app.post('/webhook', async (req, res) => {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
-                                inline_message_id: inlineMsgId,
+                                inline_message_id: iMsgId,
                                 text: '📝 <i>Edit menu sent to your DM!</i>',
                                 parse_mode: 'HTML'
                             })
@@ -682,7 +688,7 @@ app.post('/webhook', async (req, res) => {
                         setTimeout(() => pendingInlineEdits.delete(key), 10000);
                         await answerCallbackQuery(callbackQuery.id, '⚠️ Tap Edit again within 10s to send options to your DM', false);
 
-                        const dashData = await getRemindersDashboardData(userId, userTz, ( (typeof chosenResult !== 'undefined' && chosenResult) ? chosenResult.from.first_name : ((typeof inlineQuery !== 'undefined' && inlineQuery) ? inlineQuery.from.first_name : ((typeof callbackQuery !== 'undefined' && callbackQuery && callbackQuery.inline_message_id) ? callbackQuery.from.first_name : null)) ));
+                        const dashData = await getRemindersDashboardData(userId, userTz, userFirstName);
                         if (dashData && dashData.keyboard && dashData.keyboard.inline_keyboard) {
                             dashData.keyboard.inline_keyboard = dashData.keyboard.inline_keyboard.map(row => {
                                 return row.map(btn => {
@@ -698,7 +704,7 @@ app.post('/webhook', async (req, res) => {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
-                                inline_message_id: inlineMsgId,
+                                inline_message_id: iMsgId,
                                 text: dashData.text,
                                 reply_markup: dashData.keyboard,
                                 parse_mode: 'HTML'
@@ -768,6 +774,11 @@ app.post('/webhook', async (req, res) => {
                 const [, reminderId, unit] = data.split(':');
                 await answerCallbackQuery(callbackQuery.id);
                 await editTelegramMessage(chatId, messageId, `⚙️ <b>Select Every How Many ${unit.toUpperCase()}:</b>\n━━━━━━━━━━━━━━━━━━`, getNumberMenuKeyboard(reminderId, unit));
+            } else if (data.startsWith('prompt_rec:')) {
+                const [, reminderId, unit] = data.split(':');
+                await setPendingEdit(userId, `rec:${reminderId}:${unit}`);
+                await editTelegramMessage(chatId, messageId, `⚙️ <b>Enter custom repeat interval in ${unit.toUpperCase()}:</b>\n<i>Example: 56, 72, 100</i>\n━━━━━━━━━━━━━━━━━━`, { inline_keyboard: [[{ text: '⬅️ Cancel', callback_data: `nummenu:${reminderId}:${unit}` }]] });
+                await answerCallbackQuery(callbackQuery.id);
             } else if (data.startsWith('limitmenu:')) {
                 const reminderId = data.replace('limitmenu:', '');
                 const result = await pool.query('SELECT total_occurrences, early_offset FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
@@ -783,7 +794,6 @@ app.post('/webhook', async (req, res) => {
                 await answerCallbackQuery(callbackQuery.id, '✅ Recurrence updated!', true);
 
                 const result = await pool.query('SELECT total_occurrences, early_offset FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
-                const totalOcc = result.rows.length > 0 ? result.rows[0].total_occurrences : null;
                 await editTelegramMessage(chatId, messageId, `✏️ Editing Reminder\n━━━━━━━━━━━━━━━━━━\nSelect options below:`, getEditMenuKeyboard(reminderId, recurringVal, result.rows[0].total_occurrences, result.rows[0].early_offset));
             } else if (data.startsWith('setlimit:')) {
                 const [, reminderId, countStr] = data.split(':');
@@ -794,7 +804,6 @@ app.post('/webhook', async (req, res) => {
                 await answerCallbackQuery(callbackQuery.id, '✅ Repeat limit updated!', true);
 
                 const result = await pool.query('SELECT recurring, early_offset FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
-                const currentRec = result.rows.length > 0 ? result.rows[0].recurring : null;
                 await editTelegramMessage(chatId, messageId, `✏️ Editing Reminder\n━━━━━━━━━━━━━━━━━━\nSelect options below:`, getEditMenuKeyboard(reminderId, result.rows[0].recurring, limitVal, result.rows[0].early_offset));
             }
         }
@@ -835,10 +844,10 @@ app.post('/webhook', async (req, res) => {
                     results.push({
                         type: 'article',
                         id: (() => {
-                            const resultId = `create_inline_${crypto.createHash('sha256').update(queryText).digest('hex').slice(0, 24)}`;
-                            inlineQueryCache.set(resultId, queryText);
-                            setTimeout(() => inlineQueryCache.delete(resultId), 10 * 60 * 1000);
-                            return resultId;
+                            const genId = `create_inline_${crypto.createHash('sha256').update(queryText).digest('hex').slice(0, 24)}`;
+                            inlineQueryCache.set(genId, queryText);
+                            setTimeout(() => inlineQueryCache.delete(genId), 10 * 60 * 1000);
+                            return genId;
                         })(),
                         title: `🔔 Set Reminder: "${reminderText}"`,
                         thumbnail_url: "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f0.png",
@@ -868,8 +877,7 @@ app.post('/webhook', async (req, res) => {
 
         if (chosenResult) {
             const selectedResultId = chosenResult.result_id || '';
-            const chosenUserId = chosenResult.from?.id || userId;
-            const inlineMessageId = chosenResult.inline_message_id || null;
+            const iMsgId = chosenResult.inline_message_id || null;
 
             if (selectedResultId.startsWith('create_inline_')) {
                 let rawQuery = chosenResult.query || '';
@@ -880,16 +888,16 @@ app.post('/webhook', async (req, res) => {
                     }
                 }
 
-                const userTz = (await getUserTimezone(chosenUserId)) || 'America/Chicago';
+                const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
                 const parsed = parseFlexibleDate(rawQuery, userTz);
 
                 if (!parsed) {
-                    if (inlineMessageId) {
+                    if (iMsgId) {
                         await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
-                                inline_message_id: inlineMessageId,
+                                inline_message_id: iMsgId,
                                 text: '❌ I could not parse that reminder time. Please try again.',
                                 parse_mode: 'HTML'
                             })
@@ -898,14 +906,14 @@ app.post('/webhook', async (req, res) => {
                 } else {
                     const insertRes = await pool.query(
                         'INSERT INTO reminders (user_id, text, remind_at, recurring) VALUES ($1, $2, $3, $4) RETURNING id',
-                        [chosenUserId, parsed.reminderText, parsed.date, null]
+                        [userId, parsed.reminderText, parsed.date, null]
                     );
 
                     if (parsed.wantRepeatMenu) {
                         const safeText = String(parsed.reminderText || 'Reminder')
                             .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
                         await sendOrUpdateDashboard(
-                            chosenUserId,
+                            userId,
                             `📝 Editing Reminder: "<b>${safeText}</b>"\n━━━━━━━━━━━━━━━━━━\nSelect options below:`,
                             getEditMenuKeyboard(insertRes.rows[0].id, null, null)
                         );
@@ -916,19 +924,19 @@ app.post('/webhook', async (req, res) => {
                     const safeText = String(parsed.reminderText || 'Reminder')
                         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-                    if (inlineMessageId) {
+                    if (iMsgId) {
                         const editRes = await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
-                                inline_message_id: inlineMessageId,
+                                inline_message_id: iMsgId,
                                 text: `✅ <b>Reminder set!</b>\n📝 <i>${safeText}</i>\n⏰ ${formattedTime}`,
                                 parse_mode: 'HTML'
                             })
                         });
 
                         if (!editRes.ok) {
-                            console.error('Failed to update inline reminder confirmation:', await editRes.text());
+                            console.error('Failed to update inline confirmation:', await editRes.text());
                         } else {
                             setTimeout(async () => {
                                 try {
@@ -936,32 +944,32 @@ app.post('/webhook', async (req, res) => {
                                         method: 'POST',
                                         headers: { 'Content-Type': 'application/json' },
                                         body: JSON.stringify({
-                                            inline_message_id: inlineMessageId,
-                                            text: `<b>✅ Reminder Created for ${chosenResult.from?.first_name || 'you'}!</b>`,
+                                            inline_message_id: iMsgId,
+                                            text: `<b>✅ Reminder Created for ${userFirstName || 'you'}!</b>`,
                                             parse_mode: 'HTML'
                                         })
                                     });
                                 } catch (err) {
-                                    console.error('Failed to collapse inline reminder creation message:', err);
+                                    console.error('Failed to collapse inline creation message:', err);
                                 }
                             }, 30000);
                         }
                     }
                 }
             } else if (selectedResultId === 'show_reminders_dm') {
-                const userTz = (await getUserTimezone(chosenUserId)) || 'America/Chicago';
-                const dashData = await getRemindersDashboardData(chosenUserId, userTz, chosenResult.from?.first_name || null);
-                await sendOrUpdateDashboard(chosenUserId, dashData.text, dashData.keyboard);
+                const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
+                const dashData = await getRemindersDashboardData(userId, userTz, userFirstName);
+                await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
             } else if (selectedResultId === 'show_reminders_inline_v6') {
-                const userTz = (await getUserTimezone(chosenUserId)) || 'America/Chicago';
-                const dashData = await getRemindersDashboardData(chosenUserId, userTz, chosenResult.from?.first_name || null);
+                const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
+                const dashData = await getRemindersDashboardData(userId, userTz, userFirstName);
 
-                if (inlineMessageId) {
+                if (iMsgId) {
                     const editRes = await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            inline_message_id: inlineMessageId,
+                            inline_message_id: iMsgId,
                             text: dashData.text,
                             reply_markup: dashData.keyboard,
                             parse_mode: 'HTML'
@@ -971,13 +979,13 @@ app.post('/webhook', async (req, res) => {
                     if (!editRes.ok) {
                         console.error('Failed to populate inline active reminders:', await editRes.text());
                     } else {
-                        resetMenuTimer(`inline_${inlineMessageId}`, async () => {
+                        resetMenuTimer(`inline_${iMsgId}`, async () => {
                             try {
                                 await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({
-                                        inline_message_id: inlineMessageId,
+                                        inline_message_id: iMsgId,
                                         text: '<b>🫈 Squatch spotted! List collapsed before anyone got proof.</b>',
                                         parse_mode: 'HTML'
                                     })
@@ -988,7 +996,7 @@ app.post('/webhook', async (req, res) => {
                         });
                     }
                 } else {
-                    await sendOrUpdateDashboard(chosenUserId, dashData.text, dashData.keyboard);
+                    await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
                 }
             }
         }
