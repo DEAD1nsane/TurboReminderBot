@@ -1,4 +1,4 @@
-require('dotenv').config(); // 👈 Added this to load process.env variables
+require('dotenv').config();
 const { google } = require('googleapis');
 const fs = require('fs');
 const path = require('path');
@@ -14,70 +14,82 @@ oauth2Client.setCredentials({
 });
 
 const drive = google.drive({ version: 'v3', auth: oauth2Client });
-const FOLDER_ID = '1mxmLCbIEepp6XJyhzZxVzBTYCcKJI6CW';
+const FOLDER_ID = '1MbCNI0XeURT4z8w62zKwdlYllbRkeocq';
 
-// Helper to translate '~' into the actual Termux home path
 const expandHome = (filepath) =>
   filepath.startsWith('~') ? filepath.replace('~', process.env.HOME) : filepath;
 
-// 1. Specify exact local paths, Drive names, and MIME types here
-const filesToUpload = [
-  { localPath: path.join(__dirname, 'index.js'), driveName: 'index.js.txt', mimeType: 'text/plain' },
-  { localPath: path.join(__dirname, 'keyboards.js'), driveName: 'keyboards.js.txt', mimeType: 'text/plain' },
-  { localPath: path.join(__dirname, 'telegram.js'), driveName: 'telegram.js.txt', mimeType: 'text/plain' },
-  { localPath: expandHome('~/storage/shared/Backups/Termux/.termux.properties.txt'), driveName: 'termux.properties.txt', mimeType: 'text/plain' },
-  { localPath: expandHome('~/storage/shared/Backups/Termux/.zshrc.txt'), driveName: 'zshrc.txt', mimeType: 'text/plain' },
-  { localPath: expandHome('~/storage/shared/Backups/Termux/init.lua.txt'), driveName: 'init.lua.txt', mimeType: 'text/plain' },
-  { localPath: expandHome('~/storage/shared/Backups/Termux/darkblood.zsh-theme.txt'), driveName: 'darkblood.zsh-theme.txt', mimeType: 'text/plain' }
+const FILES_TO_UPLOAD = [
+  { localPath: 'main.py', driveName: 'main.py.txt' },
+  { localPath: 'requirements.txt', driveName: 'requirements.txt' },
+  { localPath: expandHome('~/storage/shared/Backups/Termux/.termux.properties.txt'), driveName: 'termux.properties.txt' },
+  { localPath: expandHome('~/storage/shared/Backups/Termux/.zshrc.txt'), driveName: 'zshrc.txt' },
+  { localPath: expandHome('~/storage/shared/Backups/Termux/init.lua.txt'), driveName: 'init.lua.txt' },
+  { localPath: expandHome('~/storage/shared/Backups/Termux/darkblood.zsh-theme.txt'), driveName: 'darkblood.zsh-theme.txt' }
 ];
 
-async function uploadFiles() {
-  for (const file of filesToUpload) {
-    if (!fs.existsSync(file.localPath)) {
-      console.log(`Skipping ${file.driveName}: File not found at ${file.localPath}`);
-      continue;
-    }
+const MIME_TYPES = {
+  '.py': 'text/plain',
+  '.txt': 'text/plain',
+};
+
+async function uploadFile(localPath, driveName) {
+  let filePath = path.isAbsolute(localPath) ? localPath : path.join(__dirname, localPath);
+  
+  if (!fs.existsSync(filePath)) {
+    console.error(`File not found: ${filePath}`);
+    return;
+  }
+  
+  const ext = path.extname(driveName).toLowerCase();
+  const mimeType = MIME_TYPES[ext] || 'text/plain';
+  
+  try {
+    const listResponse = await drive.files.list({
+      q: `name = '${driveName}' and '${FOLDER_ID}' in parents and trashed = false`,
+      fields: 'files(id, name)',
+      spaces: 'drive',
+    });
     
-    try {
-      const listResponse = await drive.files.list({
-        q: `name = '${file.driveName}' and '${FOLDER_ID}' in parents and trashed = false`,
-        fields: 'files(id, name)',
-        spaces: 'drive',
+    const existingFiles = listResponse.data.files || [];
+    
+    if (existingFiles.length > 0) {
+      const fileId = existingFiles[0].id;
+      
+      const response = await drive.files.update({
+        fileId: fileId,
+        media: {
+          mimeType: mimeType,
+          body: fs.createReadStream(filePath),
+        },
+        fields: 'id, name',
       });
       
-      const existingFiles = listResponse.data.files || [];
+      console.log(`Updated existing: ${response.data.name} (ID: ${response.data.id})`);
+    } else {
+      const response = await drive.files.create({
+        requestBody: {
+          name: driveName,
+          parents: [FOLDER_ID],
+        },
+        media: {
+          mimeType: mimeType,
+          body: fs.createReadStream(filePath),
+        },
+        fields: 'id, name',
+      });
       
-      if (existingFiles.length > 0) {
-        const fileId = existingFiles[0].id;
-        const response = await drive.files.update({
-          fileId: fileId,
-          media: {
-            mimeType: file.mimeType, // 2. Uses the correct MIME type
-            body: fs.createReadStream(file.localPath),
-          },
-          fields: 'id',
-        });
-        
-        console.log(`Updated existing ${file.driveName}. File ID: ${response.data.id}`);
-      } else {
-        const response = await drive.files.create({
-          requestBody: {
-            name: file.driveName, // 3. Uses the correct Drive name
-            parents: [FOLDER_ID],
-          },
-          media: {
-            mimeType: file.mimeType,
-            body: fs.createReadStream(file.localPath),
-          },
-          fields: 'id',
-        });
-        
-        console.log(`Uploaded new ${file.driveName}. File ID: ${response.data.id}`);
-      }
-    } catch (error) {
-      console.error(`Failed to upload ${file.driveName}:`, error.message);
+      console.log(`Created new: ${response.data.name} (ID: ${response.data.id})`);
     }
+  } catch (error) {
+    console.error(`Failed to upload ${localPath}:`, error.message);
   }
 }
 
-uploadFiles();
+async function syncAll() {
+  for (const item of FILES_TO_UPLOAD) {
+    await uploadFile(item.localPath, item.driveName);
+  }
+}
+
+syncAll();
