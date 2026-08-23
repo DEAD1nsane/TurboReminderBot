@@ -117,10 +117,10 @@ setInterval(async () => {
                 .replace(/\s?(AM|PM)/i, m => m.toLowerCase().trim());
 
             if (r.early_offset && !r.early_alert_sent && now >= new Date(remindAt.getTime() - r.early_offset * 60000)) {
-                await sendTelegramMessage(r.chat_id || r.user_id, `⚡ <b>${r.text}</b>\n<i>Starts in ${r.early_offset}m (${formattedTime})</i>`);
+                await sendTelegramMessage(r.chat_id || r.user_id, `⚡ | <blockquote><b>${r.text}</b></blockquote>\n<i>Starts in ${r.early_offset}m (${formattedTime})</i>`);
                 await pool.query('UPDATE reminders SET early_alert_sent = TRUE WHERE id = $1', [r.id]);
             } else if (now >= remindAt && !r.sent) {
-                await sendTelegramMessage(r.chat_id || r.user_id, `🔔 <b>${r.text}</b>\n<i>${formattedTime}</i>`);
+                await sendTelegramMessage(r.chat_id || r.user_id, `🔔 | <blockquote><b>${r.text}</b></blockquote>\n<i>${formattedTime}</i>`);
 
                 if (r.recurring) {
                     const userTz = tz;
@@ -952,6 +952,18 @@ app.post('/webhook', async (req, res) => {
                 const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
                 const dashData = await getRemindersDashboardData(userId, userTz, userFirstName);
                 await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
+
+                if (iMsgId) {
+                    await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            inline_message_id: iMsgId,
+                            text: '<b>📋 Active Reminders list sent to your DM!</b>',
+                            parse_mode: 'HTML'
+                        })
+                    });
+                }
             } else if (selectedResultId === 'show_reminders_inline_v6') {
                 const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
                 const dashData = await getRemindersDashboardData(userId, userTz, userFirstName);
