@@ -858,6 +858,28 @@ app.post('/webhook', async (req, res) => {
                     thumbnail_url: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/2709.png', 
                     thumb_width: 72,
                     thumb_height: 72,
+                    input_message_content: { message_text: 'Requesting active reminders list...' } 
+                });
+
+                results.push({
+                    type: 'article',
+                    id: 'show_reminders_inline_v6',
+                    title: 'View Active Reminders (Inline)',
+                    description: 'Posts active reminders in chat, collapses in 30s',
+                    thumbnail_url: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f3.png', 
+                    input_message_content: { message_text: 'Fetching active reminders...' },
+                    reply_markup: {
+                        inline_keyboard: [[{ text: 'Loading...', callback_data: 'noop' }]] 
+                    }
+                });
+                                results.push({
+                    type: 'article',
+                    id: 'show_reminders_inline_v6',
+                    title: 'View Active Reminders (Inline)',
+                    description: 'Tap to view and manage your reminders right here.',
+                    thumbnail_url: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4dc.png', 
+                    thumb_width: 72,
+                    thumb_height: 72,
                     input_message_content: { message_text: 'Requesting active reminders list...' },
                     reply_markup: {
                         inline_keyboard: [[{ text: 'Loading...', callback_data: 'noop' }]] 
