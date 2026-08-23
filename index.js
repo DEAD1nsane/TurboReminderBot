@@ -965,16 +965,15 @@ app.post('/webhook', async (req, res) => {
                 await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
 
                 if (iMsgId) {
-                    await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            inline_message_id: iMsgId,
-                            text: '<b>🍟 Ding! Fries are done.</b>',
-                            parse_mode: 'HTML'
-                        })
-                    });
-                }
+                                    await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({
+                                            inline_message_id: iMsgId,
+                                            text: `<b>🍟 Ding! Fries are done.</b>`,
+                                            parse_mode: 'HTML'
+                                        })
+                                    });                }
             } else if (selectedResultId === 'show_reminders_inline_v6') {
                 const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
                 const dashData = await getRemindersDashboardData(userId, userTz, userFirstName);
