@@ -6,20 +6,20 @@ const express = require('express');
 const { Telegraf } = require('telegraf');
 const { Pool } = require('pg');
 const { DateTime } = require('luxon');
-const { 
-    formatRepeatText, 
-    getTimezonePickerKeyboard, 
-    getEditMenuKeyboard, 
-    getUnitMenuKeyboard, 
-    getNumberMenuKeyboard, 
+const {
+    formatRepeatText,
+    getTimezonePickerKeyboard,
+    getEditMenuKeyboard,
+    getUnitMenuKeyboard,
+    getNumberMenuKeyboard,
     getLimitMenuKeyboard,
     getDowMenuKeyboard
 } = require('./keyboards');
-const { 
-    sendTelegramMessage, 
-    editTelegramMessage, 
-    deleteTelegramMessage, 
-    answerCallbackQuery 
+const {
+    sendTelegramMessage,
+    editTelegramMessage,
+    deleteTelegramMessage,
+    answerCallbackQuery
 } = require('./telegram');
 
 const activityTimers = new Map();
@@ -59,48 +59,48 @@ const pool = new Pool({
 pool.on('error', (err) => console.error('Unexpected Postgres pool error:', err));
 
 async function initDb() {
-  try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS user_settings (
-        user_id BIGINT PRIMARY KEY,
-        timezone TEXT NOT NULL DEFAULT 'America/Chicago',
-        pending_edit TEXT DEFAULT NULL,
-        trigger_msg_id BIGINT DEFAULT NULL,
-        active_menu_msg_id BIGINT DEFAULT NULL,
-        collapse_at TIMESTAMPTZ DEFAULT NULL
-      );
-    `);
+    try {
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS user_settings (
+            user_id BIGINT PRIMARY KEY,
+            timezone TEXT NOT NULL DEFAULT 'America/Chicago',
+            pending_edit TEXT DEFAULT NULL,
+            trigger_msg_id BIGINT DEFAULT NULL,
+            active_menu_msg_id BIGINT DEFAULT NULL,
+            collapse_at TIMESTAMPTZ DEFAULT NULL
+            );
+        `);
 
-    await pool.query(`
-      ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS pending_edit TEXT DEFAULT NULL;
-      ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS trigger_msg_id BIGINT DEFAULT NULL;
-      ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS active_menu_msg_id BIGINT DEFAULT NULL;
-      ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS collapse_at TIMESTAMPTZ DEFAULT NULL;
-      ALTER TABLE user_settings ALTER COLUMN timezone SET DEFAULT 'America/Chicago';
-      UPDATE user_settings SET timezone = 'America/Chicago' WHERE timezone IS NULL;
-    `);
+        await pool.query(`
+            ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS pending_edit TEXT DEFAULT NULL;
+            ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS trigger_msg_id BIGINT DEFAULT NULL;
+            ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS active_menu_msg_id BIGINT DEFAULT NULL;
+            ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS collapse_at TIMESTAMPTZ DEFAULT NULL;
+            ALTER TABLE user_settings ALTER COLUMN timezone SET DEFAULT 'America/Chicago';
+            UPDATE user_settings SET timezone = 'America/Chicago' WHERE timezone IS NULL;
+        `);
 
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS reminders (
-        id SERIAL PRIMARY KEY,
-        user_id BIGINT NOT NULL,
-        chat_id BIGINT,
-        text TEXT NOT NULL,
-        remind_at TIMESTAMPTZ NOT NULL,
-        sent BOOLEAN DEFAULT FALSE,
-        recurring TEXT DEFAULT NULL,
-        total_occurrences INT DEFAULT NULL,
-        current_occurrence INT DEFAULT 0,
-        early_offset INT DEFAULT NULL,
-        early_alert_sent BOOLEAN DEFAULT FALSE
-      );
-      ALTER TABLE reminders ADD COLUMN IF NOT EXISTS early_offset INT DEFAULT NULL;
-      ALTER TABLE reminders ADD COLUMN IF NOT EXISTS early_alert_sent BOOLEAN DEFAULT FALSE;
-    `);
-    console.log("Database initialized successfully!");
-  } catch (err) {
-    console.error("Error initializing database:", err);
-  }
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS reminders (
+            id SERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL,
+            chat_id BIGINT,
+            text TEXT NOT NULL,
+            remind_at TIMESTAMPTZ NOT NULL,
+            sent BOOLEAN DEFAULT FALSE,
+            recurring TEXT DEFAULT NULL,
+            total_occurrences INT DEFAULT NULL,
+            current_occurrence INT DEFAULT 0,
+            early_offset INT DEFAULT NULL,
+            early_alert_sent BOOLEAN DEFAULT FALSE
+            );
+            ALTER TABLE reminders ADD COLUMN IF NOT EXISTS early_offset INT DEFAULT NULL;
+            ALTER TABLE reminders ADD COLUMN IF NOT EXISTS early_alert_sent BOOLEAN DEFAULT FALSE;
+        `);
+        console.log("Database initialized successfully!");
+    } catch (err) {
+        console.error("Error initializing database:", err);
+    }
 }
 initDb();
 
@@ -109,6 +109,7 @@ setInterval(async () => {
         const res = await pool.query(`SELECT * FROM reminders WHERE (remind_at <= NOW() AND sent = FALSE) OR (early_offset IS NOT NULL AND early_alert_sent = FALSE AND remind_at - (early_offset * INTERVAL '1 minute') <= NOW())`);
         for (const r of res.rows) {
             const now = new Date();
+
             const remindAt = new Date(r.remind_at);
             const tz = r.timezone || 'America/Chicago';
             const formattedTime = DateTime.fromJSDate(remindAt).setZone(tz).toFormat("EEE, MMM d, yyyy 'at' h:mm a")
@@ -155,7 +156,7 @@ async function setUserTimezone(userId, tz) {
     if (!process.env.DATABASE_URL) return;
     try {
         await pool.query(
-            `INSERT INTO user_settings (user_id, timezone) VALUES ($1, $2) 
+            `INSERT INTO user_settings (user_id, timezone) VALUES ($1, $2)
              ON CONFLICT (user_id) DO UPDATE SET timezone = $2`,
             [userId, tz]
         );
@@ -179,15 +180,15 @@ async function setActiveMenuMsgId(userId, msgId, triggerMsgId = null) {
     try {
         const collapseAt = msgId ? new Date(Date.now() + 30000) : null;
         await pool.query(
-      `INSERT INTO user_settings (user_id, active_menu_msg_id, trigger_msg_id, collapse_at, timezone)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (user_id) DO UPDATE SET 
-         active_menu_msg_id = $2, 
-         trigger_msg_id = COALESCE($3, user_settings.trigger_msg_id), 
-         collapse_at = $4,
-         timezone = COALESCE(user_settings.timezone, EXCLUDED.timezone)`,
-      [userId, msgId, triggerMsgId, collapseAt, 'America/Chicago']
-    );
+            `INSERT INTO user_settings (user_id, active_menu_msg_id, trigger_msg_id, collapse_at, timezone)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (user_id) DO UPDATE SET
+             active_menu_msg_id = $2,
+             trigger_msg_id = COALESCE($3, user_settings.trigger_msg_id),
+             collapse_at = $4,
+             timezone = COALESCE(user_settings.timezone, EXCLUDED.timezone)`,
+            [userId, msgId, triggerMsgId, collapseAt, 'America/Chicago']
+        );
     } catch (err) {
         console.error('Error setting active menu msg id:', err);
     }
@@ -207,8 +208,8 @@ async function setPendingEdit(userId, pendingStr) {
     if (!process.env.DATABASE_URL) return;
     try {
         await pool.query(
-            `INSERT INTO user_settings (user_id, pending_edit) 
-             VALUES ($1, $2) 
+            `INSERT INTO user_settings (user_id, pending_edit)
+             VALUES ($1, $2)
              ON CONFLICT (user_id) DO UPDATE SET pending_edit = $2`,
             [userId, pendingStr]
         );
@@ -229,7 +230,7 @@ function calculateNextOccurrence(currentDate, recurringStr, timeZone) {
     else if (type === 'hourly' || type === 'hours') dt = dt.plus({ hours: interval });
     else if (type === 'dow') {
         const selectedDays = parts[1].split(',').map(Number).sort();
-        const currentDay = dt.weekday; 
+        const currentDay = dt.weekday;
         let daysToAdd = -1;
         for (const day of selectedDays) {
             if (day > currentDay) {
@@ -344,6 +345,7 @@ async function getRemindersDashboardData(userId, userTz, passedName = null) {
         let titleName = uName === 'Your' ? 'Your' : `${uName}'s`;
 
         const res = await pool.query('SELECT id, text, remind_at, recurring, total_occurrences FROM reminders WHERE user_id = $1 AND sent = FALSE ORDER BY remind_at ASC', [userId]);
+
         if (res.rows.length === 0) {
             return {
                 text: `📋 <b>${titleName} Active Reminders:</b>\n━━━━━━━━━━━━━━━━━━\n\n<i>📭 No active reminders found.</i>`,
@@ -372,24 +374,13 @@ async function sendOrUpdateDashboard(userId, text, markup, triggerMsgId = null) 
     let targetMsgId = null;
 
     if (existingMsgId) {
-        const success = await editTelegramMessage(userId, existingMsgId, text, markup);
-        if (success) {
-            targetMsgId = existingMsgId;
-            await setActiveMenuMsgId(userId, targetMsgId, triggerMsgId);
-        } else {
-            await deleteTelegramMessage(userId, existingMsgId);
-            const newMsg = await sendTelegramMessage(userId, text, markup);
-            if (newMsg) {
-                targetMsgId = newMsg.message_id;
-                await setActiveMenuMsgId(userId, targetMsgId, triggerMsgId);
-            }
-        }
-    } else {
-        const newMsg = await sendTelegramMessage(userId, text, markup);
-        if (newMsg) {
-            targetMsgId = newMsg.message_id;
-            await setActiveMenuMsgId(userId, targetMsgId, triggerMsgId);
-        }
+        await deleteTelegramMessage(userId, existingMsgId);
+    }
+
+    const newMsg = await sendTelegramMessage(userId, text, markup);
+    if (newMsg) {
+        targetMsgId = newMsg.message_id;
+        await setActiveMenuMsgId(userId, targetMsgId, triggerMsgId);
     }
 
     if (targetMsgId) {
@@ -410,7 +401,7 @@ app.post('/webhook', async (req, res) => {
     }
     try {
         const { message, callback_query: callbackQuery, inline_query: inlineQuery, chosen_inline_result: chosenResult } = req.body;
-        
+
         let userId = null;
         let userFirstName = null;
 
@@ -523,7 +514,7 @@ app.post('/webhook', async (req, res) => {
             const chatId = callbackQuery.message?.chat.id;
             const messageId = callbackQuery.message?.message_id;
             const data = callbackQuery.data;
-            
+
             const inlineMsgId = callbackQuery.inline_message_id;
             if (inlineMsgId) {
                 resetMenuTimer(`inline_${inlineMsgId}`, async () => {
@@ -564,7 +555,7 @@ app.post('/webhook', async (req, res) => {
             } else if (data.startsWith('del:')) {
                 const reminderId = data.replace('del:', '');
                 await answerCallbackQuery(callbackQuery.id, '⚠️ Tap again to confirm deletion!', false);
-                
+
                 const dashData = await getRemindersDashboardData(userId, userTz, userFirstName);
                 if (dashData && dashData.keyboard && dashData.keyboard.inline_keyboard) {
                     dashData.keyboard.inline_keyboard = dashData.keyboard.inline_keyboard.map(row => {
@@ -631,11 +622,11 @@ app.post('/webhook', async (req, res) => {
                 if (result.rows.length > 0) {
                     const r = result.rows[0];
                     const dt = DateTime.fromJSDate(new Date(r.remind_at)).setZone('America/Chicago');
-                    
+
                     const formattedTime = dt.toFormat("EEE, LLL d, yyyy 'at' h:mm a")
                         .replace(/:00\s?(AM|PM)/i, '$1')
                         .replace(/\s?(AM|PM)/i, m => m.toLowerCase().trim());
-                    
+
                     let extras = [];
                     if (r.recurring) extras.push(`🔄 | Repeat: ${formatRepeatText(r.recurring)}${r.total_occurrences ? ` (${r.current_occurrence || 0}/${r.total_occurrences})` : ""}`);
                     if (r.early_offset) extras.push(`⏳ | Early Warning: ${r.early_offset}m`);
@@ -956,6 +947,7 @@ app.post('/webhook', async (req, res) => {
                         }
                     }
                 }
+
             } else if (selectedResultId === 'show_reminders_dm') {
                 const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
                 const dashData = await getRemindersDashboardData(userId, userTz, userFirstName);
