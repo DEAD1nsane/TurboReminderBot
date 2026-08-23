@@ -117,10 +117,10 @@ setInterval(async () => {
                 .replace(/\s?(AM|PM)/i, m => m.toLowerCase().trim());
 
             if (r.early_offset && !r.early_alert_sent && now >= new Date(remindAt.getTime() - r.early_offset * 60000)) {
-                await sendTelegramMessage(r.chat_id || r.user_id, `⚡ | <blockquote><b>${r.text}</b></blockquote>\n<i>Starts in ${r.early_offset}m (${formattedTime})</i>`);
+                await sendTelegramMessage(r.chat_id || r.user_id, `<blockquote><b>⚡ | ${r.text}</b></blockquote>\n<i>Starts in ${r.early_offset}m (${formattedTime})</i>`);
                 await pool.query('UPDATE reminders SET early_alert_sent = TRUE WHERE id = $1', [r.id]);
             } else if (now >= remindAt && !r.sent) {
-                await sendTelegramMessage(r.chat_id || r.user_id, `🔔 | <blockquote><b>${r.text}</b></blockquote>\n<i>${formattedTime}</i>`);
+                await sendTelegramMessage(r.chat_id || r.user_id, `<blockquote><b>🔔 | ${r.text}</b></blockquote>\n<i>${formattedTime}</i>`);
 
                 if (r.recurring) {
                     const userTz = tz;
@@ -521,7 +521,7 @@ app.post('/webhook', async (req, res) => {
                     await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ inline_message_id: inlineMsgId, text: '🫈 <b>Squatch spotted! List collapsed before anyone got proof.</b>', parse_mode: 'HTML' })
+                        body: JSON.stringify({ inline_message_id: inlineMsgId, text: '<b>🫈 Squatch spotted! List collapsed before anyone got proof.</b>', parse_mode: 'HTML' })
                     });
                 });
             } else if (messageId && chatId) {
@@ -936,7 +936,7 @@ app.post('/webhook', async (req, res) => {
                                         headers: { 'Content-Type': 'application/json' },
                                         body: JSON.stringify({
                                             inline_message_id: iMsgId,
-                                            text: `✅ <b>Reminder Created for ${userFirstName || 'you'}!</b>`,
+                                            text: `<b>✅ Reminder Created for ${userFirstName || 'you'}!</b>`,
                                             parse_mode: 'HTML'
                                         })
                                     });
@@ -961,7 +961,7 @@ app.post('/webhook', async (req, res) => {
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({
                                     inline_message_id: iMsgId,
-                                    text: '🍟 <b>Ding! Fries are done.</b>',
+                                    text: '<b>🍟 Ding! Fries are done.</b>',
                                     parse_mode: 'HTML'
                                 })
                             });
@@ -996,7 +996,7 @@ app.post('/webhook', async (req, res) => {
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({
                                         inline_message_id: iMsgId,
-                                        text: '🫈 <b>Squatch spotted! List collapsed before anyone got proof.</b>',
+                                        text: '<b>🫈 Squatch spotted! List collapsed before anyone got proof.</b>',
                                         parse_mode: 'HTML'
                                     })
                                 });
@@ -1016,3 +1016,4 @@ app.post('/webhook', async (req, res) => {
         res.sendStatus(500);
     }
 });
+
