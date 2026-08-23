@@ -959,10 +959,26 @@ app.post('/webhook', async (req, res) => {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             inline_message_id: iMsgId,
-                            text: '<b>📋 Active Reminders list sent to your DM!</b>',
+                            text: '📋 Sending active reminders list to DM...',
                             parse_mode: 'HTML'
                         })
                     });
+                    
+                    setTimeout(async () => {
+                        try {
+                            await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    inline_message_id: iMsgId,
+                                    text: '🍟Ding! Fries are done.',
+                                    parse_mode: 'HTML'
+                                })
+                            });
+                        } catch (err) {
+                            console.error('Failed to collapse inline DM message:', err);
+                        }
+                    }, 10000);
                 }
             } else if (selectedResultId === 'show_reminders_inline_v6') {
                 const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
