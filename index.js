@@ -26,7 +26,6 @@ const {
 
 const activityTimers = new Map();
 
-// Timer updated to accept custom delays (default 30s)
 function resetMenuTimer(key, action, delay = 30000) {
     if (activityTimers.has(key)) clearTimeout(activityTimers.get(key));
     activityTimers.set(key, setTimeout(() => { 
@@ -434,6 +433,22 @@ app.post('/webhook', async (req, res) => {
                 return res.sendStatus(200); 
             }
 
+            if (text.includes('@TurbosRbot')) {
+                if (typeof chatId !== 'undefined' && typeof msgId !== 'undefined') { 
+                    await deleteTelegramMessage(chatId, msgId); 
+                }
+                const popupMarkup = {
+                    inline_keyboard: [
+                        [
+                            { text: '📥 View via DM', callback_data: 'send_dm_reminders' },
+                            { text: '💬 View Inline', callback_data: 'send_inline_reminders' }
+                        ]
+                    ]
+                };
+                await sendTelegramMessage(chatId, '<b>How would you like to view your active reminders?</b>', popupMarkup);
+                return res.sendStatus(200);
+            }
+
             const pendingEdit = await getPendingEdit(userId); 
             
             if (pendingEdit) {
@@ -563,7 +578,25 @@ app.post('/webhook', async (req, res) => {
                 await setActiveMenuMsgId(userId, messageId); 
             }
 
-            if (data.startsWith('settz:')) {
+            if (data === 'send_dm_reminders') {
+                await answerCallbackQuery(callbackQuery.id, 'Sent to DM!', false);
+                const dashData = await getRemindersDashboardData(userId, userTz, userFirstName);
+                await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
+                if (chatId && messageId) {
+                    await deleteTelegramMessage(chatId, messageId);
+                }
+                return res.sendStatus(200);
+            } else if (data === 'send_inline_reminders') {
+                await answerCallbackQuery(callbackQuery.id);
+                const dashData = await getRemindersDashboardData(userId, userTz, userFirstName);
+                if (chatId && messageId) {
+                    await editTelegramMessage(chatId, messageId, dashData.text, dashData.keyboard);
+                    resetMenuTimer(`group_inline_${messageId}`, async () => {
+                        await editTelegramMessage(chatId, messageId, '<b>🫈 Squatch spotted! List collapsed before anyone got proof.</b>');
+                    }, 30000);
+                }
+                return res.sendStatus(200);
+            } else if (data.startsWith('settz:')) {
                 const tz = data.replace('settz:', '');
                 await setUserTimezone(userId, tz);
                 await answerCallbackQuery(callbackQuery.id, `Timezone saved: ${tz}`, true);
@@ -1010,7 +1043,6 @@ app.post('/webhook', async (req, res) => {
                         }
                     }
                 }
-            // MODIFIED BLOCK: Added the 10-second inline timer collapse here
             } else if (selectedResultId === 'show_reminders_dm') {
                 const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
                 const dashData = await getRemindersDashboardData(userId, userTz, userFirstName); 
@@ -1041,7 +1073,7 @@ app.post('/webhook', async (req, res) => {
                         } catch (err) {
                             console.error('Inline collapse failed:', err); 
                         }
-                    }, 10000); // Trigger collapse after 10s
+                    }, 10000); 
                 }
             } else if (selectedResultId === 'show_reminders_inline_v6') {
                 const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
@@ -1076,7 +1108,7 @@ app.post('/webhook', async (req, res) => {
                             } catch (err) {
                                 console.error('Failed to collapse inline reminders list:', err); 
                             }
-                        }); // Defaults to standard 30s timer
+                        }); 
                     }
                 } else {
                     await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard); 
@@ -1089,3 +1121,4 @@ app.post('/webhook', async (req, res) => {
         res.sendStatus(500); 
     }
 });
+
