@@ -3,7 +3,6 @@ const crypto = require('crypto');
 const pendingInlineEdits = new Set();
 const inlineQueryCache = new Map();
 const express = require('express');
-const { Telegraf } = require('telegraf');
 const { Pool } = require('pg');
 const { DateTime } = require('luxon');
 const {
@@ -19,7 +18,8 @@ const {
     sendTelegramMessage,
     editTelegramMessage,
     deleteTelegramMessage,
-    answerCallbackQuery
+    answerCallbackQuery,
+    fetchWithTimeout
 } = require('./telegram');
 
 const activityTimers = new Map();
@@ -30,6 +30,8 @@ function resetMenuTimer(key, action) {
         action();
     }, 30000));
 }
+
+const escapeHTML = str => String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 const app = express();
 app.use(express.json());
@@ -117,10 +119,10 @@ setInterval(async () => {
                 .replace(/\s?(AM|PM)/i, m => m.toLowerCase().trim());
 
             if (r.early_offset && !r.early_alert_sent && now >= new Date(remindAt.getTime() - r.early_offset * 60000)) {
-                await sendTelegramMessage(r.chat_id || r.user_id, `⚡ | <blockquote><b>${r.text}</b></blockquote>\n<i>Starts in ${r.early_offset}m (${formattedTime})</i>`);
+                await sendTelegramMessage(r.chat_id || r.user_id, `⚡ | <blockquote><b>${escapeHTML(r.text)}</b></blockquote>\n<i>Starts in ${r.early_offset}m (${formattedTime})</i>`);
                 await pool.query('UPDATE reminders SET early_alert_sent = TRUE WHERE id = $1', [r.id]);
             } else if (now >= remindAt && !r.sent) {
-                await sendTelegramMessage(r.chat_id || r.user_id, `🔔 | <blockquote><b>${r.text}</b></blockquote>\n<i>${formattedTime}</i>`);
+                await sendTelegramMessage(r.chat_id || r.user_id, `🔔 | <blockquote><b>${escapeHTML(r.text)}</b></blockquote>\n<i>${formattedTime}</i>`);
 
                 if (r.recurring) {
                     const userTz = tz;
@@ -438,7 +440,7 @@ app.post('/webhook', async (req, res) => {
 
                 if (field === 'text') {
                     await pool.query('UPDATE reminders SET text = $1 WHERE id = $2 AND user_id = $3', [text, reminderId, userId]);
-                    await sendTelegramMessage(userId, `✅ Reminder text updated to: "<b>${text}</b>"`, null, 5000);
+                    await sendTelegramMessage(userId, `✅ Reminder text updated to: "<b>${escapeHTML(text)}</b>"`, null, 5000);
                 } else if (field === 'time') {
                     const parsed = parseFlexibleDate(text, userTz);
                     if (parsed) {
@@ -501,7 +503,7 @@ app.post('/webhook', async (req, res) => {
                 if (typeof chatId !== 'undefined' && typeof msgId !== 'undefined') { await deleteTelegramMessage(chatId, msgId); }
                 const insertRes = await pool.query('INSERT INTO reminders (user_id, chat_id, text, remind_at) VALUES ($1, $2, $3, $4) RETURNING id', [userId, chatId, parsed.reminderText, parsed.date]);
                 if (parsed.wantRepeatMenu) {
-                    await sendOrUpdateDashboard(userId, `📝 Editing Reminder: "<b>${parsed.reminderText}</b>"\nSelect options below:`, getEditMenuKeyboard(insertRes.rows[0].id, null, null));
+                    await sendOrUpdateDashboard(userId, `📝 Editing Reminder: "<b>${escapeHTML(parsed.reminderText)}</b>"\nSelect options below:`, getEditMenuKeyboard(insertRes.rows[0].id, null, null));
                 } else {
                     const dashData = await getRemindersDashboardData(userId, userTz, userFirstName);
                     await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard, msgId);
@@ -518,10 +520,10 @@ app.post('/webhook', async (req, res) => {
             const inlineMsgId = callbackQuery.inline_message_id;
             if (inlineMsgId) {
                 resetMenuTimer(`inline_${inlineMsgId}`, async () => {
-                    await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                    await fetchWithTimeout(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ inline_message_id: inlineMsgId, text: '<b>🫈 Squatch spotted! List collapsed before anyone got proof.</b>', parse_mode: 'HTML' })
+                        body: JSON.stringify({ inline_message_id: inlineMsgId, text: '🫈 <b>Squatch spotted! List collapsed before anyone got proof.</b>', parse_mode: 'HTML' })
                     });
                 });
             } else if (messageId && chatId) {
@@ -538,7 +540,7 @@ app.post('/webhook', async (req, res) => {
             if (data.startsWith('settz:')) {
                 const tz = data.replace('settz:', '');
                 await setUserTimezone(userId, tz);
-                await answerCallbackQuery(callbackQuery.id, `✅ Timezone saved: ${tz}`, true);
+                await answerCallbackQuery(callbackQuery.id, `✅ <b>Timezone saved:</b> ${tz}`, true);
                 const dashData = await getRemindersDashboardData(userId, tz, userFirstName);
                 await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
             } else if (data === 'noop') {
@@ -554,14 +556,14 @@ app.post('/webhook', async (req, res) => {
                 }
             } else if (data.startsWith('del:')) {
                 const reminderId = data.replace('del:', '');
-                await answerCallbackQuery(callbackQuery.id, '⚠️ Tap again to confirm deletion!', false);
+                await answerCallbackQuery(callbackQuery.id, '⚠️ <b>Tap again to confirm deletion!</b>', false);
 
                 const dashData = await getRemindersDashboardData(userId, userTz, userFirstName);
                 if (dashData && dashData.keyboard && dashData.keyboard.inline_keyboard) {
                     dashData.keyboard.inline_keyboard = dashData.keyboard.inline_keyboard.map(row => {
                         return row.map(btn => {
                             if (btn.callback_data === `del:${reminderId}`) {
-                                return { text: '⚠️ Confirm?', callback_data: `confirm_del:${reminderId}` };
+                                return { text: '⚠️ <b>Confirm?</b>', callback_data: `confirm_del:${reminderId}` };
                             }
                             return btn;
                         });
@@ -571,7 +573,7 @@ app.post('/webhook', async (req, res) => {
                 if (chatId && messageId) {
                     await editTelegramMessage(chatId, messageId, dashData.text, dashData.keyboard);
                 } else if (callbackQuery.inline_message_id) {
-                    await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                    await fetchWithTimeout(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -586,7 +588,7 @@ app.post('/webhook', async (req, res) => {
             } else if (data.startsWith('confirm_del:')) {
                 const reminderId = data.replace('confirm_del:', '');
                 await pool.query('DELETE FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
-                await answerCallbackQuery(callbackQuery.id, '🗑️ Reminder deleted!', false);
+                await answerCallbackQuery(callbackQuery.id, '🗑️ <b>Reminder deleted!</b>', false);
 
                 const dashData = await getRemindersDashboardData(userId, userTz, userFirstName);
                 if (chatId && messageId) {
@@ -600,11 +602,11 @@ app.post('/webhook', async (req, res) => {
                         if (result.rows.length > 0) {
                             const r = result.rows[0];
                             const targetMsgId = callbackQuery.message.message_id;
-                            await editTelegramMessage(userId, targetMsgId, `✏️ Editing Reminder: "<b>${r.text}</b>"\n━━━━━━━━━━━━━━━━━━\nSelect options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occurrences, r.early_offset));
+                            await editTelegramMessage(userId, targetMsgId, `✏️ Editing Reminder: "<b>${escapeHTML(r.text)}</b>"\n━━━━━━━━━━━━━━━━━━\nSelect options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occurrences, r.early_offset));
                         }
                         return res.sendStatus(200);
                     }
-                    await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                    await fetchWithTimeout(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -629,10 +631,10 @@ app.post('/webhook', async (req, res) => {
 
                     let extras = [];
                     if (r.recurring) extras.push(`🔄 | Repeat: ${formatRepeatText(r.recurring)}${r.total_occurrences ? ` (${r.current_occurrence || 0}/${r.total_occurrences})` : ""}`);
-                    if (r.early_offset) extras.push(`⏳ | Early Warning: ${r.early_offset}m`);
+                    if (r.early_offset) extras.push(`⏳ | <b>Early Warning:</b> ${r.early_offset}m`);
                     const extrasStr = extras.length > 0 ? `\n\n━━━━━━━━━━━━━━━━━━\n${extras.join('\n')}` : "";
 
-                    await answerCallbackQuery(callbackQuery.id, `━━━━━━━━━━━━━━━━━━\n🔔 | ${r.text}\n\n🕒 | ${formattedTime}${extrasStr}`, true);
+                    await answerCallbackQuery(callbackQuery.id, `━━━━━━━━━━━━━━━━━━\n🔔 | ${escapeHTML(r.text)}\n\n🕒 | ${formattedTime}${extrasStr}`, true);
                 }
             } else if (data.startsWith('edit:')) {
                 const reminderId = data.replace('edit:', '');
@@ -643,7 +645,7 @@ app.post('/webhook', async (req, res) => {
                     const result = await pool.query('SELECT text, recurring, total_occurrences, early_offset FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
                     if (result.rows.length > 0) {
                         const r = result.rows[0];
-                        await editTelegramMessage(userId, callbackQuery.message.message_id, `✏️ Editing Reminder: "<b>${r.text}</b>"\n━━━━━━━━━━━━━━━━━━\nSelect options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occurrences, r.early_offset));
+                        await editTelegramMessage(userId, callbackQuery.message.message_id, `✏️ Editing Reminder: "<b>${escapeHTML(r.text)}</b>"\n━━━━━━━━━━━━━━━━━━\nSelect options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occurrences, r.early_offset));
                     }
                     return res.sendStatus(200);
                 }
@@ -662,10 +664,10 @@ app.post('/webhook', async (req, res) => {
                                 await deleteTelegramMessage(userId, activeMsgId);
                                 await setActiveMenuMsgId(userId, null);
                             }
-                            await sendOrUpdateDashboard(userId, `✏️ Editing Reminder: "<b>${r.text}</b>"\n━━━━━━━━━━━━━━━━━━\nSelect options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occurrences, r.early_offset));
+                            await sendOrUpdateDashboard(userId, `✏️ Editing Reminder: "<b>${escapeHTML(r.text)}</b>"\n━━━━━━━━━━━━━━━━━━\nSelect options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occurrences, r.early_offset));
                         }
 
-                        await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                        await fetchWithTimeout(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
@@ -691,7 +693,7 @@ app.post('/webhook', async (req, res) => {
                             });
                         }
 
-                        await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                        await fetchWithTimeout(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
@@ -714,7 +716,7 @@ app.post('/webhook', async (req, res) => {
                 const result = await pool.query('SELECT recurring, total_occurrences, early_offset FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
                 if (result.rows.length > 0) {
                     const r = result.rows[0];
-                    await editTelegramMessage(chatId, messageId, `✏️ Editing Reminder\n━━━━━━━━━━━━━━━━━━\nSelect options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occurrences, r.early_offset));
+                    await editTelegramMessage(chatId, messageId, `✏️ <b>Editing Reminder</b>\n━━━━━━━━━━━━━━━━━━\nSelect options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occurrences, r.early_offset));
                 }
             } else if (data.startsWith('prompt_early:')) {
                 const reminderId = data.replace('prompt_early:', '');
@@ -785,7 +787,7 @@ app.post('/webhook', async (req, res) => {
                 await answerCallbackQuery(callbackQuery.id, '✅ <b>Recurrence updated!</b>', true);
 
                 const result = await pool.query('SELECT total_occurrences, early_offset FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
-                await editTelegramMessage(chatId, messageId, `✏️ Editing Reminder\n━━━━━━━━━━━━━━━━━━\nSelect options below:`, getEditMenuKeyboard(reminderId, recurringVal, result.rows[0].total_occurrences, result.rows[0].early_offset));
+                await editTelegramMessage(chatId, messageId, `✏️ <b>Editing Reminder</b>\n━━━━━━━━━━━━━━━━━━\nSelect options below:`, getEditMenuKeyboard(reminderId, recurringVal, result.rows[0].total_occurrences, result.rows[0].early_offset));
             } else if (data.startsWith('setlimit:')) {
                 const [, reminderId, countStr] = data.split(':');
                 const count = parseInt(countStr, 10);
@@ -795,7 +797,7 @@ app.post('/webhook', async (req, res) => {
                 await answerCallbackQuery(callbackQuery.id, '✅ <b>Repeat limit updated!</b>', true);
 
                 const result = await pool.query('SELECT recurring, early_offset FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
-                await editTelegramMessage(chatId, messageId, `✏️ Editing Reminder\n━━━━━━━━━━━━━━━━━━\nSelect options below:`, getEditMenuKeyboard(reminderId, result.rows[0].recurring, limitVal, result.rows[0].early_offset));
+                await editTelegramMessage(chatId, messageId, `✏️ <b>Editing Reminder</b>\n━━━━━━━━━━━━━━━━━━\nSelect options below:`, getEditMenuKeyboard(reminderId, result.rows[0].recurring, limitVal, result.rows[0].early_offset));
             }
         }
 
@@ -824,7 +826,7 @@ app.post('/webhook', async (req, res) => {
                     title: '👀 <b>View Active Reminders (Inline)</b>',
                     description: 'Posts active reminders in chat, collapses in 30s',
                     thumbnail_url: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f3.png',
-                    input_message_content: { message_text: '📋 Fetching active reminders...' },
+                    input_message_content: { message_text: '📋 <b>Fetching active reminders...</b>' },
                     reply_markup: {
                         inline_keyboard: [[{ text: '⏳ <b>Loading...</b>', callback_data: 'noop' }]]
                     }
@@ -843,7 +845,7 @@ app.post('/webhook', async (req, res) => {
                             setTimeout(() => inlineQueryCache.delete(genId), 10 * 60 * 1000);
                             return genId;
                         })(),
-                        title: `🔔 <b>Set Reminder: "${reminderText}</b>"`,
+                        title: `🔔 <b>Set Reminder: "${escapeHTML(reminderText)}</b>"`,
                         thumbnail_url: "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f0.png",
                         description: `Scheduled for: ${dt.toFormat("EEEE, MMM d, yyyy 'at' h:mm a")}`,
                         input_message_content: { message_text: `⏳ <b>Creating reminder...</b>` },
@@ -855,14 +857,14 @@ app.post('/webhook', async (req, res) => {
                     results.push({
                         type: 'article',
                         id: `invalid_${Buffer.from(queryText).toString('base64url').substring(0, 100)}`,
-                        title: '⚠️ Min 1 min ahead',
+                        title: '⚠️ <b>Min 1 min ahead</b>',
                         description: 'Time must be >= 1 min.',
-                        input_message_content: { message_text: '❌ Reminders must be set for at least 1 minute from now.' }
+                        input_message_content: { message_text: '❌ <b>Reminders must be set for at least 1 minute from now.</b>' }
                     });
                 }
             }
 
-            await fetch(`https://api.telegram.org/bot${TOKEN}/answerInlineQuery`, {
+            await fetchWithTimeout(`https://api.telegram.org/bot${TOKEN}/answerInlineQuery`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ inline_query_id: inlineQuery.id, results, cache_time: 0 })
@@ -887,12 +889,12 @@ app.post('/webhook', async (req, res) => {
 
                 if (!parsed) {
                     if (iMsgId) {
-                        await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                        await fetchWithTimeout(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 inline_message_id: iMsgId,
-                                text: '❌ I could not parse that reminder time. Please try again.',
+                                text: '❌ <b>I could not parse that reminder time. Please try again.</b>',
                                 parse_mode: 'HTML'
                             })
                         });
@@ -904,27 +906,23 @@ app.post('/webhook', async (req, res) => {
                     );
 
                     if (parsed.wantRepeatMenu) {
-                        const safeText = String(parsed.reminderText || 'Reminder')
-                            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
                         await sendOrUpdateDashboard(
                             userId,
-                            `📝 Editing Reminder: "<b>${safeText}</b>"\n━━━━━━━━━━━━━━━━━━\nSelect options below:`,
+                            `📝 Editing Reminder: "<b>${escapeHTML(parsed.reminderText)}</b>"\n━━━━━━━━━━━━━━━━━━\nSelect options below:`,
                             getEditMenuKeyboard(insertRes.rows[0].id, null, null)
                         );
                     }
 
                     const localDt = DateTime.fromJSDate(parsed.date).setZone('America/Chicago');
                     const formattedTime = localDt.toFormat("EEE, LLL d, yyyy 'at' h:mm a");
-                    const safeText = String(parsed.reminderText || 'Reminder')
-                        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
                     if (iMsgId) {
-                        const editRes = await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                        const editRes = await fetchWithTimeout(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 inline_message_id: iMsgId,
-                                text: `✅ <b>Reminder set!</b>\n📝 <i>${safeText}</i>\n⏰ ${formattedTime}`,
+                                text: `✅ <b>Reminder set!</b>\n📝 <i>${escapeHTML(parsed.reminderText)}</i>\n⏰ ${formattedTime}`,
                                 parse_mode: 'HTML'
                             })
                         });
@@ -934,7 +932,7 @@ app.post('/webhook', async (req, res) => {
                         } else {
                             setTimeout(async () => {
                                 try {
-                                    await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                                    await fetchWithTimeout(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
                                         method: 'POST',
                                         headers: { 'Content-Type': 'application/json' },
                                         body: JSON.stringify({
@@ -957,7 +955,7 @@ app.post('/webhook', async (req, res) => {
                 await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
 
                 if (iMsgId) {
-                    await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                    await fetchWithTimeout(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -969,7 +967,7 @@ app.post('/webhook', async (req, res) => {
                     
                     setTimeout(async () => {
                         try {
-                            await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                            await fetchWithTimeout(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({
@@ -988,7 +986,7 @@ app.post('/webhook', async (req, res) => {
                 const dashData = await getRemindersDashboardData(userId, userTz, userFirstName);
 
                 if (iMsgId) {
-                    const editRes = await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                    const editRes = await fetchWithTimeout(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -1004,7 +1002,7 @@ app.post('/webhook', async (req, res) => {
                     } else {
                         resetMenuTimer(`inline_${iMsgId}`, async () => {
                             try {
-                                await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                                await fetchWithTimeout(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({
@@ -1029,4 +1027,3 @@ app.post('/webhook', async (req, res) => {
         res.sendStatus(500);
     }
 });
-
