@@ -374,13 +374,24 @@ async function sendOrUpdateDashboard(userId, text, markup, triggerMsgId = null) 
     let targetMsgId = null;
 
     if (existingMsgId) {
-        await deleteTelegramMessage(userId, existingMsgId);
-    }
-
-    const newMsg = await sendTelegramMessage(userId, text, markup);
-    if (newMsg) {
-        targetMsgId = newMsg.message_id;
-        await setActiveMenuMsgId(userId, targetMsgId, triggerMsgId);
+        const success = await editTelegramMessage(userId, existingMsgId, text, markup);
+        if (success) {
+            targetMsgId = existingMsgId;
+            await setActiveMenuMsgId(userId, targetMsgId, triggerMsgId);
+        } else {
+            await deleteTelegramMessage(userId, existingMsgId);
+            const newMsg = await sendTelegramMessage(userId, text, markup);
+            if (newMsg) {
+                targetMsgId = newMsg.message_id;
+                await setActiveMenuMsgId(userId, targetMsgId, triggerMsgId);
+            }
+        }
+    } else {
+        const newMsg = await sendTelegramMessage(userId, text, markup);
+        if (newMsg) {
+            targetMsgId = newMsg.message_id;
+            await setActiveMenuMsgId(userId, targetMsgId, triggerMsgId);
+        }
     }
 
     if (targetMsgId) {
@@ -808,12 +819,12 @@ app.post('/webhook', async (req, res) => {
                 results.push({
                     type: 'article',
                     id: 'show_reminders_dm',
-                    title: '👀 View Active Reminders (DM)',
+                    title: '👀 Send Active Reminders to DM',
                     description: 'Tap to view and manage your active reminders.',
                     thumbnail_url: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/2709.png',
                     thumb_width: 72,
                     thumb_height: 72,
-                    input_message_content: { message_text: '📋 Requesting active reminders list...' }
+                    input_message_content: { message_text: '📋 Sending active reminders list to DM...' }
                 });
                 results.push({
                     type: 'article',
@@ -959,7 +970,7 @@ app.post('/webhook', async (req, res) => {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             inline_message_id: iMsgId,
-                            text: '<b>📋 Active Reminders list sent to your DM!</b>',
+                            text: '<b>🍟 Ding! Fries are done.</b>',
                             parse_mode: 'HTML'
                         })
                     });
