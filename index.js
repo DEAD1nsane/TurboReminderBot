@@ -948,61 +948,79 @@ app.post('/webhook', async (req, res) => {
                     }
                 }
 
-            } else if (selectedResultId === 'show_reminders_dm') {
-                const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
-                const dashData = await getRemindersDashboardData(userId, userTz, userFirstName);
-                await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
+            } else if (selectedResultId === 'show_reminders_dm') {                 
+    const userTz = (await getUserTimezone(userId)) || 'America/Chicago';                 
+    const dashData = await getRemindersDashboardData(userId, userTz, userFirstName);                 
+    await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
 
-                if (iMsgId) {
+    if (iMsgId) {
+        // 1. Send the initial confirmation that DMs were sent
+        await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                inline_message_id: iMsgId,
+                text: '<b>🚀 Active Reminders list sent to your DM!</b>',
+                parse_mode: 'HTML'
+            })
+        });
+
+        // 2. 10-second timer to collapse it into the fries message
+        resetMenuTimer(`collapse_dm_${iMsgId}`, async () => {
+            try {
+                await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        inline_message_id: iMsgId,
+                        text: `<b>🍟 Ding! Fries are done.</b>`,
+                        parse_mode: 'HTML'
+                    })
+                });
+            } catch (err) {
+                console.error('Inline collapse failed:', err);
+            }
+        }, 10000); 
+    }
+} else if (selectedResultId === 'show_reminders_inline_v6') {
+    const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
+    const dashData = await getRemindersDashboardData(userId, userTz, userFirstName);
+
+    if (iMsgId) {
+        const editRes = await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                inline_message_id: iMsgId,
+                text: dashData.text,
+                reply_markup: dashData.keyboard,
+                parse_mode: 'HTML'
+            })
+        });
+
+        if (!editRes.ok) {
+            console.error('Failed to populate inline active reminders:', await editRes.text());
+        } else {
+            resetMenuTimer(`inline_${iMsgId}`, async () => {
+                try {
                     await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             inline_message_id: iMsgId,
-                            text: '<b>📋 Active Reminders list sent to your DM!</b>',
+                            text: '<b>🫈 Squatch spotted! List collapsed before anyone got proof.</b>',
                             parse_mode: 'HTML'
                         })
                     });
+                } catch (err) {
+                    console.error('Failed to collapse inline reminders list:', err);
                 }
-            } else if (selectedResultId === 'show_reminders_inline_v6') {
-                const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
-                const dashData = await getRemindersDashboardData(userId, userTz, userFirstName);
-
-                if (iMsgId) {
-                    const editRes = await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            inline_message_id: iMsgId,
-                            text: dashData.text,
-                            reply_markup: dashData.keyboard,
-                            parse_mode: 'HTML'
-                        })
-                    });
-
-                    if (!editRes.ok) {
-                        console.error('Failed to populate inline active reminders:', await editRes.text());
-                    } else {
-                        resetMenuTimer(`inline_${iMsgId}`, async () => {
-                            try {
-                                await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({
-                                        inline_message_id: iMsgId,
-                                        text: '<b>🫈 Squatch spotted! List collapsed before anyone got proof.</b>',
-                                        parse_mode: 'HTML'
-                                    })
-                                });
-                            } catch (err) {
-                                console.error('Failed to collapse inline reminders list:', err);
-                            }
-                        });
-                    }
-                } else {
-                    await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
-                }
-            }
+            }); // Defaults to your standard 30s timer
+        }
+    } else {
+        await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
+    }
+}
         }
         res.sendStatus(200);
     } catch (error) {
