@@ -540,7 +540,7 @@ app.post('/webhook', async (req, res) => {
             if (data.startsWith('settz:')) {
                 const tz = data.replace('settz:', '');
                 await setUserTimezone(userId, tz);
-                await answerCallbackQuery(callbackQuery.id, `✅ <b>Timezone saved:</b> ${tz}`, true);
+                await answerCallbackQuery(callbackQuery.id, `✅ Timezone saved: ${tz}`, true);
                 const dashData = await getRemindersDashboardData(userId, tz, userFirstName);
                 await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
             } else if (data === 'noop') {
@@ -556,7 +556,7 @@ app.post('/webhook', async (req, res) => {
                 }
             } else if (data.startsWith('del:')) {
                 const reminderId = data.replace('del:', '');
-                await answerCallbackQuery(callbackQuery.id, '⚠️ <b>Tap again to confirm deletion!</b>', false);
+                await answerCallbackQuery(callbackQuery.id, '⚠️ Tap again to confirm deletion!', false);
 
                 const dashData = await getRemindersDashboardData(userId, userTz, userFirstName);
                 if (dashData && dashData.keyboard && dashData.keyboard.inline_keyboard) {
@@ -588,7 +588,7 @@ app.post('/webhook', async (req, res) => {
             } else if (data.startsWith('confirm_del:')) {
                 const reminderId = data.replace('confirm_del:', '');
                 await pool.query('DELETE FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
-                await answerCallbackQuery(callbackQuery.id, '🗑️ <b>Reminder deleted!</b>', false);
+                await answerCallbackQuery(callbackQuery.id, '🗑️ Reminder deleted!', false);
 
                 const dashData = await getRemindersDashboardData(userId, userTz, userFirstName);
                 if (chatId && messageId) {
@@ -631,7 +631,7 @@ app.post('/webhook', async (req, res) => {
 
                     let extras = [];
                     if (r.recurring) extras.push(`🔄 | Repeat: ${formatRepeatText(r.recurring)}${r.total_occurrences ? ` (${r.current_occurrence || 0}/${r.total_occurrences})` : ""}`);
-                    if (r.early_offset) extras.push(`⏳ | <b>Early Warning:</b> ${r.early_offset}m`);
+                    if (r.early_offset) extras.push(`⏳ | Early Warning: ${r.early_offset}m`);
                     const extrasStr = extras.length > 0 ? `\n\n━━━━━━━━━━━━━━━━━━\n${extras.join('\n')}` : "";
 
                     await answerCallbackQuery(callbackQuery.id, `━━━━━━━━━━━━━━━━━━\n🔔 | ${escapeHTML(r.text)}\n\n🕒 | ${formattedTime}${extrasStr}`, true);
@@ -654,7 +654,7 @@ app.post('/webhook', async (req, res) => {
                     const key = `edit_confirm:${userId}:${reminderId}`;
                     if (pendingInlineEdits.has(key)) {
                         pendingInlineEdits.delete(key);
-                        await answerCallbackQuery(callbackQuery.id, '📩 <b>Sent edit options to DM!</b>', false);
+                        await answerCallbackQuery(callbackQuery.id, '📩 Sent edit options to DM!', false);
 
                         const result = await pool.query('SELECT text, recurring, total_occurrences, early_offset FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
                         if (result.rows.length > 0) {
@@ -679,7 +679,7 @@ app.post('/webhook', async (req, res) => {
                     } else {
                         pendingInlineEdits.add(key);
                         setTimeout(() => pendingInlineEdits.delete(key), 10000);
-                        await answerCallbackQuery(callbackQuery.id, '⚠️ <b>Tap Edit again within 10s to send options to your DM</b>', false);
+                        await answerCallbackQuery(callbackQuery.id, '⚠️ Tap Edit again within 10s to send options to your DM', false);
 
                         const dashData = await getRemindersDashboardData(userId, userTz, userFirstName);
                         if (dashData && dashData.keyboard && dashData.keyboard.inline_keyboard) {
@@ -712,7 +712,7 @@ app.post('/webhook', async (req, res) => {
                 const mins = parseInt(parts[2], 10);
                 const offsetVal = mins === 0 ? null : mins;
                 await pool.query('UPDATE reminders SET early_offset = $1, early_alert_sent = FALSE WHERE id = $2 AND user_id = $3', [offsetVal, reminderId, userId]);
-                await answerCallbackQuery(callbackQuery.id, '⚡ <b>Early warning updated!</b>', true);
+                await answerCallbackQuery(callbackQuery.id, '⚡ Early warning updated!', true);
                 const result = await pool.query('SELECT recurring, total_occurrences, early_offset FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
                 if (result.rows.length > 0) {
                     const r = result.rows[0];
@@ -784,7 +784,7 @@ app.post('/webhook', async (req, res) => {
                 const recurringVal = recType === 'none' ? null : `${recType}:${interval}`;
 
                 await pool.query('UPDATE reminders SET recurring = $1 WHERE id = $2 AND user_id = $3', [recurringVal, reminderId, userId]);
-                await answerCallbackQuery(callbackQuery.id, '✅ <b>Recurrence updated!</b>', true);
+                await answerCallbackQuery(callbackQuery.id, '✅ Recurrence updated!', true);
 
                 const result = await pool.query('SELECT total_occurrences, early_offset FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
                 await editTelegramMessage(chatId, messageId, `✏️ <b>Editing Reminder</b>\n━━━━━━━━━━━━━━━━━━\nSelect options below:`, getEditMenuKeyboard(reminderId, recurringVal, result.rows[0].total_occurrences, result.rows[0].early_offset));
@@ -794,7 +794,7 @@ app.post('/webhook', async (req, res) => {
                 const limitVal = count === 0 ? null : count;
 
                 await pool.query('UPDATE reminders SET total_occurrences = $1 WHERE id = $2 AND user_id = $3', [limitVal, reminderId, userId]);
-                await answerCallbackQuery(callbackQuery.id, '✅ <b>Repeat limit updated!</b>', true);
+                await answerCallbackQuery(callbackQuery.id, '✅ Repeat limit updated!', true);
 
                 const result = await pool.query('SELECT recurring, early_offset FROM reminders WHERE id = $1 AND user_id = $2', [reminderId, userId]);
                 await editTelegramMessage(chatId, messageId, `✏️ <b>Editing Reminder</b>\n━━━━━━━━━━━━━━━━━━\nSelect options below:`, getEditMenuKeyboard(reminderId, result.rows[0].recurring, limitVal, result.rows[0].early_offset));
@@ -810,7 +810,7 @@ app.post('/webhook', async (req, res) => {
                 results.push({
                     type: 'article',
                     id: 'show_reminders_dm',
-                    title: '👀 <b>View Active Reminders (DM)</b>',
+                    title: '👀 View Active Reminders (DM)',
                     description: 'Tap to view and manage your active reminders.',
                     thumbnail_url: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/2709.png',
                     thumb_width: 72,
@@ -823,7 +823,7 @@ app.post('/webhook', async (req, res) => {
                 results.push({
                     type: 'article',
                     id: 'show_reminders_inline_v6',
-                    title: '👀 <b>View Active Reminders (Inline)</b>',
+                    title: '👀 View Active Reminders (Inline)',
                     description: 'Posts active reminders in chat, collapses in 30s',
                     thumbnail_url: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f3.png',
                     input_message_content: { message_text: '📋 <b>Fetching active reminders...</b>' },
@@ -845,7 +845,7 @@ app.post('/webhook', async (req, res) => {
                             setTimeout(() => inlineQueryCache.delete(genId), 10 * 60 * 1000);
                             return genId;
                         })(),
-                        title: `🔔 <b>Set Reminder: "${escapeHTML(reminderText)}</b>"`,
+                        title: `🔔 Set Reminder: "${reminderText}"`,
                         thumbnail_url: "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f0.png",
                         description: `Scheduled for: ${dt.toFormat("EEEE, MMM d, yyyy 'at' h:mm a")}`,
                         input_message_content: { message_text: `⏳ <b>Creating reminder...</b>` },
@@ -857,7 +857,7 @@ app.post('/webhook', async (req, res) => {
                     results.push({
                         type: 'article',
                         id: `invalid_${Buffer.from(queryText).toString('base64url').substring(0, 100)}`,
-                        title: '⚠️ <b>Min 1 min ahead</b>',
+                        title: '⚠️ Min 1 min ahead',
                         description: 'Time must be >= 1 min.',
                         input_message_content: { message_text: '❌ <b>Reminders must be set for at least 1 minute from now.</b>' }
                     });
