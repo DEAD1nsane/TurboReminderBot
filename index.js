@@ -523,7 +523,7 @@ app.post('/webhook', async (req, res) => {
                     await fetchWithTimeout(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ inline_message_id: inlineMsgId, text: '🫈 <b>Squatch spotted! List collapsed before anyone got proof.</b>', parse_mode: 'HTML' })
+                        body: JSON.stringify({ inline_message_id: inlineMsgId, text: '🫈 Squatch spotted! List collapsed before anyone got proof.', parse_mode: 'HTML' })
                     });
                 });
             } else if (messageId && chatId) {
@@ -563,7 +563,7 @@ app.post('/webhook', async (req, res) => {
                     dashData.keyboard.inline_keyboard = dashData.keyboard.inline_keyboard.map(row => {
                         return row.map(btn => {
                             if (btn.callback_data === `del:${reminderId}`) {
-                                return { text: '⚠️ <b>Confirm?</b>', callback_data: `confirm_del:${reminderId}` };
+                                return { text: '⚠️ Confirm?', callback_data: `confirm_del:${reminderId}` };
                             }
                             return btn;
                         });
@@ -689,7 +689,7 @@ app.post('/webhook', async (req, res) => {
                             dashData.keyboard.inline_keyboard = dashData.keyboard.inline_keyboard.map(row => {
                                 return row.map(btn => {
                                     if (btn.callback_data === `edit:${reminderId}`) {
-                                        return { text: '⚠️ <b>Send DM?</b>', callback_data: `edit:${reminderId}` };
+                                        return { text: '⚠️ Send DM?', callback_data: `edit:${reminderId}` };
                                     }
                                     return btn;
                                 });
@@ -724,17 +724,17 @@ app.post('/webhook', async (req, res) => {
             } else if (data.startsWith('prompt_early:')) {
                 const reminderId = data.replace('prompt_early:', '');
                 await setPendingEdit(userId, `early:${reminderId}`);
-                await editTelegramMessage(chatId, messageId, `⚡ <b>How many minutes early should the warning be?</b>\n<i>Example: 15, 45, 120</i>\n━━━━━━━━━━━━━━━━━━`, { inline_keyboard: [[{ text: '⬅️ <b>Cancel</b>', callback_data: `edit:${reminderId}` }]] });
+                await editTelegramMessage(chatId, messageId, `⚡ <b>How many minutes early should the warning be?</b>\n<i>Example: 15, 45, 120</i>\n━━━━━━━━━━━━━━━━━━`, { inline_keyboard: [[{ text: '⬅️ Cancel', callback_data: `edit:${reminderId}` }]] });
                 await answerCallbackQuery(callbackQuery.id);
             } else if (data.startsWith('prompt_edit_text:')) {
                 const reminderId = data.replace('prompt_edit_text:', '');
                 await setPendingEdit(userId, `text:${reminderId}`);
-                await editTelegramMessage(chatId, messageId, `📝 <b>Please type the new note/text for this reminder:</b>\n━━━━━━━━━━━━━━━━━━`, { inline_keyboard: [[{ text: '⬅️ <b>Cancel</b>', callback_data: `edit:${reminderId}` }]] });
+                await editTelegramMessage(chatId, messageId, `📝 <b>Please type the new note/text for this reminder:</b>\n━━━━━━━━━━━━━━━━━━`, { inline_keyboard: [[{ text: '⬅️ Cancel', callback_data: `edit:${reminderId}` }]] });
                 await answerCallbackQuery(callbackQuery.id);
             } else if (data.startsWith('prompt_edit_time:')) {
                 const reminderId = data.replace('prompt_edit_time:', '');
                 await setPendingEdit(userId, `time:${reminderId}`);
-                await editTelegramMessage(chatId, messageId, `🕒 <b>Please type the new time/date for this reminder:</b>\n<i>Example: tomorrow at 8am, 2h, or Aug 12 5pm</i>\n━━━━━━━━━━━━━━━━━━`, { inline_keyboard: [[{ text: '⬅️ <b>Cancel</b>', callback_data: `edit:${reminderId}` }]] });
+                await editTelegramMessage(chatId, messageId, `🕒 <b>Please type the new time/date for this reminder:</b>\n<i>Example: tomorrow at 8am, 2h, or Aug 12 5pm</i>\n━━━━━━━━━━━━━━━━━━`, { inline_keyboard: [[{ text: '⬅️ Cancel', callback_data: `edit:${reminderId}` }]] });
                 await answerCallbackQuery(callbackQuery.id);
             } else if (data.startsWith('dowmenu:')) {
                 const reminderId = data.replace('dowmenu:', '');
@@ -820,7 +820,7 @@ app.post('/webhook', async (req, res) => {
                     thumb_height: 72,
                     input_message_content: { message_text: '📋 <b>Requesting active reminders list...</b>' },
                     reply_markup: {
-                        inline_keyboard: [[{ text: '⏳ <b>Loading...</b>', callback_data: 'noop' }]]
+                        inline_keyboard: [[{ text: '⏳ Loading...', callback_data: 'noop' }]]
                     }
                 });
                 results.push({
@@ -831,7 +831,7 @@ app.post('/webhook', async (req, res) => {
                     thumbnail_url: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f3.png',
                     input_message_content: { message_text: '📋 <b>Fetching active reminders...</b>' },
                     reply_markup: {
-                        inline_keyboard: [[{ text: '⏳ <b>Loading...</b>', callback_data: 'noop' }]]
+                        inline_keyboard: [[{ text: '⏳ Loading...', callback_data: 'noop' }]]
                     }
                 });
             } else {
@@ -853,7 +853,7 @@ app.post('/webhook', async (req, res) => {
                         description: `Scheduled for: ${dt.toFormat("EEEE, MMM d, yyyy 'at' h:mm a")}`,
                         input_message_content: { message_text: `⏳ <b>Creating reminder...</b>` },
                         reply_markup: {
-                            inline_keyboard: [[{ text: '⏳ <b>Processing...</b>', callback_data: 'noop' }]]
+                            inline_keyboard: [[{ text: '⏳ Processing...', callback_data: 'noop' }]]
                         }
                     });
                 } else {
@@ -975,7 +975,7 @@ app.post('/webhook', async (req, res) => {
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({
                                     inline_message_id: iMsgId,
-                                    text: '🍟 <b>Ding! Fries are done.</b>',
+                                    text: '🍟 Ding! Fries are done.',
                                     parse_mode: 'HTML'
                                 })
                             });
@@ -1010,7 +1010,7 @@ app.post('/webhook', async (req, res) => {
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({
                                         inline_message_id: iMsgId,
-                                        text: '🫈 <b>Squatch spotted! List collapsed before anyone got proof.</b>',
+                                        text: '🫈 Squatch spotted! List collapsed before anyone got proof.',
                                         parse_mode: 'HTML'
                                     })
                                 });
