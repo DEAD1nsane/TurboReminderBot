@@ -974,7 +974,7 @@ app.post('/webhook', async (req, res) => {
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({
                                     inline_message_id: iMsgId,
-                                    text: '🍟 <b>Ding! Fries are done.</>',
+                                    text: '🍟 <b>Ding! Fries are done.</b>',
                                     parse_mode: 'HTML'
                                 })
                             });
