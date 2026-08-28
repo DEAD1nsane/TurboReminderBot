@@ -23,12 +23,12 @@ const {
 } = require('./telegram');
 
 const activityTimers = new Map();
-function resetMenuTimer(key, action, timeoutMs = 30000) {
+function resetMenuTimer(key, action) {
     if (activityTimers.has(key)) clearTimeout(activityTimers.get(key));
     activityTimers.set(key, setTimeout(() => {
         activityTimers.delete(key);
         action();
-    }, timeoutMs));
+    }, 30000));
 }
 
 const app = express();
@@ -117,10 +117,10 @@ setInterval(async () => {
                 .replace(/\s?(AM|PM)/i, m => m.toLowerCase().trim());
 
             if (r.early_offset && !r.early_alert_sent && now >= new Date(remindAt.getTime() - r.early_offset * 60000)) {
-                await sendTelegramMessage(r.chat_id || r.user_id, `⚡ | <blockquote><b>${r.text}</b></blockquote>\n<i>Starts in ${r.early_offset}m (${formattedTime})</i>`);
+                await sendTelegramMessage(r.chat_id || r.user_id, `⚡ <blockquote><b>${r.text}</b></blockquote>\n<i>Starts in ${r.early_offset}m (${formattedTime})</i>`);
                 await pool.query('UPDATE reminders SET early_alert_sent = TRUE WHERE id = $1', [r.id]);
             } else if (now >= remindAt && !r.sent) {
-                await sendTelegramMessage(r.chat_id || r.user_id, `🔔 | <blockquote><b>${r.text}</b></blockquote>\n<i>${formattedTime}</i>`);
+                await sendTelegramMessage(r.chat_id || r.user_id, `🔔 <blockquote><b>${r.text}</b></blockquote>\n<i>${formattedTime}</i>`);
 
                 if (r.recurring) {
                     const userTz = tz;
@@ -518,15 +518,11 @@ app.post('/webhook', async (req, res) => {
             const inlineMsgId = callbackQuery.inline_message_id;
             if (inlineMsgId) {
                 resetMenuTimer(`inline_${inlineMsgId}`, async () => {
-                    try {
-                        await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ inline_message_id: inlineMsgId, text: '🫈 <b>Squatch spotted! List collapsed before anyone got proof.</b>', parse_mode: 'HTML' })
-                        });
-                    } catch (err) {
-                        console.error('Failed to collapse inline squatch message:', err);
-                    }
+                    await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ inline_message_id: inlineMsgId, text: '<b>🫈 Squatch spotted! List collapsed before anyone got proof.</b>', parse_mode: 'HTML' })
+                    });
                 });
             } else if (messageId && chatId) {
                 resetMenuTimer(`dm_dashboard_${userId}`, async () => {
@@ -575,20 +571,16 @@ app.post('/webhook', async (req, res) => {
                 if (chatId && messageId) {
                     await editTelegramMessage(chatId, messageId, dashData.text, dashData.keyboard);
                 } else if (callbackQuery.inline_message_id) {
-                    try {
-                        await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                inline_message_id: callbackQuery.inline_message_id,
-                                text: dashData.text,
-                                reply_markup: dashData.keyboard,
-                                parse_mode: 'HTML'
-                            })
-                        });
-                    } catch (err) {
-                        console.error('Failed to update inline confirmation edit text:', err);
-                    }
+                    await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            inline_message_id: callbackQuery.inline_message_id,
+                            text: dashData.text,
+                            reply_markup: dashData.keyboard,
+                            parse_mode: 'HTML'
+                        })
+                    });
                 }
                 return res.sendStatus(200);
             } else if (data.startsWith('confirm_del:')) {
@@ -612,20 +604,16 @@ app.post('/webhook', async (req, res) => {
                         }
                         return res.sendStatus(200);
                     }
-                    try {
-                        await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                inline_message_id: iMsgId,
-                                text: dashData.text,
-                                reply_markup: dashData.keyboard,
-                                parse_mode: 'HTML'
-                            })
-                        });
-                    } catch (err) {
-                        console.error('Failed to update inline deletion confirm:', err);
-                    }
+                    await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            inline_message_id: iMsgId,
+                            text: dashData.text,
+                            reply_markup: dashData.keyboard,
+                            parse_mode: 'HTML'
+                        })
+                    });
                 }
                 return res.sendStatus(200);
             } else if (data.startsWith('view:')) {
@@ -677,19 +665,15 @@ app.post('/webhook', async (req, res) => {
                             await sendOrUpdateDashboard(userId, `✏️ Editing Reminder: "<b>${r.text}</b>"\n━━━━━━━━━━━━━━━━━━\nSelect options below:`, getEditMenuKeyboard(reminderId, r.recurring, r.total_occurrences, r.early_offset));
                         }
 
-                        try {
-                            await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    inline_message_id: iMsgId,
-                                    text: '📝 <i>Edit menu sent to your DM!</i>',
-                                    parse_mode: 'HTML'
-                                })
-                            });
-                        } catch (err) {
-                            console.error('Failed to update inline edit DM confirmation:', err);
-                        }
+                        await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                inline_message_id: iMsgId,
+                                text: '📝 <i>Edit menu sent to your DM!</i>',
+                                parse_mode: 'HTML'
+                            })
+                        });
                     } else {
                         pendingInlineEdits.add(key);
                         setTimeout(() => pendingInlineEdits.delete(key), 10000);
@@ -707,20 +691,16 @@ app.post('/webhook', async (req, res) => {
                             });
                         }
 
-                        try {
-                            await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    inline_message_id: iMsgId,
-                                    text: dashData.text,
-                                    reply_markup: dashData.keyboard,
-                                    parse_mode: 'HTML'
-                                })
-                            });
-                        } catch (err) {
-                            console.error('Failed to update inline pending edit:', err);
-                        }
+                        await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                inline_message_id: iMsgId,
+                                text: dashData.text,
+                                reply_markup: dashData.keyboard,
+                                parse_mode: 'HTML'
+                            })
+                        });
                     }
                     return res.sendStatus(200);
                 }
@@ -833,7 +813,7 @@ app.post('/webhook', async (req, res) => {
                     thumbnail_url: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/2709.png',
                     thumb_width: 72,
                     thumb_height: 72,
-                    input_message_content: { message_text: '💻 <b>root@system:~#</b> dispatch_reminders --target=DM', parse_mode: 'HTML' }
+                    input_message_content: { message_text: '<blockquote>💻 <b>root@system:~#</b> dispatch_reminders --target=DM</blockquote>', parse_mode: 'HTML' }
                 });
                 results.push({
                     type: 'article',
@@ -879,15 +859,11 @@ app.post('/webhook', async (req, res) => {
                 }
             }
 
-            try {
-                await fetch(`https://api.telegram.org/bot${TOKEN}/answerInlineQuery`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ inline_query_id: inlineQuery.id, results, cache_time: 0 })
-                });
-            } catch (err) {
-                console.error('Failed to answer inline query:', err);
-            }
+            await fetch(`https://api.telegram.org/bot${TOKEN}/answerInlineQuery`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ inline_query_id: inlineQuery.id, results, cache_time: 0 })
+            });
         }
 
         if (chosenResult) {
@@ -908,19 +884,15 @@ app.post('/webhook', async (req, res) => {
 
                 if (!parsed) {
                     if (iMsgId) {
-                        try {
-                            await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    inline_message_id: iMsgId,
-                                    text: '❌ <b>I could not parse that reminder time. Please try again.</b>',
-                                    parse_mode: 'HTML'
-                                })
-                            });
-                        } catch (err) {
-                            console.error('Failed to update inline parsed error:', err);
-                        }
+                        await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                inline_message_id: iMsgId,
+                                text: '❌ <b>I could not parse that reminder time. Please try again.</b>',
+                                parse_mode: 'HTML'
+                            })
+                        });
                     }
                 } else {
                     const insertRes = await pool.query(
@@ -944,32 +916,27 @@ app.post('/webhook', async (req, res) => {
                         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
                     if (iMsgId) {
-                        let editRes = null;
-                        try {
-                            editRes = await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    inline_message_id: iMsgId,
-                                    text: `✅ <b>Reminder set!</b>\n📝 <i>${safeText}</i>\n⏰ ${formattedTime}`,
-                                    parse_mode: 'HTML'
-                                })
-                            });
-                        } catch (err) {
-                            console.error('Failed to update inline confirmation network request:', err);
-                        }
+                        const editRes = await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                inline_message_id: iMsgId,
+                                text: `✅ <b>Reminder set!</b>\n📝 <i>${safeText}</i>\n⏰ ${formattedTime}`,
+                                parse_mode: 'HTML'
+                            })
+                        });
 
-                        if (editRes && !editRes.ok) {
+                        if (!editRes.ok) {
                             console.error('Failed to update inline confirmation:', await editRes.text());
                         } else {
-                            resetMenuTimer(`inline_create_${iMsgId}`, async () => {
+                            setTimeout(async () => {
                                 try {
                                     await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
                                         method: 'POST',
                                         headers: { 'Content-Type': 'application/json' },
                                         body: JSON.stringify({
                                             inline_message_id: iMsgId,
-                                            text: `✅ <b>Reminder Created for ${userFirstName || 'you'}!</b>`,
+                                            text: `<b>✅ Reminder Created for ${userFirstName || 'you'}!</b>`,
                                             parse_mode: 'HTML'
                                         })
                                     });
@@ -987,14 +954,14 @@ app.post('/webhook', async (req, res) => {
                 await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
 
                 if (iMsgId) {
-                    resetMenuTimer(`dm_collapse_${iMsgId}`, async () => {
+                    setTimeout(async () => {
                         try {
                             await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({
                                     inline_message_id: iMsgId,
-                                    text: '🫯 <b>root@system:~#</b> echo "Purged." && exit',
+                                    text: '<blockquote>🫯 <b>root@system:~#</b> echo "Purged." &amp;&amp; exit</blockquote>',
                                     parse_mode: 'HTML'
                                 })
                             });
@@ -1008,23 +975,18 @@ app.post('/webhook', async (req, res) => {
                 const dashData = await getRemindersDashboardData(userId, userTz, userFirstName);
 
                 if (iMsgId) {
-                    let editRes = null;
-                    try {
-                        editRes = await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                inline_message_id: iMsgId,
-                                text: dashData.text,
-                                reply_markup: dashData.keyboard,
-                                parse_mode: 'HTML'
-                            })
-                        });
-                    } catch (err) {
-                        console.error('Failed to fetch inline active reminders network request:', err);
-                    }
+                    const editRes = await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            inline_message_id: iMsgId,
+                            text: dashData.text,
+                            reply_markup: dashData.keyboard,
+                            parse_mode: 'HTML'
+                        })
+                    });
 
-                    if (editRes && !editRes.ok) {
+                    if (!editRes.ok) {
                         console.error('Failed to populate inline active reminders:', await editRes.text());
                     } else {
                         resetMenuTimer(`inline_${iMsgId}`, async () => {
@@ -1034,7 +996,7 @@ app.post('/webhook', async (req, res) => {
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({
                                         inline_message_id: iMsgId,
-                                        text: '🫈 <b>Squatch spotted! List collapsed before anyone got proof.</b>',
+                                        text: '<b>🫈 Squatch spotted! List collapsed before anyone got proof.</b>',
                                         parse_mode: 'HTML'
                                     })
                                 });
