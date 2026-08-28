@@ -482,7 +482,7 @@ app.post('/webhook', async (req, res) => {
                     const dashData = await getRemindersDashboardData(userId, existingTz);
                     await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard, msgId);
                 } else {
-                    await sendTelegramMessage(userId, '👋 <b>Welcome! Please select your primary timezone:</b>', getTimezonePickerKeyboard());
+                    await sendTelegramMessage(userId, '👋 Welcome! Please select your primary timezone:', getTimezonePickerKeyboard());
                 }
                 return res.sendStatus(200);
             }
@@ -810,7 +810,7 @@ app.post('/webhook', async (req, res) => {
                 results.push({
                     type: 'article',
                     id: 'show_reminders_dm',
-                    title: '👀 <b>View Active Reminders (DM)</b>',
+                    title: '👀 View Active Reminders (DM)',
                     description: 'Tap to view and manage your active reminders.',
                     thumbnail_url: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/2709.png',
                     thumb_width: 72,
@@ -823,12 +823,12 @@ app.post('/webhook', async (req, res) => {
                 results.push({
                     type: 'article',
                     id: 'show_reminders_inline_v6',
-                    title: '👀 <b>View Active Reminders (Inline)</b>',
+                    title: '👀 View Active Reminders (Inline)',
                     description: 'Posts active reminders in chat, collapses in 30s',
                     thumbnail_url: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f3.png',
                     input_message_content: { message_text: '📋 <b>Fetching active reminders...</b>', parse_mode: 'HTML' },
                     reply_markup: {
-                        inline_keyboard: [[{ text: '⏳ <b>Loading...</b>', callback_data: 'noop' }]]
+                        inline_keyboard: [[{ text: '⏳ Loading...', callback_data: 'noop' }]]
                     }
                 });
             } else {
@@ -845,19 +845,19 @@ app.post('/webhook', async (req, res) => {
                             setTimeout(() => inlineQueryCache.delete(genId), 10 * 60 * 1000);
                             return genId;
                         })(),
-                        title: `🔔 <b>Set Reminder: "${escapeHTML(reminderText)}</b>"`,
+                        title: `🔔 Set Reminder: "${escapeHTML(reminderText)}"`,
                         thumbnail_url: "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f0.png",
                         description: `Scheduled for: ${dt.toFormat("EEEE, MMM d, yyyy 'at' h:mm a")}`,
                         input_message_content: { message_text: `⏳ <b>Creating reminder...</b>`, parse_mode: 'HTML' },
                         reply_markup: {
-                            inline_keyboard: [[{ text: '⏳ <b>Processing...</b>', callback_data: 'noop' }]]
+                            inline_keyboard: [[{ text: '⏳ Processing...', callback_data: 'noop' }]]
                         }
                     });
                 } else {
                     results.push({
                         type: 'article',
                         id: `invalid_${Buffer.from(queryText).toString('base64url').substring(0, 100)}`,
-                        title: '⚠️ <b>Min 1 min ahead</b>',
+                        title: '⚠️ Min 1 min ahead',
                         description: 'Time must be >= 1 min.',
                         input_message_content: { message_text: '❌ <b>Reminders must be set for at least 1 minute from now.</b>', parse_mode: 'HTML' }
                     });
