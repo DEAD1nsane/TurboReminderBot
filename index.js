@@ -117,10 +117,10 @@ setInterval(async () => {
                 .replace(/\s?(AM|PM)/i, m => m.toLowerCase().trim());
 
             if (r.early_offset && !r.early_alert_sent && now >= new Date(remindAt.getTime() - r.early_offset * 60000)) {
-                await sendTelegramMessage(r.chat_id || r.user_id, `⚡ <blockquote><b>${r.text}</b></blockquote>\n<i>Starts in ${r.early_offset}m (${formattedTime})</i>`);
+                await sendTelegramMessage(r.chat_id || r.user_id, `⚡ | <blockquote><b>${r.text}</b></blockquote>\n<i>Starts in ${r.early_offset}m (${formattedTime})</i>`);
                 await pool.query('UPDATE reminders SET early_alert_sent = TRUE WHERE id = $1', [r.id]);
             } else if (now >= remindAt && !r.sent) {
-                await sendTelegramMessage(r.chat_id || r.user_id, `🔔 <blockquote><b>${r.text}</b></blockquote>\n<i>${formattedTime}</i>`);
+                await sendTelegramMessage(r.chat_id || r.user_id, `🔔 | <blockquote><b>${r.text}</b></blockquote>\n<i>${formattedTime}</i>`);
 
                 if (r.recurring) {
                     const userTz = tz;
@@ -813,9 +813,9 @@ app.post('/webhook', async (req, res) => {
                     thumbnail_url: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/2709.png',
                     thumb_width: 72,
                     thumb_height: 72,
-                    input_message_content: { message_text: '<blockquote>💻 <b>root@system:~#</b> dispatch_reminders --target=DM</blockquote>', parse_mode: 'HTML' },
+                    input_message_content: { message_text: '💻 <b>[INIT_DM] Establishing encrypted tunnel...</b>', parse_mode: 'HTML' },
                     reply_markup: {
-                        inline_keyboard: [[{ text: '⏳ Dispatching...', callback_data: 'noop' }]]
+                        inline_keyboard: [[{ text: '📡 Injecting payload...', callback_data: 'noop' }]]
                     }
                 });
                 results.push({
@@ -964,7 +964,7 @@ app.post('/webhook', async (req, res) => {
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({
                                     inline_message_id: iMsgId,
-                                    text: '<blockquote>🫯 <b>root@system:~#</b> echo "Purged." &amp;&amp; exit</blockquote>',
+                                    text: '🫯 <b>[CLOSED] 200 OK — Channel purged.</b>',
                                     parse_mode: 'HTML'
                                 })
                             });
