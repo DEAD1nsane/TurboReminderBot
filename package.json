@@ -4,7 +4,13 @@
   "description": "Telegram inline reminder bot",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "prepare": "husky",
+    "test": "echo \"Error: no test specified\" && exit 0"
+  },
+  "lint-staged": {
+    "*.{js,ts}": "prettier --write",
+    "*.py": "black"
   },
   "dependencies": {
     "chrono-node": "^2.7.5",
