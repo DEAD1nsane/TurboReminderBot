@@ -813,7 +813,10 @@ app.post('/webhook', async (req, res) => {
                     thumbnail_url: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/2709.png',
                     thumb_width: 72,
                     thumb_height: 72,
-                    input_message_content: { message_text: '<blockquote>💻 <b>root@system:~#</b> dispatch_reminders --target=DM</blockquote>', parse_mode: 'HTML' }
+                    input_message_content: { message_text: '<blockquote>💻 <b>root@system:~#</b> dispatch_reminders --target=DM</blockquote>', parse_mode: 'HTML' },
+                    reply_markup: {
+                        inline_keyboard: [[{ text: '⏳ Dispatching...', callback_data: 'noop' }]]
+                    }
                 });
                 results.push({
                     type: 'article',
@@ -1016,3 +1019,4 @@ app.post('/webhook', async (req, res) => {
         res.sendStatus(500);
     }
 });
+
