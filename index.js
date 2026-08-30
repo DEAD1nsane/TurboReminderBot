@@ -148,7 +148,7 @@ setInterval(async () => {
       ) {
         await sendTelegramMessage(
           r.chat_id || r.user_id,
-          `⚡ | <blockquote><b>${escapeHTML(r.text)}</b></blockquote>\n<i>Starts in ${r.early_offset}m (${formattedTime})</i>`,
+          `<blockquote><b>⚡ | ${escapeHTML(r.text)}</b></blockquote>\n<i>Starts in ${r.early_offset}m (${formattedTime})</i>`,
         );
         await pool.query(
           "UPDATE reminders SET early_alert_sent = TRUE WHERE id = $1",
@@ -157,7 +157,7 @@ setInterval(async () => {
       } else if (now >= remindAt && !r.sent) {
         await sendTelegramMessage(
           r.chat_id || r.user_id,
-          `🔔 | <blockquote><b>${escapeHTML(r.text)}</b></blockquote>\n<i>${formattedTime}</i>`,
+          `<blockquote><b>🔔 | ${escapeHTML(r.text)}</b></blockquote>\n<i>${formattedTime}</i>`,
         );
 
         if (r.recurring) {
@@ -768,7 +768,7 @@ app.post("/webhook", async (req, res) => {
         await setUserTimezone(userId, tz);
         await answerCallbackQuery(
           callbackQuery.id,
-          `✅ <b>Timezone saved:</b> ${tz}`,
+          `✅ Timezone saved: ${tz}`,
           true,
         );
         const dashData = await getRemindersDashboardData(
@@ -801,7 +801,7 @@ app.post("/webhook", async (req, res) => {
         const reminderId = data.replace("del:", "");
         await answerCallbackQuery(
           callbackQuery.id,
-          "⚠️ <b>Tap again to confirm deletion!</b>",
+          "⚠️ Tap again to confirm deletion!",
           false,
         );
 
@@ -860,7 +860,7 @@ app.post("/webhook", async (req, res) => {
         );
         await answerCallbackQuery(
           callbackQuery.id,
-          "🗑️ <b>Reminder deleted!</b>",
+          "🗑️ Reminder deleted!",
           false,
         );
 
@@ -985,7 +985,7 @@ app.post("/webhook", async (req, res) => {
             pendingInlineEdits.delete(key);
             await answerCallbackQuery(
               callbackQuery.id,
-              "📩 <b>Sent edit options to DM!</b>",
+              "📩 Sent edit options to DM!",
               false,
             );
 
@@ -1029,7 +1029,7 @@ app.post("/webhook", async (req, res) => {
             setTimeout(() => pendingInlineEdits.delete(key), 10000);
             await answerCallbackQuery(
               callbackQuery.id,
-              "⚠️ <b>Tap Edit again within 10s to send options to your DM</b>",
+              "⚠️ Tap Edit again within 10s to send options to your DM",
               false,
             );
 
@@ -1084,7 +1084,7 @@ app.post("/webhook", async (req, res) => {
         );
         await answerCallbackQuery(
           callbackQuery.id,
-          "⚡ <b>Early warning updated!</b>",
+          "⚡ Early warning updated!",
           true,
         );
         const result = await pool.query(
@@ -1258,7 +1258,7 @@ app.post("/webhook", async (req, res) => {
         );
         await answerCallbackQuery(
           callbackQuery.id,
-          "✅ <b>Recurrence updated!</b>",
+          "✅ Recurrence updated!",
           true,
         );
 
@@ -1288,7 +1288,7 @@ app.post("/webhook", async (req, res) => {
         );
         await answerCallbackQuery(
           callbackQuery.id,
-          "✅ <b>Repeat limit updated!</b>",
+          "✅ Repeat limit updated!",
           true,
         );
 
