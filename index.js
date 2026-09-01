@@ -1567,106 +1567,122 @@ app.post("/webhook", async (req, res) => {
     }
 
     if (inlineQuery) {
-      const userTz = (await getUserTimezone(userId)) || "America/Chicago";
-      const queryText = inlineQuery.query.trim();
-      let results = [];
+      console.log("[INLINE] Query received:", inlineQuery.query || "(empty)");
+      try {
+        const userTz = (await getUserTimezone(userId)) || "America/Chicago";
+        const queryText = inlineQuery.query.trim();
+        let results = [];
 
-      if (queryText.toLowerCase() === "view" || queryText === "") {
-        results.push({
-          type: "article",
-          id: "show_reminders_dm",
-          title: "👀 View Active Reminders (DM)",
-          description: "Tap to view and manage your active reminders.",
-          thumbnail_url:
-            "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/2709.png",
-          thumb_width: 72,
-          thumb_height: 72,
-          input_message_content: {
-            message_text: "💻 **[INIT_DM] Establishing encrypted tunnel...**",
-            parse_mode: "MarkdownV2",
-          },
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "📡 Injecting payload...", callback_data: "noop" }],
-            ],
-          },
-        });
-        results.push({
-          type: "article",
-          id: "show_reminders_inline_v6",
-          title: "👀 View Active Reminders (Inline)",
-          description: "Posts active reminders in chat, collapses in 30s",
-          thumbnail_url:
-            "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f3.png",
-          input_message_content: {
-            message_text: "📋 **Fetching active reminders...**",
-            parse_mode: "MarkdownV2",
-          },
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "⏳ Loading...", callback_data: "noop" }],
-            ],
-          },
-        });
-      } else {
-        const parsed = parseFlexibleDate(queryText, userTz);
-        if (parsed) {
-          if (typeof chatId !== "undefined" && typeof msgId !== "undefined") {
-            await deleteTelegramMessage(chatId, msgId);
-          }
-          const dt = DateTime.fromJSDate(parsed.date).setZone(
-            "America/Chicago",
-          );
-          const reminderText = parsed.text || parsed.reminderText || queryText;
+        if (queryText.toLowerCase() === "view" || queryText === "") {
           results.push({
             type: "article",
-            id: (() => {
-              const genId = `create_inline_${crypto.createHash("sha256").update(queryText).digest("hex").slice(0, 24)}`;
-              inlineQueryCache.set(genId, queryText);
-              setTimeout(() => inlineQueryCache.delete(genId), 10 * 60 * 1000);
-              return genId;
-            })(),
-            title: `🔔 Set Reminder: "${reminderText}"`,
+            id: "show_reminders_dm",
+            title: "👀 View Active Reminders (DM)",
+            description: "Tap to view and manage your active reminders.",
             thumbnail_url:
-              "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f0.png",
-            description: `Scheduled for: ${dt.toFormat("EEEE, MMM d, yyyy 'at' h:mm a")}`,
+              "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/2709.png",
+            thumb_width: 72,
+            thumb_height: 72,
             input_message_content: {
-              message_text: `⏳ **Creating reminder...**`,
+              message_text: "💻 **[INIT_DM] Establishing encrypted tunnel...**",
               parse_mode: "MarkdownV2",
             },
             reply_markup: {
               inline_keyboard: [
-                [{ text: "⏳ Processing...", callback_data: "noop" }],
+                [{ text: "📡 Injecting payload...", callback_data: "noop" }],
+              ],
+            },
+          });
+          results.push({
+            type: "article",
+            id: "show_reminders_inline_v6",
+            title: "👀 View Active Reminders (Inline)",
+            description: "Posts active reminders in chat, collapses in 30s",
+            thumbnail_url:
+              "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f3.png",
+            input_message_content: {
+              message_text: "📋 **Fetching active reminders...**",
+              parse_mode: "MarkdownV2",
+            },
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "⏳ Loading...", callback_data: "noop" }],
               ],
             },
           });
         } else {
-          results.push({
-            type: "article",
-            id: `invalid_${Buffer.from(queryText).toString("base64url").substring(0, 100)}`,
-            title: "⚠️ Min 1 min ahead",
-            description: "Time must be >= 1 min.",
-            input_message_content: {
-              message_text:
-                "❌ **Reminders must be set for at least 1 minute from now.**",
-              parse_mode: "MarkdownV2",
-            },
-          });
+          const parsed = parseFlexibleDate(queryText, userTz);
+          if (parsed) {
+            if (typeof chatId !== "undefined" && typeof msgId !== "undefined") {
+              await deleteTelegramMessage(chatId, msgId);
+            }
+            const dt = DateTime.fromJSDate(parsed.date).setZone(
+              "America/Chicago",
+            );
+            const reminderText =
+              parsed.text || parsed.reminderText || queryText;
+            results.push({
+              type: "article",
+              id: (() => {
+                const genId = `create_inline_${crypto.createHash("sha256").update(queryText).digest("hex").slice(0, 24)}`;
+                inlineQueryCache.set(genId, queryText);
+                setTimeout(
+                  () => inlineQueryCache.delete(genId),
+                  10 * 60 * 1000,
+                );
+                return genId;
+              })(),
+              title: `🔔 Set Reminder: "${reminderText}"`,
+              thumbnail_url:
+                "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f0.png",
+              description: `Scheduled for: ${dt.toFormat("EEEE, MMM d, yyyy 'at' h:mm a")}`,
+              input_message_content: {
+                message_text: `⏳ **Creating reminder...**`,
+                parse_mode: "MarkdownV2",
+              },
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: "⏳ Processing...", callback_data: "noop" }],
+                ],
+              },
+            });
+          } else {
+            results.push({
+              type: "article",
+              id: `invalid_${Buffer.from(queryText).toString("base64url").substring(0, 100)}`,
+              title: "⚠️ Min 1 min ahead",
+              description: "Time must be >= 1 min.",
+              input_message_content: {
+                message_text:
+                  "❌ **Reminders must be set for at least 1 minute from now.**",
+                parse_mode: "MarkdownV2",
+              },
+            });
+          }
         }
-      }
 
-      await fetchWithTimeout(
-        `https://api.telegram.org/bot${TOKEN}/answerInlineQuery`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            inline_query_id: inlineQuery.id,
-            results,
-            cache_time: 0,
-          }),
-        },
-      );
+        console.log("[INLINE] Sending", results.length, "results");
+        const answerRes = await fetchWithTimeout(
+          `https://api.telegram.org/bot${TOKEN}/answerInlineQuery`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              inline_query_id: inlineQuery.id,
+              results,
+              cache_time: 0,
+            }),
+          },
+        );
+        const answerBody = await answerRes.text();
+        console.log(
+          "[INLINE] answerInlineQuery:",
+          answerRes.status,
+          answerBody,
+        );
+      } catch (inlineErr) {
+        console.error("[INLINE] Error handling inline query:", inlineErr);
+      }
     }
 
     if (chosenResult) {
