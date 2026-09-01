@@ -1875,7 +1875,7 @@ app.post("/webhook", async (req, res) => {
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
                     inline_message_id: iMsgId,
-                    text: "🫯 **[CLOSED] 200 OK — Active Reminders dumped to DM.**",
+                    text: "🫯 **\\[CLOSED\\] 200 OK — Active Reminders dumped to DM\\.**",
                     parse_mode: "MarkdownV2",
                   }),
                 },
