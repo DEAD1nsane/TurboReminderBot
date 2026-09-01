@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
+    "prepare": "husky || true",
     "test": "echo \"No tests configured yet\""
   },
   "dependencies": {
@@ -15,5 +16,8 @@
     "luxon": "^3.7.2",
     "pg": "^8.23.0",
     "telegraf": "^4.16.3"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7"
   }
 }
