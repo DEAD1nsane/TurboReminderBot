@@ -610,9 +610,67 @@ app.post("/webhook", async (req, res) => {
                 ],
                 [
                   { text: "Monthly", callback_data: "wizard_repeat:monthly:1" },
-                  { text: "Custom", callback_data: "wizard_repeat:custom" },
+                  { text: "Every X Hours/Minutes", callback_data: "wizard_repeat:smart" },
                 ],
                 [{ text: "❌ Cancel", callback_data: "wizard_cancel" }],
+              ],
+            },
+          );
+          return res.sendStatus(200);
+        } else if (state.step === 3.5) {
+          const smartMatch = text.toLowerCase().match(
+            /(?:every\s+)?(\d+)\s*(minutes?|mins?|hours?|hrs?|days?|weeks?|months?)/i,
+          );
+          if (!smartMatch) {
+            await sendTelegramMessage(
+              wizardChatId,
+              "⚠️ Couldn't understand that. Try something like:\n• \`every 56 hours\`\n• \`every 2 days\`\n• \`every 90 minutes\`",
+              {
+                inline_keyboard: [
+                  [{ text: "❌ Cancel", callback_data: "wizard_cancel" }],
+                ],
+              },
+            );
+            return res.sendStatus(200);
+          }
+          const num = parseInt(smartMatch[1], 10);
+          const unitRaw = smartMatch[2].toLowerCase();
+          let unit, unitLabel;
+          if (unitRaw.startsWith("min")) {
+            unit = "minutes";
+            unitLabel = "Minutes";
+          } else if (unitRaw.startsWith("hour") || unitRaw.startsWith("hr")) {
+            unit = "hours";
+            unitLabel = "Hours";
+          } else if (unitRaw.startsWith("day")) {
+            unit = "days";
+            unitLabel = "Days";
+          } else if (unitRaw.startsWith("week")) {
+            unit = "weeks";
+            unitLabel = "Weeks";
+          } else if (unitRaw.startsWith("month")) {
+            unit = "months";
+            unitLabel = "Months";
+          }
+          state.repeat = `${unit}:${num}`;
+          state.repeatText = `Every ${num} ${unitLabel}`;
+          state.step = 4;
+          wizardState.set(userId, state);
+          await sendTelegramMessage(
+            wizardChatId,
+            "⏳ **How many minutes early should the warning be?**\n\nExample: \`15\`, \`30\`, \`60\` (or \`0\` for no warning)",
+            {
+              inline_keyboard: [
+                [
+                  { text: "5m", callback_data: "wizard_early:5" },
+                  { text: "15m", callback_data: "wizard_early:15" },
+                  { text: "30m", callback_data: "wizard_early:30" },
+                  { text: "60m", callback_data: "wizard_early:60" },
+                ],
+                [
+                  { text: "None", callback_data: "wizard_early:0" },
+                  { text: "❌ Cancel", callback_data: "wizard_cancel" },
+                ],
               ],
             },
           );
@@ -773,6 +831,7 @@ app.post("/webhook", async (req, res) => {
         }
         return res.sendStatus(200);
       } else if (text.toLowerCase() === "/remind") {
+        wizardState.delete(userId);
         const isGroupChat =
           message.chat.type === "group" || message.chat.type === "supergroup";
         wizardState.set(userId, {
@@ -909,6 +968,21 @@ app.post("/webhook", async (req, res) => {
               ],
             },
           );
+          return res.sendStatus(200);
+        }
+        if (repeatType === "smart") {
+          const state = wizardState.get(userId);
+          await sendTelegramMessage(
+            state.wizardChatId,
+            "🧠 **Enter repeat interval in natural language:**\n\nExamples:\n• \`every 56 hours\`\n• \`every 2 days\`\n• \`every 90 minutes\`\n• \`every 3 weeks\`\n• \`every 6 months\`",
+            {
+              inline_keyboard: [
+                [{ text: "❌ Cancel", callback_data: "wizard_cancel" }],
+              ],
+            },
+          );
+          state.step = 3.5;
+          wizardState.set(userId, state);
           return res.sendStatus(200);
         }
         const state = wizardState.get(userId);
