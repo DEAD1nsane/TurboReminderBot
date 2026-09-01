@@ -1603,6 +1603,12 @@ app.post("/webhook", async (req, res) => {
     }
 
     if (inlineQuery) {
+      console.log(
+        "[INLINE_QUERY] Received inline query:",
+        inlineQuery.query,
+        "from user:",
+        userId,
+      );
       const userTz = (await getUserTimezone(userId)) || "America/Chicago";
       const queryText = inlineQuery.query.trim();
       let results = [];
@@ -1691,7 +1697,13 @@ app.post("/webhook", async (req, res) => {
         }
       }
 
-      await fetchWithTimeout(
+      console.log(
+        "[INLINE_QUERY] Sending",
+        results.length,
+        "results for inline query:",
+        inlineQuery.id,
+      );
+      const answerRes = await fetchWithTimeout(
         `https://api.telegram.org/bot${TOKEN}/answerInlineQuery`,
         {
           method: "POST",
@@ -1702,6 +1714,10 @@ app.post("/webhook", async (req, res) => {
             cache_time: 0,
           }),
         },
+      );
+      console.log(
+        "[INLINE_QUERY] answerInlineQuery response:",
+        answerRes.status,
       );
     }
 
