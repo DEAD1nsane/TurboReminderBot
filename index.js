@@ -1662,7 +1662,7 @@ app.post("/webhook", async (req, res) => {
               setTimeout(() => inlineQueryCache.delete(genId), 10 * 60 * 1000);
               return genId;
             })(),
-            title: `🔔 Set Reminder: "${escapeMarkdownV2(reminderText)}"`,
+            title: `🔔 Set Reminder: "${reminderText}"`,
             thumbnail_url:
               "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f0.png",
             description: `Scheduled for: ${dt.toFormat("EEEE, MMM d, yyyy 'at' h:mm a")}`,
