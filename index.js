@@ -1073,12 +1073,17 @@ app.post("/webhook", async (req, res) => {
         const state = wizardState.get(userId);
         const cancelChatId = state ? state.wizardChatId : userId;
         wizardState.delete(userId);
-        await answerCallbackQuery(callbackQuery.id, "Wizard cancelled.", true);
-        await sendTelegramMessage(
-          cancelChatId,
-          "✅ Wizard cancelled. No reminder was created.",
-          null,
-        );
+        await answerCallbackQuery(callbackQuery.id, "Wizard cancelled.", false);
+        if (callbackQuery.message) {
+          await editTelegramMessage(
+            callbackQuery.message.chat.id,
+            callbackQuery.message.message_id,
+            "✅ Wizard cancelled\\. No reminder was created\\.",
+            null,
+          );
+        } else {
+          await sendTelegramMessage(cancelChatId, "✅ Wizard cancelled\\. No reminder was created\\.", null, 5000);
+        }
       } else if (data.startsWith("settz:")) {
         const tz = data.replace("settz:", "");
         await setUserTimezone(userId, tz);

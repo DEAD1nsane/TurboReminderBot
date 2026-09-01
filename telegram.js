@@ -50,14 +50,18 @@ async function sendTelegramMessage(
         `https://api.telegram.org/bot${TOKEN}/sendRichMessage`,
         { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) },
       );
-      const data = await res.json();
-      if (!data.ok) {
-        console.error("[RICH_MSG] sendRichMessage failed:", JSON.stringify(data));
+      const richData = await res.json();
+      if (!richData.ok) {
+        console.error("[RICH_MSG] sendRichMessage failed:", richData.description);
         const payload2 = { chat_id: chatId, text, parse_mode: "MarkdownV2", reply_markup: replyMarkup };
         res = await fetchWithTimeout(
           `https://api.telegram.org/bot${TOKEN}/sendMessage`,
           { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload2) },
         );
+      } else {
+        if (autoDeleteMs && richData.result)
+          setTimeout(() => deleteTelegramMessage(chatId, richData.result.message_id), autoDeleteMs);
+        return richData.result;
       }
     } else {
       const payload = { chat_id: chatId, text, parse_mode: "MarkdownV2" };
@@ -101,9 +105,9 @@ async function editTelegramMessage(
         `https://api.telegram.org/bot${TOKEN}/editMessageText`,
         { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) },
       );
-      const data = await res.json();
-      if (!data.ok) {
-        console.error("[RICH_MSG] editMessageText rich failed:", JSON.stringify(data));
+      const richData = await res.json();
+      if (!richData.ok) {
+        console.error("[RICH_MSG] editMessageText rich failed:", richData.description);
         const payload2 = {
           chat_id: chatId,
           message_id: messageId,
@@ -115,6 +119,8 @@ async function editTelegramMessage(
           `https://api.telegram.org/bot${TOKEN}/editMessageText`,
           { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload2) },
         );
+      } else {
+        return true;
       }
     } else {
       const payload = {
