@@ -831,6 +831,7 @@ app.post("/webhook", async (req, res) => {
         }
         return res.sendStatus(200);
       } else if (text.toLowerCase() === "/remind") {
+        console.log("[WIZARD] /remind triggered for user:", userId);
         wizardState.delete(userId);
         const isGroupChat =
           message.chat.type === "group" || message.chat.type === "supergroup";
