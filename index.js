@@ -23,6 +23,8 @@ const {
 } = require("./telegram");
 
 const activityTimers = new Map();
+const wizardState = new Map();
+
 function resetMenuTimer(key, action) {
   if (activityTimers.has(key)) clearTimeout(activityTimers.get(key));
   activityTimers.set(
@@ -561,6 +563,99 @@ app.post("/webhook", async (req, res) => {
       const chatId = message.chat.id;
       const msgId = message.message_id;
       const text = message.text.trim();
+
+      if (wizardState.has(userId)) {
+        const state = wizardState.get(userId);
+        if (state.step === 1) {
+          state.title = text;
+          state.step = 2;
+          wizardState.set(userId, state);
+          await sendTelegramMessage(
+            userId,
+            `⏰ **When should this remind you?**\n\nExamples:\n• \`tomorrow 5pm\`\n• \`in 2 hours 30 minutes\`\n• \`Aug 12 8am\`\n• \`daily 9am\` (with repeat)`,
+            {
+              inline_keyboard: [
+                [{ text: "❌ Cancel", callback_data: "wizard_cancel" }],
+              ],
+            },
+          );
+          return res.sendStatus(200);
+        } else if (state.step === 2) {
+          const userTz2 = await getUserTimezone(userId);
+          const parsed2 = parseFlexibleDate(text, userTz2);
+          if (!parsed2) {
+            await sendTelegramMessage(
+              userId,
+              "⚠️ Could not parse the time. Please try again:\n• \`tomorrow 5pm\`\n• \`in 2h 30m\`\n• \`Aug 12 8am\`",
+              {
+                inline_keyboard: [
+                  [{ text: "❌ Cancel", callback_data: "wizard_cancel" }],
+                ],
+              },
+            );
+            return res.sendStatus(200);
+          }
+          state.time = parsed2;
+          state.step = 3;
+          wizardState.set(userId, state);
+          await sendTelegramMessage(
+            userId,
+            "🔄 **How often should it repeat?**",
+            {
+              inline_keyboard: [
+                [
+                  { text: "None", callback_data: "wizard_repeat:none" },
+                  { text: "Daily", callback_data: "wizard_repeat:daily:1" },
+                  { text: "Weekly", callback_data: "wizard_repeat:weekly:1" },
+                ],
+                [
+                  { text: "Monthly", callback_data: "wizard_repeat:monthly:1" },
+                  { text: "Custom", callback_data: "wizard_repeat:custom" },
+                ],
+                [{ text: "❌ Cancel", callback_data: "wizard_cancel" }],
+              ],
+            },
+          );
+          return res.sendStatus(200);
+        } else if (state.step === 4) {
+          const mins = parseInt(text, 10);
+          if (isNaN(mins) || mins < 0) {
+            await sendTelegramMessage(
+              userId,
+              "⚠️ Please enter a valid number of minutes (0 = no warning):",
+              {
+                inline_keyboard: [
+                  [{ text: "❌ Cancel", callback_data: "wizard_cancel" }],
+                ],
+              },
+            );
+            return res.sendStatus(200);
+          }
+          state.earlyWarning = mins === 0 ? null : mins;
+          state.step = 5;
+          wizardState.set(userId, state);
+          const timeStr = state.time.dt.toFormat(
+            "EEE, MMM d, yyyy 'at' h:mm a",
+          );
+
+          const summary =
+            `📝 **Review Your Reminder**\n\n` +
+            `📌 Title: **${escapeMarkdownV2(state.title)}**\n` +
+            `⏰ Time: **${timeStr}**\n` +
+            `🔄 Repeat: **${state.repeatText || "None"}**\n` +
+            `⏳ Early Warning: **${state.earlyWarning ? state.earlyWarning + "m before" : "None"}**`;
+          await sendTelegramMessage(userId, summary, {
+            inline_keyboard: [
+              [
+                { text: "✅ Create", callback_data: "wizard_confirm" },
+                { text: "❌ Cancel", callback_data: "wizard_cancel" },
+              ],
+            ],
+          });
+          return res.sendStatus(200);
+        }
+      }
+
       if (text.length > 500) {
         await sendTelegramMessage(
           chatId,
@@ -677,6 +772,39 @@ app.post("/webhook", async (req, res) => {
           );
         }
         return res.sendStatus(200);
+      } else if (text.toLowerCase() === "/remind") {
+        wizardState.set(userId, { step: 1 });
+        await sendTelegramMessage(
+          userId,
+          "📝 **What's the reminder title?**\n\nType the title for your reminder (e.g., \`buy milk\`, \`team meeting\`, \`pay bills\`):",
+          {
+            inline_keyboard: [
+              [{ text: "❌ Cancel", callback_data: "wizard_cancel" }],
+            ],
+          },
+        );
+        return res.sendStatus(200);
+      } else if (text.toLowerCase() === "/help") {
+        await sendTelegramMessage(
+          userId,
+          "🤖 **Bot Commands & Usage:**\n\n" +
+            "*/start* — Welcome message + timezone selection\n" +
+            "*/remind* — Create a reminder step-by-step\n" +
+            "*view* — Show your active reminders\n\n" +
+            "Or just type a natural reminder like:\n" +
+            "`reminder tomorrow 5pm buy milk`",
+          null,
+        );
+        return res.sendStatus(200);
+      } else if (text.toLowerCase() === "/cancel") {
+        wizardState.delete(userId);
+        await setPendingEdit(userId, null);
+        await sendTelegramMessage(
+          userId,
+          "✅ Operation cancelled. No changes were saved.",
+          null,
+        );
+        return res.sendStatus(200);
       }
 
       if (
@@ -761,7 +889,114 @@ app.post("/webhook", async (req, res) => {
         await setActiveMenuMsgId(userId, messageId);
       }
 
-      if (data.startsWith("settz:")) {
+      if (data.startsWith("wizard_repeat:")) {
+        const parts = data.split(":");
+        const repeatType = parts[1];
+        if (repeatType === "custom") {
+          await sendTelegramMessage(
+            userId,
+            "⚙️ **Enter custom repeat interval:**\n\nExamples:\n• \`daily:2\` (every 2 days)\n• \`weekly:2\` (every 2 weeks)\n• \`monthly:3\` (every 3 months)",
+            {
+              inline_keyboard: [
+                [{ text: "❌ Cancel", callback_data: "wizard_cancel" }],
+              ],
+            },
+          );
+          return res.sendStatus(200);
+        }
+        const state = wizardState.get(userId);
+        if (state) {
+          state.repeat =
+            repeatType === "none" ? null : `${repeatType}:${parts[2] || "1"}`;
+          state.repeatText =
+            repeatType === "none"
+              ? "None"
+              : repeatType.charAt(0).toUpperCase() + repeatType.slice(1);
+          state.step = 4;
+          wizardState.set(userId, state);
+          await sendTelegramMessage(
+            userId,
+            "⏳ **How many minutes early should the warning be?**\n\nExample: \`15\`, \`30\`, \`60\` (or \`0\` for no warning)",
+            {
+              inline_keyboard: [
+                [
+                  { text: "5m", callback_data: "wizard_early:5" },
+                  { text: "15m", callback_data: "wizard_early:15" },
+                  { text: "30m", callback_data: "wizard_early:30" },
+                  { text: "60m", callback_data: "wizard_early:60" },
+                ],
+                [{ text: "None", callback_data: "wizard_early:0" }],
+                [{ text: "❌ Cancel", callback_data: "wizard_cancel" }],
+              ],
+            },
+          );
+        }
+      } else if (data.startsWith("wizard_early:")) {
+        const mins = parseInt(data.split(":")[1], 10);
+        const state = wizardState.get(userId);
+        if (state) {
+          state.earlyWarning = mins === 0 ? null : mins;
+          state.step = 5;
+          wizardState.set(userId, state);
+          const timeStr = state.time.dt.toFormat(
+            "EEE, MMM d, yyyy 'at' h:mm a",
+          );
+
+          const summary =
+            `📝 **Review Your Reminder**\n\n` +
+            `📌 Title: **${escapeMarkdownV2(state.title)}**\n` +
+            `⏰ Time: **${timeStr}**\n` +
+            `🔄 Repeat: **${state.repeatText || "None"}**\n` +
+            `⏳ Early Warning: **${state.earlyWarning ? state.earlyWarning + "m before" : "None"}**`;
+          await sendTelegramMessage(userId, summary, {
+            inline_keyboard: [
+              [
+                { text: "✅ Create", callback_data: "wizard_confirm" },
+                { text: "❌ Cancel", callback_data: "wizard_cancel" },
+              ],
+            ],
+          });
+        }
+      } else if (data === "wizard_confirm") {
+        const state = wizardState.get(userId);
+        if (state) {
+          const userTz3 = await getUserTimezone(userId);
+          const insertRes = await pool.query(
+            "INSERT INTO reminders (user_id, chat_id, text, remind_at, recurring, early_offset) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+            [
+              userId,
+              chatId,
+              state.title,
+              state.time.date,
+              state.repeat,
+              state.earlyWarning,
+            ],
+          );
+          wizardState.delete(userId);
+          const timeStr = state.time.dt.toFormat(
+            "EEE, MMM d, yyyy 'at' h:mm a",
+          );
+          await sendTelegramMessage(
+            userId,
+            `✅ **Reminder Created!**\n\n` +
+              `📌 Title: **${escapeMarkdownV2(state.title)}**\n` +
+              `⏰ Time: **${timeStr}**\n` +
+              `🔄 Repeat: **${state.repeatText || "None"}**\n` +
+              `⏳ Early Warning: **${state.earlyWarning ? state.earlyWarning + "m before" : "None"}**`,
+            null,
+          );
+          const dashData = await getRemindersDashboardData(userId, userTz3);
+          await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
+        }
+      } else if (data === "wizard_cancel") {
+        wizardState.delete(userId);
+        await answerCallbackQuery(callbackQuery.id, "Wizard cancelled.", true);
+        await sendTelegramMessage(
+          userId,
+          "✅ Wizard cancelled. No reminder was created.",
+          null,
+        );
+      } else if (data.startsWith("settz:")) {
         const tz = data.replace("settz:", "");
         await setUserTimezone(userId, tz);
         await answerCallbackQuery(
