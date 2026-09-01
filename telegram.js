@@ -138,5 +138,4 @@ module.exports = {
   deleteTelegramMessage,
   answerCallbackQuery,
   fetchWithTimeout,
-  convertInlineKeyboardToRichBlocks,
 };
