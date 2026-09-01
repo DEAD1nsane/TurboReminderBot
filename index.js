@@ -1205,7 +1205,7 @@ app.post("/webhook", async (req, res) => {
           await editTelegramMessage(
             chatId,
             messageId,
-            `🔔 **Reminder Details**\n\n📝 ${escapeMarkdownV2(r.text)}\n\n🕒 ${formattedTime}${extrasStr}`,
+            `🔔 **Reminder Details**\n📝 ${escapeMarkdownV2(r.text)}\n🕒 ${formattedTime}${extrasStr}`,
             {
               inline_keyboard: [
                 [
