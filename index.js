@@ -539,20 +539,6 @@ app.post("/webhook", async (req, res) => {
       chosen_inline_result: chosenResult,
     } = req.body;
 
-    const updateType = message
-      ? "message"
-      : callbackQuery
-        ? "callback_query"
-        : inlineQuery
-          ? "inline_query"
-          : chosenResult
-            ? "chosen_inline_result"
-            : "unknown";
-    console.log(
-      `[WEBHOOK] Received update type: ${updateType}`,
-      inlineQuery ? `query="${inlineQuery.query}"` : "",
-    );
-
     let userId = null;
     let userFirstName = null;
 
@@ -1581,12 +1567,6 @@ app.post("/webhook", async (req, res) => {
     }
 
     if (inlineQuery) {
-      console.log(
-        "[INLINE_QUERY] Received inline query:",
-        inlineQuery.query,
-        "from user:",
-        userId,
-      );
       const userTz = (await getUserTimezone(userId)) || "America/Chicago";
       const queryText = inlineQuery.query.trim();
       let results = [];
@@ -1675,13 +1655,7 @@ app.post("/webhook", async (req, res) => {
         }
       }
 
-      console.log(
-        "[INLINE_QUERY] Sending",
-        results.length,
-        "results for inline query:",
-        inlineQuery.id,
-      );
-      const answerRes = await fetchWithTimeout(
+      await fetchWithTimeout(
         `https://api.telegram.org/bot${TOKEN}/answerInlineQuery`,
         {
           method: "POST",
@@ -1692,10 +1666,6 @@ app.post("/webhook", async (req, res) => {
             cache_time: 0,
           }),
         },
-      );
-      console.log(
-        "[INLINE_QUERY] answerInlineQuery response:",
-        answerRes.status,
       );
     }
 
