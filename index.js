@@ -37,7 +37,7 @@ function resetMenuTimer(key, action) {
 }
 
 const escapeMarkdownV2 = (str) =>
-  String(str || "").replace(/[_\*\[\]\(\)~\`>\+\-=\|{\}\!\\]/g, "\\$&");
+  String(str || "").replace(/[_\*\[\]\(\)~`>#\+\-=\|{\}\!\\.]/g, "\\$&");
 
 const app = express();
 app.use(express.json());

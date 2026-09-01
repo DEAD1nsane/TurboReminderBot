@@ -15,7 +15,7 @@ async function fetchWithTimeout(resource, options = {}) {
 const escapeMarkdownV2 = (text) => {
   if (typeof text !== "string") return String(text || "");
   return text
-    .replace(/[_\*\[\]\(\)~`>\+\-\=\|\{\}\!\\.]/g, "\\$&")
+    .replace(/[_\*\[\]\(\)~`>#\+\-\=\|\{\}\!\\.]/g, "\\$&")
     .replace(/\n/g, "\\n");
 };
 
