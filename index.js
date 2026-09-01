@@ -1584,7 +1584,8 @@ app.post("/webhook", async (req, res) => {
             thumb_width: 72,
             thumb_height: 72,
             input_message_content: {
-              message_text: "💻 **[INIT_DM] Establishing encrypted tunnel...**",
+              message_text:
+                "💻 **\\[INIT\\_DM\\] Establishing encrypted tunnel\\.\\.\\.**",
               parse_mode: "MarkdownV2",
             },
             reply_markup: {
@@ -1601,7 +1602,7 @@ app.post("/webhook", async (req, res) => {
             thumbnail_url:
               "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f3.png",
             input_message_content: {
-              message_text: "📋 **Fetching active reminders...**",
+              message_text: "📋 **Fetching active reminders\\.\\.\\.**",
               parse_mode: "MarkdownV2",
             },
             reply_markup: {
@@ -1637,7 +1638,7 @@ app.post("/webhook", async (req, res) => {
                 "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f0.png",
               description: `Scheduled for: ${dt.toFormat("EEEE, MMM d, yyyy 'at' h:mm a")}`,
               input_message_content: {
-                message_text: `⏳ **Creating reminder...**`,
+                message_text: `⏳ **Creating reminder\\.\\.\\.**`,
                 parse_mode: "MarkdownV2",
               },
               reply_markup: {
@@ -1654,7 +1655,7 @@ app.post("/webhook", async (req, res) => {
               description: "Time must be >= 1 min.",
               input_message_content: {
                 message_text:
-                  "❌ **Reminders must be set for at least 1 minute from now.**",
+                  "❌ **Reminders must be set for at least 1 minute from now\\.**",
                 parse_mode: "MarkdownV2",
               },
             });
