@@ -19,23 +19,45 @@ const escapeMarkdownV2 = (text) => {
     .replace(/\n/g, "\\n");
 };
 
+function convertInlineKeyboardToRichBlocks(keyboard) {
+  if (!keyboard?.inline_keyboard) return null;
+  return keyboard.inline_keyboard.map((row) => ({
+    type: "buttons",
+    buttons: row.map((btn) => {
+      const richBtn = { text: btn.text, callback_data: btn.callback_data };
+      if (btn.url) { richBtn.text = btn.text; delete richBtn.callback_data; richBtn.url = btn.url; }
+      if (btn.style) richBtn.style = btn.style;
+      return richBtn;
+    }),
+  }));
+}
+
 async function sendTelegramMessage(
   chatId,
   text,
   replyMarkup = null,
   autoDeleteMs = null,
 ) {
-  const payload = { chat_id: chatId, text, parse_mode: "MarkdownV2" };
-  if (replyMarkup) payload.reply_markup = replyMarkup;
   try {
-    const res = await fetchWithTimeout(
-      `https://api.telegram.org/bot${TOKEN}/sendMessage`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      },
-    );
+    let res;
+    if (replyMarkup?.inline_keyboard) {
+      const blocks = convertInlineKeyboardToRichBlocks(replyMarkup);
+      const payload = {
+        chat_id: chatId,
+        rich_message: { markdown: text, blocks },
+      };
+      res = await fetchWithTimeout(
+        `https://api.telegram.org/bot${TOKEN}/sendRichMessage`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) },
+      );
+    } else {
+      const payload = { chat_id: chatId, text, parse_mode: "MarkdownV2" };
+      if (replyMarkup) payload.reply_markup = replyMarkup;
+      res = await fetchWithTimeout(
+        `https://api.telegram.org/bot${TOKEN}/sendMessage`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) },
+      );
+    }
     const data = await res.json();
     if (data.ok && data.result) {
       if (autoDeleteMs)
@@ -57,22 +79,32 @@ async function editTelegramMessage(
   text,
   replyMarkup = null,
 ) {
-  const payload = {
-    chat_id: chatId,
-    message_id: messageId,
-    text,
-    parse_mode: "MarkdownV2",
-  };
-  if (replyMarkup !== undefined) payload.reply_markup = replyMarkup;
   try {
-    const res = await fetchWithTimeout(
-      `https://api.telegram.org/bot${TOKEN}/editMessageText`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      },
-    );
+    let res;
+    if (replyMarkup?.inline_keyboard) {
+      const blocks = convertInlineKeyboardToRichBlocks(replyMarkup);
+      const payload = {
+        chat_id: chatId,
+        message_id: messageId,
+        rich_message: { markdown: text, blocks },
+      };
+      res = await fetchWithTimeout(
+        `https://api.telegram.org/bot${TOKEN}/editMessageText`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) },
+      );
+    } else {
+      const payload = {
+        chat_id: chatId,
+        message_id: messageId,
+        text,
+        parse_mode: "MarkdownV2",
+      };
+      if (replyMarkup !== undefined) payload.reply_markup = replyMarkup;
+      res = await fetchWithTimeout(
+        `https://api.telegram.org/bot${TOKEN}/editMessageText`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) },
+      );
+    }
     const data = await res.json();
     return data.ok;
   } catch (err) {
@@ -125,4 +157,5 @@ module.exports = {
   deleteTelegramMessage,
   answerCallbackQuery,
   fetchWithTimeout,
+  convertInlineKeyboardToRichBlocks,
 };
