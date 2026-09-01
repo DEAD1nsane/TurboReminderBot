@@ -50,6 +50,9 @@ async function sendTelegramMessage(
       },
     );
     const data = await res.json();
+    if (!data.ok) {
+      console.error("[TELEGRAM] sendMessage failed:", data.description, "payload:", JSON.stringify(payload).substring(0, 200));
+    }
     if (data.ok && data.result) {
       if (autoDeleteMs)
         setTimeout(

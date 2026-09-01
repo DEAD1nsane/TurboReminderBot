@@ -539,6 +539,9 @@ app.post("/webhook", async (req, res) => {
       chosen_inline_result: chosenResult,
     } = req.body;
 
+    const updateType = message ? "message" : callbackQuery ? "callback" : inlineQuery ? "inline" : "other";
+    console.log(`[WEBHOOK] ${updateType} received`);
+
     let userId = null;
     let userFirstName = null;
 
