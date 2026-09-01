@@ -566,12 +566,13 @@ app.post("/webhook", async (req, res) => {
 
       if (wizardState.has(userId)) {
         const state = wizardState.get(userId);
+        const wizardChatId = state.wizardChatId;
         if (state.step === 1) {
           state.title = text;
           state.step = 2;
           wizardState.set(userId, state);
           await sendTelegramMessage(
-            userId,
+            wizardChatId,
             `⏰ **When should this remind you?**\n\nExamples:\n• \`tomorrow 5pm\`\n• \`in 2 hours 30 minutes\`\n• \`Aug 12 8am\`\n• \`daily 9am\` (with repeat)`,
             {
               inline_keyboard: [
@@ -585,7 +586,7 @@ app.post("/webhook", async (req, res) => {
           const parsed2 = parseFlexibleDate(text, userTz2);
           if (!parsed2) {
             await sendTelegramMessage(
-              userId,
+              wizardChatId,
               "⚠️ Could not parse the time. Please try again:\n• \`tomorrow 5pm\`\n• \`in 2h 30m\`\n• \`Aug 12 8am\`",
               {
                 inline_keyboard: [
@@ -599,7 +600,7 @@ app.post("/webhook", async (req, res) => {
           state.step = 3;
           wizardState.set(userId, state);
           await sendTelegramMessage(
-            userId,
+            wizardChatId,
             "🔄 **How often should it repeat?**",
             {
               inline_keyboard: [
@@ -621,7 +622,7 @@ app.post("/webhook", async (req, res) => {
           const mins = parseInt(text, 10);
           if (isNaN(mins) || mins < 0) {
             await sendTelegramMessage(
-              userId,
+              wizardChatId,
               "⚠️ Please enter a valid number of minutes (0 = no warning):",
               {
                 inline_keyboard: [
@@ -644,7 +645,7 @@ app.post("/webhook", async (req, res) => {
             `⏰ Time: **${timeStr}**\n` +
             `🔄 Repeat: **${state.repeatText || "None"}**\n` +
             `⏳ Early Warning: **${state.earlyWarning ? state.earlyWarning + "m before" : "None"}**`;
-          await sendTelegramMessage(userId, summary, {
+          await sendTelegramMessage(wizardChatId, summary, {
             inline_keyboard: [
               [
                 { text: "✅ Create", callback_data: "wizard_confirm" },
@@ -773,9 +774,15 @@ app.post("/webhook", async (req, res) => {
         }
         return res.sendStatus(200);
       } else if (text.toLowerCase() === "/remind") {
-        wizardState.set(userId, { step: 1 });
+        const isGroupChat =
+          message.chat.type === "group" || message.chat.type === "supergroup";
+        wizardState.set(userId, {
+          step: 1,
+          wizardChatId: isGroupChat ? userId : chatId,
+          originalChatId: chatId,
+        });
         await sendTelegramMessage(
-          userId,
+          isGroupChat ? userId : chatId,
           "📝 **What's the reminder title?**\n\nType the title for your reminder (e.g., \`buy milk\`, \`team meeting\`, \`pay bills\`):",
           {
             inline_keyboard: [
@@ -893,8 +900,9 @@ app.post("/webhook", async (req, res) => {
         const parts = data.split(":");
         const repeatType = parts[1];
         if (repeatType === "custom") {
+          const state = wizardState.get(userId);
           await sendTelegramMessage(
-            userId,
+            state.wizardChatId,
             "⚙️ **Enter custom repeat interval:**\n\nExamples:\n• \`daily:2\` (every 2 days)\n• \`weekly:2\` (every 2 weeks)\n• \`monthly:3\` (every 3 months)",
             {
               inline_keyboard: [
@@ -915,7 +923,7 @@ app.post("/webhook", async (req, res) => {
           state.step = 4;
           wizardState.set(userId, state);
           await sendTelegramMessage(
-            userId,
+            state.wizardChatId,
             "⏳ **How many minutes early should the warning be?**\n\nExample: \`15\`, \`30\`, \`60\` (or \`0\` for no warning)",
             {
               inline_keyboard: [
@@ -948,7 +956,7 @@ app.post("/webhook", async (req, res) => {
             `⏰ Time: **${timeStr}**\n` +
             `🔄 Repeat: **${state.repeatText || "None"}**\n` +
             `⏳ Early Warning: **${state.earlyWarning ? state.earlyWarning + "m before" : "None"}**`;
-          await sendTelegramMessage(userId, summary, {
+          await sendTelegramMessage(state.wizardChatId, summary, {
             inline_keyboard: [
               [
                 { text: "✅ Create", callback_data: "wizard_confirm" },
@@ -965,7 +973,7 @@ app.post("/webhook", async (req, res) => {
             "INSERT INTO reminders (user_id, chat_id, text, remind_at, recurring, early_offset) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
             [
               userId,
-              chatId,
+              state.originalChatId,
               state.title,
               state.time.date,
               state.repeat,
@@ -977,7 +985,7 @@ app.post("/webhook", async (req, res) => {
             "EEE, MMM d, yyyy 'at' h:mm a",
           );
           await sendTelegramMessage(
-            userId,
+            state.wizardChatId,
             `✅ **Reminder Created!**\n\n` +
               `📌 Title: **${escapeMarkdownV2(state.title)}**\n` +
               `⏰ Time: **${timeStr}**\n` +
@@ -989,10 +997,12 @@ app.post("/webhook", async (req, res) => {
           await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
         }
       } else if (data === "wizard_cancel") {
+        const state = wizardState.get(userId);
+        const cancelChatId = state ? state.wizardChatId : userId;
         wizardState.delete(userId);
         await answerCallbackQuery(callbackQuery.id, "Wizard cancelled.", true);
         await sendTelegramMessage(
-          userId,
+          cancelChatId,
           "✅ Wizard cancelled. No reminder was created.",
           null,
         );
