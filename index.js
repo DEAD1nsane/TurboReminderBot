@@ -935,7 +935,7 @@ app.post("/webhook", async (req, res) => {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 inline_message_id: inlineMsgId,
-                text: "🫈 **Squatch spotted\\! List collapsed before anyone got proof\\.**",
+                text: "✅ **Action completed\\.**",
                 parse_mode: "MarkdownV2",
               }),
             },
@@ -1866,6 +1866,8 @@ app.post("/webhook", async (req, res) => {
         await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
 
         if (iMsgId) {
+          const summaryLines = dashData.text.replace(/^.*\n/, "").split("\n").filter(l => l.trim());
+          const shortSummary = summaryLines.length > 0 ? summaryLines[0] : "Reminders";
           setTimeout(async () => {
             try {
               await fetchWithTimeout(
@@ -1875,7 +1877,7 @@ app.post("/webhook", async (req, res) => {
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
                     inline_message_id: iMsgId,
-                    text: "🫯 **\\[CLOSED\\] 200 OK — Active Reminders dumped to DM\\.**",
+                    text: `✅ **Reminders sent to your DM\\!**\n\n> **${escapeMarkdownV2(shortSummary)}**\n> ||${escapeMarkdownV2(dashData.text.replace(/^.*\n/, ""))}||`,
                     parse_mode: "MarkdownV2",
                   }),
                 },
@@ -1916,6 +1918,8 @@ app.post("/webhook", async (req, res) => {
           } else {
             resetMenuTimer(`inline_${iMsgId}`, async () => {
               try {
+                const summaryLines = dashData.text.replace(/^.*\n/, "").split("\n").filter(l => l.trim());
+                const shortSummary = summaryLines.length > 0 ? summaryLines[0] : "Reminders";
                 await fetchWithTimeout(
                   `https://api.telegram.org/bot${TOKEN}/editMessageText`,
                   {
@@ -1923,7 +1927,7 @@ app.post("/webhook", async (req, res) => {
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                       inline_message_id: iMsgId,
-                      text: "🫈 **Squatch spotted\\! List collapsed before anyone got proof\\.**",
+                      text: `✅ **${escapeMarkdownV2(shortSummary)}**\n\n> ||${escapeMarkdownV2(dashData.text.replace(/^.*\n/, ""))}||`,
                       parse_mode: "MarkdownV2",
                     }),
                   },
