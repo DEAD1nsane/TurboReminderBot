@@ -50,6 +50,15 @@ async function sendTelegramMessage(
         `https://api.telegram.org/bot${TOKEN}/sendRichMessage`,
         { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) },
       );
+      const data = await res.json();
+      if (!data.ok) {
+        console.error("[RICH_MSG] sendRichMessage failed:", JSON.stringify(data));
+        const payload2 = { chat_id: chatId, text, parse_mode: "MarkdownV2", reply_markup: replyMarkup };
+        res = await fetchWithTimeout(
+          `https://api.telegram.org/bot${TOKEN}/sendMessage`,
+          { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload2) },
+        );
+      }
     } else {
       const payload = { chat_id: chatId, text, parse_mode: "MarkdownV2" };
       if (replyMarkup) payload.reply_markup = replyMarkup;
@@ -92,6 +101,21 @@ async function editTelegramMessage(
         `https://api.telegram.org/bot${TOKEN}/editMessageText`,
         { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) },
       );
+      const data = await res.json();
+      if (!data.ok) {
+        console.error("[RICH_MSG] editMessageText rich failed:", JSON.stringify(data));
+        const payload2 = {
+          chat_id: chatId,
+          message_id: messageId,
+          text,
+          parse_mode: "MarkdownV2",
+          reply_markup: replyMarkup,
+        };
+        res = await fetchWithTimeout(
+          `https://api.telegram.org/bot${TOKEN}/editMessageText`,
+          { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload2) },
+        );
+      }
     } else {
       const payload = {
         chat_id: chatId,

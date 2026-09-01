@@ -1262,20 +1262,44 @@ app.post("/webhook", async (req, res) => {
               ? `\n\n━━━━━━━━━━━━━━━━━━\n${extras.join("\n")}`
               : "";
 
-          await editTelegramMessage(
-            chatId,
-            messageId,
-            `🔔 **Reminder Details**\n📝 ${escapeMarkdownV2(r.text)}\n🕒 ${formattedTime}${extrasStr}`,
-            {
-              inline_keyboard: [
-                [
-                  { text: "✏️ Edit", callback_data: `edit:${reminderId}` },
-                  { text: "❌ Del", callback_data: `del:${reminderId}` },
+          if (callbackQuery.inline_message_id) {
+            await fetchWithTimeout(
+              `https://api.telegram.org/bot${TOKEN}/editMessageText`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  inline_message_id: callbackQuery.inline_message_id,
+                  text: `🔔 **Reminder Details**\n📝 ${escapeMarkdownV2(r.text)}\n🕒 ${formattedTime}${extrasStr}`,
+                  reply_markup: {
+                    inline_keyboard: [
+                      [
+                        { text: "✏️ Edit", callback_data: `edit:${reminderId}` },
+                        { text: "❌ Del", callback_data: `del:${reminderId}` },
+                      ],
+                      [{ text: "🔙 Back", callback_data: "menu:list" }],
+                    ],
+                  },
+                  parse_mode: "MarkdownV2",
+                }),
+              },
+            );
+          } else {
+            await editTelegramMessage(
+              chatId,
+              messageId,
+              `🔔 **Reminder Details**\n📝 ${escapeMarkdownV2(r.text)}\n🕒 ${formattedTime}${extrasStr}`,
+              {
+                inline_keyboard: [
+                  [
+                    { text: "✏️ Edit", callback_data: `edit:${reminderId}` },
+                    { text: "❌ Del", callback_data: `del:${reminderId}` },
+                  ],
+                  [{ text: "🔙 Back", callback_data: "menu:list" }],
                 ],
-                [{ text: "🔙 Back", callback_data: "menu:list" }],
-              ],
-            },
-          );
+              },
+            );
+          }
         }
       } else if (data.startsWith("edit:")) {
         const reminderId = data.replace("edit:", "");
@@ -1866,8 +1890,6 @@ app.post("/webhook", async (req, res) => {
         await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
 
         if (iMsgId) {
-          const summaryLines = dashData.text.replace(/^.*\n/, "").split("\n").filter(l => l.trim());
-          const shortSummary = summaryLines.length > 0 ? summaryLines[0] : "Reminders";
           setTimeout(async () => {
             try {
               await fetchWithTimeout(
@@ -1877,7 +1899,7 @@ app.post("/webhook", async (req, res) => {
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
                     inline_message_id: iMsgId,
-                    text: `✅ **Reminders sent to your DM\\!**\n\n> **${escapeMarkdownV2(shortSummary)}**\n> ||${escapeMarkdownV2(dashData.text.replace(/^.*\n/, ""))}||`,
+                    text: `✅ **Reminders sent to your DM\\!**\n\n> ||${escapeMarkdownV2(dashData.text)}||`,
                     parse_mode: "MarkdownV2",
                   }),
                 },
