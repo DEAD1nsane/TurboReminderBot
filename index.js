@@ -876,7 +876,7 @@ app.post("/webhook", async (req, res) => {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 inline_message_id: inlineMsgId,
-                text: "🫈 **Squatch spotted! List collapsed before anyone got proof.**",
+                text: "🫈 **Squatch spotted\\! List collapsed before anyone got proof\\.**",
                 parse_mode: "MarkdownV2",
               }),
             },
@@ -1044,7 +1044,7 @@ app.post("/webhook", async (req, res) => {
         await answerCallbackQuery(
           callbackQuery.id,
           "🗑️ Delete this reminder?",
-          true,
+          false,
         );
 
         const dashData = await getRemindersDashboardData(
@@ -1208,7 +1208,7 @@ app.post("/webhook", async (req, res) => {
         await answerCallbackQuery(
           callbackQuery.id,
           "✏️ Edit this reminder?",
-          true,
+          false,
         );
         const iMsgId = callbackQuery.inline_message_id;
 
@@ -1849,7 +1849,7 @@ app.post("/webhook", async (req, res) => {
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                       inline_message_id: iMsgId,
-                      text: "🫈 **Squatch spotted! List collapsed before anyone got proof.**",
+                      text: "🫈 **Squatch spotted\\! List collapsed before anyone got proof\\.**",
                       parse_mode: "MarkdownV2",
                     }),
                   },
