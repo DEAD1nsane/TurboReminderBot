@@ -473,6 +473,7 @@ async function getRemindersDashboardData(userId, userTz, passedName = null) {
         { text: `${statusIcon}${r.text}`, callback_data: `view:${r.id}` },
         { text: "✏️ Edit", callback_data: `edit:${r.id}` },
         { text: "❌ Del", callback_data: `del:${r.id}` },
+        { text: "👁️ Details", callback_data: `details:${r.id}` },
       ];
     });
 
@@ -801,8 +802,8 @@ app.post("/webhook", async (req, res) => {
         const reminderId = data.replace("del:", "");
         await answerCallbackQuery(
           callbackQuery.id,
-          "⚠️ Tap again to confirm deletion!",
-          false,
+          "🗑️ Delete this reminder?",
+          true,
         );
 
         const dashData = await getRemindersDashboardData(
@@ -952,8 +953,57 @@ app.post("/webhook", async (req, res) => {
             true,
           );
         }
+      } else if (data.startsWith("details:")) {
+        const reminderId = data.replace("details:", "");
+        const result = await pool.query(
+          "SELECT text, remind_at, recurring, total_occurrences, current_occurrence, early_offset FROM reminders WHERE id = $1 AND user_id = $2",
+          [reminderId, userId],
+        );
+        if (result.rows.length > 0) {
+          const r = result.rows[0];
+          const dt = DateTime.fromJSDate(new Date(r.remind_at)).setZone(
+            "America/Chicago",
+          );
+
+          const formattedTime = dt
+            .toFormat("EEE, LLL d, yyyy 'at' h:mm a")
+            .replace(/:00\s?(AM|PM)/i, "$1")
+            .replace(/\s?(AM|PM)/i, (m) => m.toLowerCase().trim());
+
+          let extras = [];
+          if (r.recurring)
+            extras.push(
+              `🔄 | Repeat: ${formatRepeatText(r.recurring)}${r.total_occurrences ? ` (${r.current_occurrence || 0}/${r.total_occurrences})` : ""}`,
+            );
+          if (r.early_offset)
+            extras.push(`⏳ | **Early Warning:** ${r.early_offset}m`);
+          const extrasStr =
+            extras.length > 0
+              ? `\n\n━━━━━━━━━━━━━━━━━━\n${extras.join("\n")}`
+              : "";
+
+          await editTelegramMessage(
+            chatId,
+            messageId,
+            `🔔 *Reminder Details*\n\n📝 | ${escapeMarkdownV2(r.text)}\n🕒 | ${formattedTime}${extrasStr}`,
+            {
+              inline_keyboard: [
+                [
+                  { text: "✏️ Edit", callback_data: `edit:${reminderId}` },
+                  { text: "❌ Del", callback_data: `del:${reminderId}` },
+                ],
+                [{ text: "🔙 Back", callback_data: `menu:list` }],
+              ],
+            },
+          );
+        }
       } else if (data.startsWith("edit:")) {
         const reminderId = data.replace("edit:", "");
+        await answerCallbackQuery(
+          callbackQuery.id,
+          "✏️ Edit this reminder?",
+          true,
+        );
         const iMsgId = callbackQuery.inline_message_id;
 
         if (!iMsgId) {
@@ -1326,9 +1376,8 @@ app.post("/webhook", async (req, res) => {
           thumb_width: 72,
           thumb_height: 72,
           input_message_content: {
-            message_text:
-              "💻 <b>[INIT_DM] Establishing encrypted tunnel...</b>",
-            parse_mode: "HTML",
+            message_text: "💻 **[INIT_DM] Establishing encrypted tunnel...**",
+            parse_mode: "MarkdownV2",
           },
           reply_markup: {
             inline_keyboard: [

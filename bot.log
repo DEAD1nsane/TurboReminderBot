@@ -1,0 +1,10 @@
+Server listening on port 8080
+Error initializing database: Error: getaddrinfo ENOTFOUND postgres.railway.internal
+    at /data/data/com.termux/files/home/TurboReminderBot/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async initDb (/data/data/com.termux/files/home/TurboReminderBot/index.js:84:5) {
+  errno: -3007,
+  code: 'ENOTFOUND',
+  syscall: 'getaddrinfo',
+  hostname: 'postgres.railway.internal'
+}
