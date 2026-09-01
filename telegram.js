@@ -38,39 +38,17 @@ async function sendTelegramMessage(
   replyMarkup = null,
   autoDeleteMs = null,
 ) {
+  const payload = { chat_id: chatId, text, parse_mode: "MarkdownV2" };
+  if (replyMarkup) payload.reply_markup = replyMarkup;
   try {
-    let res;
-    if (replyMarkup?.inline_keyboard) {
-      const blocks = convertInlineKeyboardToRichBlocks(replyMarkup);
-      const payload = {
-        chat_id: chatId,
-        rich_message: { markdown: text, blocks },
-      };
-      res = await fetchWithTimeout(
-        `https://api.telegram.org/bot${TOKEN}/sendRichMessage`,
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) },
-      );
-      const richData = await res.json();
-      if (!richData.ok) {
-        console.error("[RICH_MSG] sendRichMessage failed:", richData.description);
-        const payload2 = { chat_id: chatId, text, parse_mode: "MarkdownV2", reply_markup: replyMarkup };
-        res = await fetchWithTimeout(
-          `https://api.telegram.org/bot${TOKEN}/sendMessage`,
-          { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload2) },
-        );
-      } else {
-        if (autoDeleteMs && richData.result)
-          setTimeout(() => deleteTelegramMessage(chatId, richData.result.message_id), autoDeleteMs);
-        return richData.result;
-      }
-    } else {
-      const payload = { chat_id: chatId, text, parse_mode: "MarkdownV2" };
-      if (replyMarkup) payload.reply_markup = replyMarkup;
-      res = await fetchWithTimeout(
-        `https://api.telegram.org/bot${TOKEN}/sendMessage`,
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) },
-      );
-    }
+    const res = await fetchWithTimeout(
+      `https://api.telegram.org/bot${TOKEN}/sendMessage`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+    );
     const data = await res.json();
     if (data.ok && data.result) {
       if (autoDeleteMs)
@@ -92,49 +70,22 @@ async function editTelegramMessage(
   text,
   replyMarkup = null,
 ) {
+  const payload = {
+    chat_id: chatId,
+    message_id: messageId,
+    text,
+    parse_mode: "MarkdownV2",
+  };
+  if (replyMarkup !== undefined) payload.reply_markup = replyMarkup;
   try {
-    let res;
-    if (replyMarkup?.inline_keyboard) {
-      const blocks = convertInlineKeyboardToRichBlocks(replyMarkup);
-      const payload = {
-        chat_id: chatId,
-        message_id: messageId,
-        rich_message: { markdown: text, blocks },
-      };
-      res = await fetchWithTimeout(
-        `https://api.telegram.org/bot${TOKEN}/editMessageText`,
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) },
-      );
-      const richData = await res.json();
-      if (!richData.ok) {
-        console.error("[RICH_MSG] editMessageText rich failed:", richData.description);
-        const payload2 = {
-          chat_id: chatId,
-          message_id: messageId,
-          text,
-          parse_mode: "MarkdownV2",
-          reply_markup: replyMarkup,
-        };
-        res = await fetchWithTimeout(
-          `https://api.telegram.org/bot${TOKEN}/editMessageText`,
-          { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload2) },
-        );
-      } else {
-        return true;
-      }
-    } else {
-      const payload = {
-        chat_id: chatId,
-        message_id: messageId,
-        text,
-        parse_mode: "MarkdownV2",
-      };
-      if (replyMarkup !== undefined) payload.reply_markup = replyMarkup;
-      res = await fetchWithTimeout(
-        `https://api.telegram.org/bot${TOKEN}/editMessageText`,
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) },
-      );
-    }
+    const res = await fetchWithTimeout(
+      `https://api.telegram.org/bot${TOKEN}/editMessageText`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+    );
     const data = await res.json();
     return data.ok;
   } catch (err) {
