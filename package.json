@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node index.js",
     "prepare": "husky || true",
-    "test": "echo \"No tests configured yet\""
+    "test": "node --test"
   },
   "dependencies": {
     "chrono-node": "^2.7.5",

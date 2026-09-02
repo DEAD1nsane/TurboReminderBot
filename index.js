@@ -16,14 +16,19 @@ const {
 } = require("./keyboards");
 const {
   sendTelegramMessage,
+  sendEphemeralMessage,
   editTelegramMessage,
+  editEphemeralMessage,
   deleteTelegramMessage,
+  deleteEphemeralMessage,
   answerCallbackQuery,
+  setEphemeralGroupCommands,
   fetchWithTimeout,
 } = require("./telegram");
 
 const activityTimers = new Map();
 const wizardState = new Map();
+const pendingEditSurfaces = new Map();
 
 function resetMenuTimer(key, action) {
   if (activityTimers.has(key)) clearTimeout(activityTimers.get(key));
@@ -36,8 +41,96 @@ function resetMenuTimer(key, action) {
   );
 }
 
-const escapeHTML = (str) =>
-  String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const escapeMarkdownV2 = (str) =>
+  String(str || "").replace(/[_\*\[\]\(\)~`>#\+\-=\|{\}\!\\.]/g, "\\$&");
+
+const isGroupChat = (chat) =>
+  chat?.type === "group" || chat?.type === "supergroup";
+
+// Bot API 10.3 doesn't allow force_reply to be toggled after an inline
+// keyboard is created. Ephemeral surfaces opt in from their first frame so
+// typed answers stay private in the group.
+function withPrivateReply(markup) {
+  return {
+    ...(markup || { inline_keyboard: [] }),
+    force_reply: true,
+  };
+}
+
+function surfaceFromTelegramMessage(message, receiverUserId) {
+  if (!message?.chat) return null;
+  if (message.ephemeral_message_id) {
+    return {
+      ephemeral: true,
+      chatId: message.chat.id,
+      receiverUserId,
+      ephemeralMessageId: message.ephemeral_message_id,
+    };
+  }
+  if (message.message_id) {
+    return {
+      ephemeral: false,
+      chatId: message.chat.id,
+      messageId: message.message_id,
+    };
+  }
+  return null;
+}
+
+async function editSurface(surface, text, markup = null) {
+  if (!surface) return false;
+  if (surface.ephemeral) {
+    return editEphemeralMessage(
+      surface.chatId,
+      surface.receiverUserId,
+      surface.ephemeralMessageId,
+      text,
+      withPrivateReply(markup),
+    );
+  }
+  return editTelegramMessage(
+    surface.chatId,
+    surface.messageId,
+    text,
+    markup,
+  );
+}
+
+async function removeUserInput(message, userId) {
+  if (message?.ephemeral_message_id) {
+    await deleteEphemeralMessage(
+      message.chat.id,
+      message.receiver_user?.id || userId,
+      message.ephemeral_message_id,
+    );
+  } else if (message?.message_id) {
+    await deleteTelegramMessage(message.chat.id, message.message_id);
+  }
+}
+
+async function beginPrivateSurface(message, userId, text, markup) {
+  if (!isGroupChat(message.chat)) {
+    const sent = await sendTelegramMessage(message.chat.id, text, markup);
+    return surfaceFromTelegramMessage(sent, userId);
+  }
+
+  const options = message.ephemeral_message_id
+    ? { replyToEphemeralMessageId: message.ephemeral_message_id }
+    : {};
+  const sent = await sendEphemeralMessage(
+    message.chat.id,
+    userId,
+    text,
+    withPrivateReply(markup),
+    options,
+  );
+  if (sent) return surfaceFromTelegramMessage(sent, userId);
+
+  // Compatibility fallback for a public command from an older Telegram
+  // client or a group where the bot can't start an unprompted ephemeral reply.
+  const dm = await sendTelegramMessage(userId, text, markup);
+  return surfaceFromTelegramMessage(dm, userId);
+}
 
 const app = express();
 app.use(express.json());
@@ -57,6 +150,18 @@ app.get("/", (req, res) => res.status(200).send("OK"));
 app.listen(PORT, "0.0.0.0", () =>
   console.log(`Server listening on port ${PORT}`),
 );
+
+setEphemeralGroupCommands([
+  { command: "start", description: "Open your private reminder dashboard" },
+  { command: "remind", description: "Create a reminder privately" },
+  { command: "reminders", description: "View and manage your reminders" },
+  { command: "help", description: "Show reminder help" },
+  { command: "cancel", description: "Cancel the current operation" },
+]).then((result) => {
+  if (result !== null) {
+    console.log("Ephemeral group commands registered.");
+  }
+});
 
 const isInternalHost =
   process.env.DATABASE_URL &&
@@ -147,7 +252,7 @@ setInterval(async () => {
       ) {
         await sendTelegramMessage(
           r.chat_id || r.user_id,
-          `<blockquote><b>⚡ | ${escapeHTML(r.text)}</b>\n<i>Starts in ${r.early_offset}m (${formattedTime})</i></blockquote>`,
+          `> **⚡ | ${escapeMarkdownV2(r.text)}**\n*Starts in ${r.early_offset}m (${formattedTime})*`,
         );
         await pool.query(
           "UPDATE reminders SET early_alert_sent = TRUE WHERE id = $1",
@@ -156,7 +261,7 @@ setInterval(async () => {
       } else if (now >= remindAt && !r.sent) {
         await sendTelegramMessage(
           r.chat_id || r.user_id,
-          `<blockquote><b>🔔 | ${escapeHTML(r.text)}</b>\n<i>${formattedTime}</i></blockquote>`,
+          `> **🔔 | ${escapeMarkdownV2(r.text)}**\n*${formattedTime}*`,
         );
 
         if (r.recurring) {
@@ -457,10 +562,12 @@ async function getRemindersDashboardData(userId, userTz, passedName = null) {
 
     if (res.rows.length === 0) {
       return {
-        text: `📋 <b>${titleName} Active Reminders:</b>\n━━━━━━━━━━━━━━━━━━\n\n<i>📭 No active reminders found.</i>`,
+        text: `📋 **${titleName} Active Reminders:**\n━━━━━━━━━━━━━━━━━━\n\n*📭 No active reminders found.*`,
         keyboard: {
           inline_keyboard: [
             [{ text: "📭 No active reminders", callback_data: "noop" }],
+            [{ text: "➕ Create Reminder", callback_data: "wizard_new" }],
+            [{ text: "✖️ Close", callback_data: "surface_close" }],
           ],
         },
       };
@@ -474,9 +581,13 @@ async function getRemindersDashboardData(userId, userTz, passedName = null) {
         { text: "❌ Del", callback_data: `del:${r.id}` },
       ];
     });
+    buttons.push([
+      { text: "➕ New Reminder", callback_data: "wizard_new" },
+      { text: "✖️ Close", callback_data: "surface_close" },
+    ]);
 
     return {
-      text: `📋 <b>${titleName} Active Reminders:</b>`,
+      text: `📋 **${titleName} Active Reminders:**`,
       keyboard: { inline_keyboard: buttons },
     };
   } catch (err) {
@@ -568,14 +679,17 @@ app.post("/webhook", async (req, res) => {
 
       if (wizardState.has(userId)) {
         const state = wizardState.get(userId);
-        const wizardChatId = state.wizardChatId;
+        if (state.surface?.chatId !== chatId) {
+          return res.sendStatus(200);
+        }
+        await removeUserInput(message, userId);
         if (state.step === 1) {
           state.title = text;
           state.step = 2;
           wizardState.set(userId, state);
-          await sendTelegramMessage(
-            wizardChatId,
-            `⏰ <b>When should this remind you?</b>\n\nExamples:\n• <code>tomorrow 5pm</code>\n• <code>in 2 hours 30 minutes</code>\n• <code>Aug 12 8am</code>\n• <code>daily 9am</code> (with repeat)`,
+          await editSurface(
+            state.surface,
+            `⏰ **When should this remind you?**\n\nExamples:\n• \`tomorrow 5pm\`\n• \`in 2 hours 30 minutes\`\n• \`Aug 12 8am\`\n• \`daily 9am\` (with repeat)`,
             {
               inline_keyboard: [
                 [{ text: "❌ Cancel", callback_data: "wizard_cancel" }],
@@ -587,9 +701,9 @@ app.post("/webhook", async (req, res) => {
           const userTz2 = await getUserTimezone(userId);
           const parsed2 = parseFlexibleDate(text, userTz2);
           if (!parsed2) {
-            await sendTelegramMessage(
-              wizardChatId,
-              "⚠️ Could not parse the time. Please try again:\n• <code>tomorrow 5pm</code>\n• <code>in 2h 30m</code>\n• <code>Aug 12 8am</code>",
+            await editSurface(
+              state.surface,
+              "⚠️ Could not parse the time. Please try again:\n• \`tomorrow 5pm\`\n• \`in 2h 30m\`\n• \`Aug 12 8am\`",
               {
                 inline_keyboard: [
                   [{ text: "❌ Cancel", callback_data: "wizard_cancel" }],
@@ -601,9 +715,9 @@ app.post("/webhook", async (req, res) => {
           state.time = parsed2;
           state.step = 3;
           wizardState.set(userId, state);
-          await sendTelegramMessage(
-            wizardChatId,
-            "🔄 <b>How often should it repeat?</b>",
+          await editSurface(
+            state.surface,
+            "🔄 **How often should it repeat?**",
             {
               inline_keyboard: [
                 [
@@ -625,9 +739,9 @@ app.post("/webhook", async (req, res) => {
             /(?:every\s+)?(\d+)\s*(minutes?|mins?|hours?|hrs?|days?|weeks?|months?)/i,
           );
           if (!smartMatch) {
-            await sendTelegramMessage(
-              wizardChatId,
-              "⚠️ Couldn't understand that. Try something like:\n• <code>every 56 hours</code>\n• <code>every 2 days</code>\n• <code>every 90 minutes</code>",
+            await editSurface(
+              state.surface,
+              "⚠️ Couldn't understand that. Try something like:\n• \`every 56 hours\`\n• \`every 2 days\`\n• \`every 90 minutes\`",
               {
                 inline_keyboard: [
                   [{ text: "❌ Cancel", callback_data: "wizard_cancel" }],
@@ -659,9 +773,9 @@ app.post("/webhook", async (req, res) => {
           state.repeatText = `Every ${num} ${unitLabel}`;
           state.step = 4;
           wizardState.set(userId, state);
-          await sendTelegramMessage(
-            wizardChatId,
-            "⏳ <b>How many minutes early should the warning be?</b>\n\nExample: <code>15</code>, <code>30</code>, <code>60</code> (or <code>0</code> for no warning)",
+          await editSurface(
+            state.surface,
+            "⏳ **How many minutes early should the warning be?**\n\nExample: \`15\`, \`30\`, \`60\` (or \`0\` for no warning)",
             {
               inline_keyboard: [
                 [
@@ -681,8 +795,8 @@ app.post("/webhook", async (req, res) => {
         } else if (state.step === 4) {
           const mins = parseInt(text, 10);
           if (isNaN(mins) || mins < 0) {
-            await sendTelegramMessage(
-              wizardChatId,
+            await editSurface(
+              state.surface,
               "⚠️ Please enter a valid number of minutes (0 = no warning):",
               {
                 inline_keyboard: [
@@ -700,12 +814,12 @@ app.post("/webhook", async (req, res) => {
           );
 
           const summary =
-            `📝 <b>Review Your Reminder</b>\n\n` +
-            `📌 Title: <b>${escapeHTML(state.title)}</b>\n` +
-            `⏰ Time: <b>${timeStr}</b>\n` +
-            `🔄 Repeat: <b>${state.repeatText || "None"}</b>\n` +
-            `⏳ Early Warning: <b>${state.earlyWarning ? state.earlyWarning + "m before" : "None"}</b>`;
-          await sendTelegramMessage(wizardChatId, summary, {
+            `📝 **Review Your Reminder**\n\n` +
+            `📌 Title: **${escapeMarkdownV2(state.title)}**\n` +
+            `⏰ Time: **${timeStr}**\n` +
+            `🔄 Repeat: **${state.repeatText || "None"}**\n` +
+            `⏳ Early Warning: **${state.earlyWarning ? state.earlyWarning + "m before" : "None"}**`;
+          await editSurface(state.surface, summary, {
             inline_keyboard: [
               [
                 { text: "✅ Create", callback_data: "wizard_confirm" },
@@ -718,10 +832,22 @@ app.post("/webhook", async (req, res) => {
       }
 
       if (text.length > 500) {
-        await sendTelegramMessage(
-          chatId,
-          "⚠️ Reminder text is too long. Please keep it under 500 characters.",
-        );
+        const pendingSurface = pendingEditSurfaces.get(userId);
+        if (pendingSurface) {
+          await editSurface(
+            pendingSurface,
+            "⚠️ Reminder text is too long\\. Please keep it under 500 characters\\.",
+            null,
+          );
+        } else {
+          await beginPrivateSurface(
+            message,
+            userId,
+            "⚠️ Reminder text is too long\\. Please keep it under 500 characters\\.",
+            null,
+          );
+        }
+        await removeUserInput(message, userId);
         return res.sendStatus(200);
       }
       const pendingEdit = await getPendingEdit(userId);
@@ -730,44 +856,44 @@ app.post("/webhook", async (req, res) => {
         const field = parts[0];
         const reminderId = parts[1];
         const userTz = await getUserTimezone(userId);
+        const pendingSurface = pendingEditSurfaces.get(userId);
+
+        if (pendingSurface && pendingSurface.chatId !== chatId) {
+          return res.sendStatus(200);
+        }
+        await removeUserInput(message, userId);
 
         if (field === "text") {
           await pool.query(
             "UPDATE reminders SET text = $1 WHERE id = $2 AND user_id = $3",
             [text, reminderId, userId],
           );
-          await sendTelegramMessage(
-            userId,
-            `✅ Reminder text updated to: "<b>${escapeHTML(text)}</b>"`,
-            null,
-            5000,
-          );
         } else if (field === "time") {
           const parsed = parseFlexibleDate(text, userTz);
           if (parsed) {
-            if (typeof chatId !== "undefined" && typeof msgId !== "undefined") {
-              await deleteTelegramMessage(chatId, msgId);
-            }
             await pool.query(
               "UPDATE reminders SET remind_at = $1 WHERE id = $2 AND user_id = $3",
               [parsed.date, reminderId, userId],
             );
-            const localDt = DateTime.fromJSDate(parsed.date).setZone(
-              "America/Chicago",
-            );
-            await sendTelegramMessage(
-              userId,
-              `✅ Reminder time updated to: <i>${localDt.toFormat("EEE, LLL d, yyyy 'at' h:mm a")}</i>`,
-              null,
-              5000,
-            );
           } else {
-            await sendTelegramMessage(
-              userId,
+            if (pendingSurface) {
+              await editSurface(
+                pendingSurface,
+                "⚠️ Could not parse the new time\\. Please try again or tap Cancel\\.",
+                {
+                  inline_keyboard: [
+                    [{ text: "⬅️ Cancel", callback_data: `edit:${reminderId}` }],
+                  ],
+                },
+              );
+            } else {
+              await sendTelegramMessage(
+                userId,
               "⚠️ Could not parse new time. Please try again or tap Cancel.",
-              null,
-              5000,
-            );
+                null,
+                5000,
+              );
+            }
             return res.sendStatus(200);
           }
         } else if (field === "rec") {
@@ -779,100 +905,151 @@ app.post("/webhook", async (req, res) => {
               "UPDATE reminders SET recurring = $1 WHERE id = $2 AND user_id = $3",
               [recurringVal, reminderId, userId],
             );
-            await sendTelegramMessage(
-              userId,
-              `✅ Recurrence set to <b>Every ${num} ${unit}</b>!`,
-              null,
-              5000,
+          } else {
+            if (pendingSurface) {
+              await editSurface(
+                pendingSurface,
+                "⚠️ Invalid number\\. Please enter a positive whole number\\.",
+                {
+                  inline_keyboard: [
+                    [
+                      {
+                        text: "⬅️ Cancel",
+                        callback_data: `nummenu:${reminderId}:${unit}`,
+                      },
+                    ],
+                  ],
+                },
+              );
+            }
+            return res.sendStatus(200);
+          }
+        } else if (field === "early") {
+          const mins = parseInt(text.trim(), 10);
+          if (Number.isInteger(mins) && mins >= 0) {
+            await pool.query(
+              "UPDATE reminders SET early_offset = $1, early_alert_sent = FALSE WHERE id = $2 AND user_id = $3",
+              [mins === 0 ? null : mins, reminderId, userId],
             );
           } else {
-            await sendTelegramMessage(
-              userId,
-              "⚠️ Invalid number. Please enter a valid number.",
-              null,
-              5000,
-            );
+            if (pendingSurface) {
+              await editSurface(
+                pendingSurface,
+                "⚠️ Enter a whole number of minutes, or 0 to turn the warning off\\.",
+                {
+                  inline_keyboard: [
+                    [{ text: "⬅️ Cancel", callback_data: `edit:${reminderId}` }],
+                  ],
+                },
+              );
+            }
             return res.sendStatus(200);
           }
         }
 
         await setPendingEdit(userId, null);
-        if (typeof chatId !== "undefined" && typeof msgId !== "undefined") {
-          await deleteTelegramMessage(chatId, msgId);
-        }
-        const existingMenuId = await getActiveMenuMsgId(userId);
-        if (existingMenuId) await deleteTelegramMessage(userId, existingMenuId);
-        await setActiveMenuMsgId(userId, null);
+        pendingEditSurfaces.delete(userId);
         const dashData = await getRemindersDashboardData(
           userId,
           userTz,
           userFirstName,
         );
-        await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
+        if (pendingSurface) {
+          await editSurface(pendingSurface, dashData.text, dashData.keyboard);
+        } else {
+          await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
+        }
         return res.sendStatus(200);
       }
 
-      if (text.startsWith("/start") || text.toLowerCase() === "view") {
-        if (typeof chatId !== "undefined" && typeof msgId !== "undefined") {
-          await deleteTelegramMessage(chatId, msgId);
-        }
+      if (
+        text.startsWith("/start") ||
+        text.toLowerCase() === "view" ||
+        text.toLowerCase().startsWith("/reminders")
+      ) {
         const existingTz = await getUserTimezone(userId);
         if (existingTz) {
           const dashData = await getRemindersDashboardData(userId, existingTz);
-          await sendOrUpdateDashboard(
+          const surface = await beginPrivateSurface(
+            message,
             userId,
             dashData.text,
             dashData.keyboard,
-            msgId,
           );
+          if (surface) await removeUserInput(message, userId);
         } else {
-          await sendTelegramMessage(
+          const surface = await beginPrivateSurface(
+            message,
             userId,
-            "👋 <b>Welcome! Please select your primary timezone:</b>",
+            "👋 **Welcome! Please select your primary timezone:**",
             getTimezonePickerKeyboard(),
           );
+          if (surface) await removeUserInput(message, userId);
         }
         return res.sendStatus(200);
       } else if (text.toLowerCase() === "/remind") {
         console.log("[WIZARD] /remind triggered for user:", userId);
         wizardState.delete(userId);
-        const isGroupChat =
-          message.chat.type === "group" || message.chat.type === "supergroup";
+        const openingText =
+          "📝 **What's the reminder title?**\n\nType the title for your reminder (e.g., \`buy milk\`, \`team meeting\`, \`pay bills\`):";
+        const openingKeyboard = {
+          inline_keyboard: [
+            [{ text: "❌ Cancel", callback_data: "wizard_cancel" }],
+          ],
+        };
+        const surface = await beginPrivateSurface(
+          message,
+          userId,
+          openingText,
+          openingKeyboard,
+        );
+
+        if (!surface) return res.sendStatus(200);
         wizardState.set(userId, {
           step: 1,
-          wizardChatId: isGroupChat ? userId : chatId,
-          originalChatId: chatId,
+          surface,
+          // Scheduled reminders remain normal private messages so they are
+          // reliable for offline users; ephemeral delivery is intentionally
+          // limited to the live setup/manage interface.
+          originalChatId: isGroupChat(message.chat) ? userId : chatId,
         });
-        await sendTelegramMessage(
-          isGroupChat ? userId : chatId,
-          "📝 <b>What's the reminder title?</b>\n\nType the title for your reminder (e.g., <code>buy milk</code>, <code>team meeting</code>, <code>pay bills</code>):",
-          {
-            inline_keyboard: [
-              [{ text: "❌ Cancel", callback_data: "wizard_cancel" }],
-            ],
-          },
-        );
+        await removeUserInput(message, userId);
         return res.sendStatus(200);
       } else if (text.toLowerCase() === "/help") {
-        await sendTelegramMessage(
+        const surface = await beginPrivateSurface(
+          message,
           userId,
-          "🤖 <b>Bot Commands & Usage:</b>\n\n" +
-            "<i>/start</i> — Welcome message + timezone selection\n" +
-            "<i>/remind</i> — Create a reminder step-by-step\n" +
-            "<i>view</i> — Show your active reminders\n\n" +
+          "🤖 **Bot Commands & Usage:**\n\n" +
+            "*/start* — Welcome message + timezone selection\n" +
+            "*/remind* — Create a reminder step-by-step\n" +
+            "*/reminders* — Show your active reminders\n\n" +
             "Or just type a natural reminder like:\n" +
-            "<code>reminder tomorrow 5pm buy milk</code>",
+            "`reminder tomorrow 5pm buy milk`",
           null,
         );
+        if (surface) await removeUserInput(message, userId);
         return res.sendStatus(200);
       } else if (text.toLowerCase() === "/cancel") {
+        const state = wizardState.get(userId);
+        const pendingSurface = pendingEditSurfaces.get(userId);
         wizardState.delete(userId);
+        pendingEditSurfaces.delete(userId);
         await setPendingEdit(userId, null);
-        await sendTelegramMessage(
-          userId,
-          "✅ Operation cancelled. No changes were saved.",
-          null,
-        );
+        if (state?.surface || pendingSurface) {
+          await editSurface(
+            state?.surface || pendingSurface,
+            "✅ Operation cancelled\\. No changes were saved\\.",
+            null,
+          );
+        } else {
+          await beginPrivateSurface(
+            message,
+            userId,
+            "✅ Operation cancelled\\. No changes were saved\\.",
+            null,
+          );
+        }
+        await removeUserInput(message, userId);
         return res.sendStatus(200);
       }
 
@@ -904,7 +1081,7 @@ app.post("/webhook", async (req, res) => {
         if (parsed.wantRepeatMenu) {
           await sendOrUpdateDashboard(
             userId,
-            `📝 Editing Reminder: "<b>${escapeHTML(parsed.reminderText)}</b>"\nSelect options below:`,
+            `📝 Editing Reminder: "**${escapeMarkdownV2(parsed.reminderText)}**"\nSelect options below:`,
             getEditMenuKeyboard(insertRes.rows[0].id, null, null),
           );
         } else {
@@ -928,6 +1105,12 @@ app.post("/webhook", async (req, res) => {
       const chatId = callbackQuery.message?.chat.id;
       const messageId = callbackQuery.message?.message_id;
       const data = callbackQuery.data;
+      const callbackSurface = surfaceFromTelegramMessage(
+        callbackQuery.message,
+        userId,
+      );
+      const editCallbackSurface = (text, markup = null) =>
+        editSurface(callbackSurface, text, markup);
 
       const inlineMsgId = callbackQuery.inline_message_id;
       if (inlineMsgId) {
@@ -939,8 +1122,8 @@ app.post("/webhook", async (req, res) => {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 inline_message_id: inlineMsgId,
-                text: "✅ <b>Action completed.</b>",
-                parse_mode: "HTML",
+                text: "✅ **Action completed\\.**",
+                parse_mode: "MarkdownV2",
               }),
             },
           );
@@ -958,14 +1141,54 @@ app.post("/webhook", async (req, res) => {
         await setActiveMenuMsgId(userId, messageId);
       }
 
-      if (data.startsWith("wizard_repeat:")) {
+      if (data === "wizard_new") {
+        await answerCallbackQuery(callbackQuery.id);
+        const surface = callbackSurface;
+        if (surface) {
+          wizardState.set(userId, {
+            step: 1,
+            surface,
+            originalChatId: isGroupChat(callbackQuery.message?.chat)
+              ? userId
+              : chatId,
+          });
+          await editSurface(
+            surface,
+            "📝 **What's the reminder title?**\n\nType the title for your reminder (e.g., \`buy milk\`, \`team meeting\`, \`pay bills\`):",
+            {
+              inline_keyboard: [
+                [{ text: "❌ Cancel", callback_data: "wizard_cancel" }],
+              ],
+            },
+          );
+        }
+      } else if (data === "surface_close") {
+        await answerCallbackQuery(callbackQuery.id);
+        wizardState.delete(userId);
+        pendingEditSurfaces.delete(userId);
+        await setPendingEdit(userId, null);
+        if (callbackSurface?.ephemeral) {
+          await deleteEphemeralMessage(
+            callbackSurface.chatId,
+            userId,
+            callbackSurface.ephemeralMessageId,
+          );
+        } else if (callbackSurface) {
+          await deleteTelegramMessage(
+            callbackSurface.chatId,
+            callbackSurface.messageId,
+          );
+        }
+      } else if (data.startsWith("wizard_repeat:")) {
+        await answerCallbackQuery(callbackQuery.id);
         const parts = data.split(":");
         const repeatType = parts[1];
         if (repeatType === "custom") {
           const state = wizardState.get(userId);
-          await sendTelegramMessage(
-            state.wizardChatId,
-            "⚙️ <b>Enter custom repeat interval:</b>\n\nExamples:\n• <code>daily:2</code> (every 2 days)\n• <code>weekly:2</code> (every 2 weeks)\n• <code>monthly:3</code> (every 3 months)",
+          if (!state) return res.sendStatus(200);
+          await editSurface(
+            state.surface,
+            "⚙️ **Enter custom repeat interval:**\n\nExamples:\n• \`daily:2\` (every 2 days)\n• \`weekly:2\` (every 2 weeks)\n• \`monthly:3\` (every 3 months)",
             {
               inline_keyboard: [
                 [{ text: "❌ Cancel", callback_data: "wizard_cancel" }],
@@ -976,9 +1199,10 @@ app.post("/webhook", async (req, res) => {
         }
         if (repeatType === "smart") {
           const state = wizardState.get(userId);
-          await sendTelegramMessage(
-            state.wizardChatId,
-            "🧠 <b>Enter repeat interval in natural language:</b>\n\nExamples:\n• <code>every 56 hours</code>\n• <code>every 2 days</code>\n• <code>every 90 minutes</code>\n• <code>every 3 weeks</code>\n• <code>every 6 months</code>",
+          if (!state) return res.sendStatus(200);
+          await editSurface(
+            state.surface,
+            "🧠 **Enter repeat interval in natural language:**\n\nExamples:\n• \`every 56 hours\`\n• \`every 2 days\`\n• \`every 90 minutes\`\n• \`every 3 weeks\`\n• \`every 6 months\`",
             {
               inline_keyboard: [
                 [{ text: "❌ Cancel", callback_data: "wizard_cancel" }],
@@ -999,9 +1223,9 @@ app.post("/webhook", async (req, res) => {
               : repeatType.charAt(0).toUpperCase() + repeatType.slice(1);
           state.step = 4;
           wizardState.set(userId, state);
-          await sendTelegramMessage(
-            state.wizardChatId,
-            "⏳ <b>How many minutes early should the warning be?</b>\n\nExample: <code>15</code>, <code>30</code>, <code>60</code> (or <code>0</code> for no warning)",
+          await editSurface(
+            state.surface,
+            "⏳ **How many minutes early should the warning be?**\n\nExample: \`15\`, \`30\`, \`60\` (or \`0\` for no warning)",
             {
               inline_keyboard: [
                 [
@@ -1017,6 +1241,7 @@ app.post("/webhook", async (req, res) => {
           );
         }
       } else if (data.startsWith("wizard_early:")) {
+        await answerCallbackQuery(callbackQuery.id);
         const mins = parseInt(data.split(":")[1], 10);
         const state = wizardState.get(userId);
         if (state) {
@@ -1028,12 +1253,12 @@ app.post("/webhook", async (req, res) => {
           );
 
           const summary =
-            `📝 <b>Review Your Reminder</b>\n\n` +
-            `📌 Title: <b>${escapeHTML(state.title)}</b>\n` +
-            `⏰ Time: <b>${timeStr}</b>\n` +
-            `🔄 Repeat: <b>${state.repeatText || "None"}</b>\n` +
-            `⏳ Early Warning: <b>${state.earlyWarning ? state.earlyWarning + "m before" : "None"}</b>`;
-          await sendTelegramMessage(state.wizardChatId, summary, {
+            `📝 **Review Your Reminder**\n\n` +
+            `📌 Title: **${escapeMarkdownV2(state.title)}**\n` +
+            `⏰ Time: **${timeStr}**\n` +
+            `🔄 Repeat: **${state.repeatText || "None"}**\n` +
+            `⏳ Early Warning: **${state.earlyWarning ? state.earlyWarning + "m before" : "None"}**`;
+          await editSurface(state.surface, summary, {
             inline_keyboard: [
               [
                 { text: "✅ Create", callback_data: "wizard_confirm" },
@@ -1043,10 +1268,10 @@ app.post("/webhook", async (req, res) => {
           });
         }
       } else if (data === "wizard_confirm") {
+        await answerCallbackQuery(callbackQuery.id);
         const state = wizardState.get(userId);
         if (state) {
-          const userTz3 = await getUserTimezone(userId);
-          const insertRes = await pool.query(
+          await pool.query(
             "INSERT INTO reminders (user_id, chat_id, text, remind_at, recurring, early_offset) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
             [
               userId,
@@ -1061,33 +1286,38 @@ app.post("/webhook", async (req, res) => {
           const timeStr = state.time.dt.toFormat(
             "EEE, MMM d, yyyy 'at' h:mm a",
           );
-          await sendTelegramMessage(
-            state.wizardChatId,
-            `✅ <b>Reminder Created!</b>\n\n` +
-              `📌 Title: <b>${escapeHTML(state.title)}</b>\n` +
-              `⏰ Time: <b>${timeStr}</b>\n` +
-              `🔄 Repeat: <b>${state.repeatText || "None"}</b>\n` +
-              `⏳ Early Warning: <b>${state.earlyWarning ? state.earlyWarning + "m before" : "None"}</b>`,
-            null,
+          await editSurface(
+            state.surface,
+            `✅ **Reminder Created!**\n\n` +
+              `📌 Title: **${escapeMarkdownV2(state.title)}**\n` +
+              `⏰ Time: **${timeStr}**\n` +
+              `🔄 Repeat: **${state.repeatText || "None"}**\n` +
+              `⏳ Early Warning: **${state.earlyWarning ? state.earlyWarning + "m before" : "None"}**`,
+            {
+              inline_keyboard: [
+                [
+                  { text: "📋 View Reminders", callback_data: "menu:list" },
+                  { text: "➕ New Reminder", callback_data: "wizard_new" },
+                ],
+                [{ text: "✖️ Close", callback_data: "surface_close" }],
+              ],
+            },
           );
-          const dashData = await getRemindersDashboardData(userId, userTz3);
-          await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
         }
       } else if (data === "wizard_cancel") {
         const state = wizardState.get(userId);
-        const cancelChatId = state ? state.wizardChatId : userId;
         wizardState.delete(userId);
         await answerCallbackQuery(callbackQuery.id, "Wizard cancelled.", false);
-        if (callbackQuery.message) {
-          await editTelegramMessage(
-            callbackQuery.message.chat.id,
-            callbackQuery.message.message_id,
-            "✅ Wizard cancelled\. No reminder was created\.",
-            null,
-          );
-        } else {
-          await sendTelegramMessage(cancelChatId, "✅ Wizard cancelled\. No reminder was created\.", null, 5000);
-        }
+        await editSurface(
+          state?.surface || callbackSurface,
+          "✅ Wizard cancelled\\. No reminder was created\\.",
+          {
+            inline_keyboard: [
+              [{ text: "➕ Create Reminder", callback_data: "wizard_new" }],
+              [{ text: "✖️ Close", callback_data: "surface_close" }],
+            ],
+          },
+        );
       } else if (data.startsWith("settz:")) {
         const tz = data.replace("settz:", "");
         await setUserTimezone(userId, tz);
@@ -1101,7 +1331,11 @@ app.post("/webhook", async (req, res) => {
           tz,
           userFirstName,
         );
-        await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
+        if (callbackSurface) {
+          await editCallbackSurface(dashData.text, dashData.keyboard);
+        } else {
+          await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
+        }
       } else if (data === "noop") {
         await answerCallbackQuery(callbackQuery.id);
       } else if (data === "menu:list") {
@@ -1112,13 +1346,9 @@ app.post("/webhook", async (req, res) => {
           userTz,
           userFirstName,
         );
-        if (chatId && messageId) {
-          await editTelegramMessage(
-            chatId,
-            messageId,
-            dashData.text,
-            dashData.keyboard,
-          );
+        pendingEditSurfaces.delete(userId);
+        if (callbackSurface) {
+          await editCallbackSurface(dashData.text, dashData.keyboard);
         } else {
           await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard);
         }
@@ -1154,13 +1384,8 @@ app.post("/webhook", async (req, res) => {
             });
         }
 
-        if (chatId && messageId) {
-          await editTelegramMessage(
-            chatId,
-            messageId,
-            dashData.text,
-            dashData.keyboard,
-          );
+        if (callbackSurface) {
+          await editCallbackSurface(dashData.text, dashData.keyboard);
         } else if (callbackQuery.inline_message_id) {
           await fetchWithTimeout(
             `https://api.telegram.org/bot${TOKEN}/editMessageText`,
@@ -1171,7 +1396,7 @@ app.post("/webhook", async (req, res) => {
                 inline_message_id: callbackQuery.inline_message_id,
                 text: dashData.text,
                 reply_markup: dashData.keyboard,
-                parse_mode: "HTML",
+                parse_mode: "MarkdownV2",
               }),
             },
           );
@@ -1194,39 +1419,10 @@ app.post("/webhook", async (req, res) => {
           userTz,
           userFirstName,
         );
-        if (chatId && messageId) {
-          await editTelegramMessage(
-            chatId,
-            messageId,
-            dashData.text,
-            dashData.keyboard,
-          );
+        if (callbackSurface) {
+          await editCallbackSurface(dashData.text, dashData.keyboard);
         } else if (callbackQuery.inline_message_id) {
           const iMsgId = callbackQuery.inline_message_id;
-
-          if (!iMsgId) {
-            await answerCallbackQuery(callbackQuery.id);
-            const result = await pool.query(
-              "SELECT text, recurring, total_occurrences, early_offset FROM reminders WHERE id = $1 AND user_id = $2",
-              [reminderId, userId],
-            );
-            if (result.rows.length > 0) {
-              const r = result.rows[0];
-              const targetMsgId = callbackQuery.message.message_id;
-              await editTelegramMessage(
-                userId,
-                targetMsgId,
-                `✏️ Editing Reminder: "<b>${escapeHTML(r.text)}</b>"\n━━━━━━━━━━━━━━━━━━\nSelect options below:`,
-                getEditMenuKeyboard(
-                  reminderId,
-                  r.recurring,
-                  r.total_occurrences,
-                  r.early_offset,
-                ),
-              );
-            }
-            return res.sendStatus(200);
-          }
           await fetchWithTimeout(
             `https://api.telegram.org/bot${TOKEN}/editMessageText`,
             {
@@ -1236,7 +1432,7 @@ app.post("/webhook", async (req, res) => {
                 inline_message_id: iMsgId,
                 text: dashData.text,
                 reply_markup: dashData.keyboard,
-                parse_mode: "HTML",
+                parse_mode: "MarkdownV2",
               }),
             },
           );
@@ -1265,7 +1461,7 @@ app.post("/webhook", async (req, res) => {
               `🔄 | Repeat: ${formatRepeatText(r.recurring)}${r.total_occurrences ? ` (${r.current_occurrence || 0}/${r.total_occurrences})` : ""}`,
             );
           if (r.early_offset)
-            extras.push(`⏳ | <b>Early Warning:</b> ${r.early_offset}m`);
+            extras.push(`⏳ | **Early Warning:** ${r.early_offset}m`);
           const extrasStr =
             extras.length > 0
               ? `\n\n━━━━━━━━━━━━━━━━━━\n${extras.join("\n")}`
@@ -1279,7 +1475,7 @@ app.post("/webhook", async (req, res) => {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   inline_message_id: callbackQuery.inline_message_id,
-                  text: `🔔 <b>Reminder Details</b>\n📝 ${escapeHTML(r.text)}\n🕒 ${formattedTime}${extrasStr}`,
+                  text: `🔔 **Reminder Details**\n📝 ${escapeMarkdownV2(r.text)}\n🕒 ${formattedTime}${extrasStr}`,
                   reply_markup: {
                     inline_keyboard: [
                       [
@@ -1289,15 +1485,13 @@ app.post("/webhook", async (req, res) => {
                       [{ text: "🔙 Back", callback_data: "menu:list" }],
                     ],
                   },
-                  parse_mode: "HTML",
+                  parse_mode: "MarkdownV2",
                 }),
               },
             );
           } else {
-            await editTelegramMessage(
-              chatId,
-              messageId,
-              `🔔 <b>Reminder Details</b>\n📝 ${escapeHTML(r.text)}\n🕒 ${formattedTime}${extrasStr}`,
+            await editCallbackSurface(
+              `🔔 **Reminder Details**\n📝 ${escapeMarkdownV2(r.text)}\n🕒 ${formattedTime}${extrasStr}`,
               {
                 inline_keyboard: [
                   [
@@ -1312,6 +1506,8 @@ app.post("/webhook", async (req, res) => {
         }
       } else if (data.startsWith("edit:")) {
         const reminderId = data.replace("edit:", "");
+        await setPendingEdit(userId, null);
+        pendingEditSurfaces.delete(userId);
         await answerCallbackQuery(
           callbackQuery.id,
           "✏️ Edit this reminder?",
@@ -1327,10 +1523,8 @@ app.post("/webhook", async (req, res) => {
           );
           if (result.rows.length > 0) {
             const r = result.rows[0];
-            await editTelegramMessage(
-              userId,
-              callbackQuery.message.message_id,
-              `✏️ Editing Reminder: "<b>${escapeHTML(r.text)}</b>"\n━━━━━━━━━━━━━━━━━━\nSelect options below:`,
+            await editCallbackSurface(
+              `✏️ Editing Reminder: "**${escapeMarkdownV2(r.text)}**"\n━━━━━━━━━━━━━━━━━━\nSelect options below:`,
               getEditMenuKeyboard(
                 reminderId,
                 r.recurring,
@@ -1365,7 +1559,7 @@ app.post("/webhook", async (req, res) => {
               }
               await sendOrUpdateDashboard(
                 userId,
-                `✏️ Editing Reminder: "<b>${escapeHTML(r.text)}</b>"\n━━━━━━━━━━━━━━━━━━\nSelect options below:`,
+                `✏️ Editing Reminder: "**${escapeMarkdownV2(r.text)}**"\n━━━━━━━━━━━━━━━━━━\nSelect options below:`,
                 getEditMenuKeyboard(
                   reminderId,
                   r.recurring,
@@ -1382,8 +1576,8 @@ app.post("/webhook", async (req, res) => {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   inline_message_id: iMsgId,
-                  text: "📝 <i>Edit menu sent to your DM!</i>",
-                  parse_mode: "HTML",
+                  text: "📝 *Edit menu sent to your DM!*",
+                  parse_mode: "MarkdownV2",
                 }),
               },
             );
@@ -1429,7 +1623,7 @@ app.post("/webhook", async (req, res) => {
                   inline_message_id: iMsgId,
                   text: dashData.text,
                   reply_markup: dashData.keyboard,
-                  parse_mode: "HTML",
+                  parse_mode: "MarkdownV2",
                 }),
               },
             );
@@ -1456,10 +1650,8 @@ app.post("/webhook", async (req, res) => {
         );
         if (result.rows.length > 0) {
           const r = result.rows[0];
-          await editTelegramMessage(
-            chatId,
-            messageId,
-            `✏️ <b>Editing Reminder</b>\n━━━━━━━━━━━━━━━━━━\nSelect options below:`,
+          await editCallbackSurface(
+            `✏️ **Editing Reminder**\n━━━━━━━━━━━━━━━━━━\nSelect options below:`,
             getEditMenuKeyboard(
               reminderId,
               r.recurring,
@@ -1471,10 +1663,9 @@ app.post("/webhook", async (req, res) => {
       } else if (data.startsWith("prompt_early:")) {
         const reminderId = data.replace("prompt_early:", "");
         await setPendingEdit(userId, `early:${reminderId}`);
-        await editTelegramMessage(
-          chatId,
-          messageId,
-          `⚡ <b>How many minutes early should the warning be?</b>\n<i>Example: 15, 45, 120</i>\n━━━━━━━━━━━━━━━━━━`,
+        if (callbackSurface) pendingEditSurfaces.set(userId, callbackSurface);
+        await editCallbackSurface(
+          `⚡ **How many minutes early should the warning be?**\n*Example: 15, 45, 120*\n━━━━━━━━━━━━━━━━━━`,
           {
             inline_keyboard: [
               [{ text: "⬅️ Cancel", callback_data: `edit:${reminderId}` }],
@@ -1485,10 +1676,9 @@ app.post("/webhook", async (req, res) => {
       } else if (data.startsWith("prompt_edit_text:")) {
         const reminderId = data.replace("prompt_edit_text:", "");
         await setPendingEdit(userId, `text:${reminderId}`);
-        await editTelegramMessage(
-          chatId,
-          messageId,
-          `📝 <b>Please type the new note/text for this reminder:</b>\n━━━━━━━━━━━━━━━━━━`,
+        if (callbackSurface) pendingEditSurfaces.set(userId, callbackSurface);
+        await editCallbackSurface(
+          `📝 **Please type the new note/text for this reminder:**\n━━━━━━━━━━━━━━━━━━`,
           {
             inline_keyboard: [
               [{ text: "⬅️ Cancel", callback_data: `edit:${reminderId}` }],
@@ -1499,10 +1689,9 @@ app.post("/webhook", async (req, res) => {
       } else if (data.startsWith("prompt_edit_time:")) {
         const reminderId = data.replace("prompt_edit_time:", "");
         await setPendingEdit(userId, `time:${reminderId}`);
-        await editTelegramMessage(
-          chatId,
-          messageId,
-          `🕒 <b>Please type the new time/date for this reminder:</b>\n<i>Example: tomorrow at 8am, 2h, or Aug 12 5pm</i>\n━━━━━━━━━━━━━━━━━━`,
+        if (callbackSurface) pendingEditSurfaces.set(userId, callbackSurface);
+        await editCallbackSurface(
+          `🕒 **Please type the new time/date for this reminder:**\n*Example: tomorrow at 8am, 2h, or Aug 12 5pm*\n━━━━━━━━━━━━━━━━━━`,
           {
             inline_keyboard: [
               [{ text: "⬅️ Cancel", callback_data: `edit:${reminderId}` }],
@@ -1518,10 +1707,8 @@ app.post("/webhook", async (req, res) => {
         );
         if (result.rows.length > 0) {
           await answerCallbackQuery(callbackQuery.id);
-          await editTelegramMessage(
-            chatId,
-            messageId,
-            `📅 <b>Select specific days to repeat:</b>\n━━━━━━━━━━━━━━━━━━`,
+          await editCallbackSurface(
+            `📅 **Select specific days to repeat:**\n━━━━━━━━━━━━━━━━━━`,
             getDowMenuKeyboard(reminderId, result.rows[0].recurring),
           );
         }
@@ -1551,38 +1738,33 @@ app.post("/webhook", async (req, res) => {
             [newRec, reminderId, userId],
           );
           await answerCallbackQuery(callbackQuery.id);
-          await editTelegramMessage(
-            chatId,
-            messageId,
-            `📅 <b>Select specific days to repeat:</b>\n━━━━━━━━━━━━━━━━━━`,
+          await editCallbackSurface(
+            `📅 **Select specific days to repeat:**\n━━━━━━━━━━━━━━━━━━`,
             getDowMenuKeyboard(reminderId, newRec),
           );
         }
       } else if (data.startsWith("unitmenu:")) {
         const reminderId = data.replace("unitmenu:", "");
         await answerCallbackQuery(callbackQuery.id);
-        await editTelegramMessage(
-          chatId,
-          messageId,
-          `⚙️ <b>Select Custom Interval Unit:</b>\n━━━━━━━━━━━━━━━━━━`,
+        await editCallbackSurface(
+          `⚙️ **Select Custom Interval Unit:**\n━━━━━━━━━━━━━━━━━━`,
           getUnitMenuKeyboard(reminderId),
         );
       } else if (data.startsWith("nummenu:")) {
         const [, reminderId, unit] = data.split(":");
+        await setPendingEdit(userId, null);
+        pendingEditSurfaces.delete(userId);
         await answerCallbackQuery(callbackQuery.id);
-        await editTelegramMessage(
-          chatId,
-          messageId,
-          `⚙️ <b>Select Every How Many ${unit.toUpperCase()}:</b>\n━━━━━━━━━━━━━━━━━━`,
+        await editCallbackSurface(
+          `⚙️ **Select Every How Many ${unit.toUpperCase()}:**\n━━━━━━━━━━━━━━━━━━`,
           getNumberMenuKeyboard(reminderId, unit),
         );
       } else if (data.startsWith("prompt_rec:")) {
         const [, reminderId, unit] = data.split(":");
         await setPendingEdit(userId, `rec:${reminderId}:${unit}`);
-        await editTelegramMessage(
-          chatId,
-          messageId,
-          `⚙️ <b>Enter custom repeat interval in ${unit.toUpperCase()}:</b>\n<i>Example: 56, 72, 100</i>\n━━━━━━━━━━━━━━━━━━`,
+        if (callbackSurface) pendingEditSurfaces.set(userId, callbackSurface);
+        await editCallbackSurface(
+          `⚙️ **Enter custom repeat interval in ${unit.toUpperCase()}:**\n*Example: 56, 72, 100*\n━━━━━━━━━━━━━━━━━━`,
           {
             inline_keyboard: [
               [
@@ -1603,10 +1785,8 @@ app.post("/webhook", async (req, res) => {
         );
         if (result.rows.length > 0) {
           await answerCallbackQuery(callbackQuery.id);
-          await editTelegramMessage(
-            chatId,
-            messageId,
-            `🔁 <b>Select How Many Times to Repeat:</b>\n━━━━━━━━━━━━━━━━━━`,
+          await editCallbackSurface(
+            `🔁 **Select How Many Times to Repeat:**\n━━━━━━━━━━━━━━━━━━`,
             getLimitMenuKeyboard(reminderId, result.rows[0].total_occurrences),
           );
         }
@@ -1629,10 +1809,8 @@ app.post("/webhook", async (req, res) => {
           "SELECT total_occurrences, early_offset FROM reminders WHERE id = $1 AND user_id = $2",
           [reminderId, userId],
         );
-        await editTelegramMessage(
-          chatId,
-          messageId,
-          `✏️ <b>Editing Reminder</b>\n━━━━━━━━━━━━━━━━━━\nSelect options below:`,
+        await editCallbackSurface(
+          `✏️ **Editing Reminder**\n━━━━━━━━━━━━━━━━━━\nSelect options below:`,
           getEditMenuKeyboard(
             reminderId,
             recurringVal,
@@ -1659,10 +1837,8 @@ app.post("/webhook", async (req, res) => {
           "SELECT recurring, early_offset FROM reminders WHERE id = $1 AND user_id = $2",
           [reminderId, userId],
         );
-        await editTelegramMessage(
-          chatId,
-          messageId,
-          `✏️ <b>Editing Reminder</b>\n━━━━━━━━━━━━━━━━━━\nSelect options below:`,
+        await editCallbackSurface(
+          `✏️ **Editing Reminder**\n━━━━━━━━━━━━━━━━━━\nSelect options below:`,
           getEditMenuKeyboard(
             reminderId,
             result.rows[0].recurring,
@@ -1692,8 +1868,8 @@ app.post("/webhook", async (req, res) => {
             thumb_height: 72,
             input_message_content: {
               message_text:
-                "💻 <b>[INIT_DM] Establishing encrypted tunnel...</b>",
-              parse_mode: "HTML",
+                "💻 **\\[INIT\\_DM\\] Establishing encrypted tunnel\\.\\.\\.**",
+              parse_mode: "MarkdownV2",
             },
             reply_markup: {
               inline_keyboard: [
@@ -1709,8 +1885,8 @@ app.post("/webhook", async (req, res) => {
             thumbnail_url:
               "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f3.png",
             input_message_content: {
-              message_text: "📋 <b>Fetching active reminders\.\.\.</b>",
-              parse_mode: "HTML",
+              message_text: "📋 **Fetching active reminders\\.\\.\\.**",
+              parse_mode: "MarkdownV2",
             },
             reply_markup: {
               inline_keyboard: [
@@ -1745,8 +1921,8 @@ app.post("/webhook", async (req, res) => {
                 "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f0.png",
               description: `Scheduled for: ${dt.toFormat("EEEE, MMM d, yyyy 'at' h:mm a")}`,
               input_message_content: {
-                message_text: `⏳ <b>Creating reminder\.\.\.</b>`,
-                parse_mode: "HTML",
+                message_text: `⏳ **Creating reminder\\.\\.\\.**`,
+                parse_mode: "MarkdownV2",
               },
               reply_markup: {
                 inline_keyboard: [
@@ -1762,8 +1938,8 @@ app.post("/webhook", async (req, res) => {
               description: "Time must be >= 1 min.",
               input_message_content: {
                 message_text:
-                  "❌ <b>Reminders must be set for at least 1 minute from now\.</b>",
-                parse_mode: "HTML",
+                  "❌ **Reminders must be set for at least 1 minute from now\\.**",
+                parse_mode: "MarkdownV2",
               },
             });
           }
@@ -1818,8 +1994,8 @@ app.post("/webhook", async (req, res) => {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   inline_message_id: iMsgId,
-                  text: "❌ <b>I could not parse that reminder time. Please try again.</b>",
-                  parse_mode: "HTML",
+                  text: "❌ **I could not parse that reminder time. Please try again.**",
+                  parse_mode: "MarkdownV2",
                 }),
               },
             );
@@ -1833,7 +2009,7 @@ app.post("/webhook", async (req, res) => {
           if (parsed.wantRepeatMenu) {
             await sendOrUpdateDashboard(
               userId,
-              `📝 Editing Reminder: "<b>${escapeHTML(parsed.reminderText)}</b>"\n━━━━━━━━━━━━━━━━━━\nSelect options below:`,
+              `📝 Editing Reminder: "**${escapeMarkdownV2(parsed.reminderText)}**"\n━━━━━━━━━━━━━━━━━━\nSelect options below:`,
               getEditMenuKeyboard(insertRes.rows[0].id, null, null),
             );
           }
@@ -1853,8 +2029,8 @@ app.post("/webhook", async (req, res) => {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   inline_message_id: iMsgId,
-                  text: `✅ <b>Reminder set!</b>\n📝 <i>${escapeHTML(parsed.reminderText)}</i>\n⏰ ${formattedTime}`,
-                  parse_mode: "HTML",
+                  text: `✅ **Reminder set!**\n📝 *${escapeMarkdownV2(parsed.reminderText)}*\n⏰ ${formattedTime}`,
+                  parse_mode: "MarkdownV2",
                 }),
               },
             );
@@ -1874,8 +2050,8 @@ app.post("/webhook", async (req, res) => {
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({
                         inline_message_id: iMsgId,
-                        text: `✅ <b>Reminder Created for ${userFirstName || "you"}!</b>`,
-                        parse_mode: "HTML",
+                        text: `✅ **Reminder Created for ${userFirstName || "you"}!**`,
+                        parse_mode: "MarkdownV2",
                       }),
                     },
                   );
@@ -1908,8 +2084,8 @@ app.post("/webhook", async (req, res) => {
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
                     inline_message_id: iMsgId,
-                    text: `✅ <b>Reminders sent to your DM!</b>\n\n<blockquote><tg-spoiler>${escapeHTML(dashData.text)}</tg-spoiler></blockquote>`,
-                    parse_mode: "HTML",
+                    text: `✅ **Reminders sent to your DM\\!**\n\n> ||${escapeMarkdownV2(dashData.text)}||`,
+                    parse_mode: "MarkdownV2",
                   }),
                 },
               );
@@ -1936,7 +2112,7 @@ app.post("/webhook", async (req, res) => {
                 inline_message_id: iMsgId,
                 text: dashData.text,
                 reply_markup: dashData.keyboard,
-                parse_mode: "HTML",
+                parse_mode: "MarkdownV2",
               }),
             },
           );
@@ -1958,8 +2134,8 @@ app.post("/webhook", async (req, res) => {
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                       inline_message_id: iMsgId,
-                      text: `✅ <b>${escapeHTML(shortSummary)}</b>\n\n<blockquote><tg-spoiler>${escapeHTML(dashData.text.replace(/^.*\n/, ""))}</tg-spoiler></blockquote>`,
-                      parse_mode: "HTML",
+                      text: `✅ **${escapeMarkdownV2(shortSummary)}**\n\n> ||${escapeMarkdownV2(dashData.text.replace(/^.*\n/, ""))}||`,
+                      parse_mode: "MarkdownV2",
                     }),
                   },
                 );

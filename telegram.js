@@ -4,48 +4,20 @@ async function fetchWithTimeout(resource, options = {}) {
   const { timeout = 10000 } = options;
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
-  const response = await fetch(resource, {
-    ...options,
-    signal: controller.signal,
-  });
-  clearTimeout(id);
-  return response;
+  try {
+    return await fetch(resource, {
+      ...options,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(id);
+  }
 }
 
-const escapeMarkdownV2 = (text) => {
-  if (typeof text !== "string") return String(text || "");
-  return text
-    .replace(/[_\*\[\]\(\)~`>#\+\-\=\|\{\}\!\\.]/g, "\\$&")
-    .replace(/\n/g, "\\n");
-};
-
-function convertInlineKeyboardToRichBlocks(keyboard) {
-  if (!keyboard?.inline_keyboard) return null;
-  return keyboard.inline_keyboard.map((row) => ({
-    type: "buttons",
-    buttons: row.map((btn) => {
-      const richBtn = { text: btn.text, callback_data: btn.callback_data };
-      if (btn.url) { richBtn.text = btn.text; delete richBtn.callback_data; richBtn.url = btn.url; }
-      if (btn.style) richBtn.style = btn.style;
-      return richBtn;
-    }),
-  }));
-}
-
-const escapeHTML = (str) =>
-  String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
-async function sendTelegramMessage(
-  chatId,
-  text,
-  replyMarkup = null,
-  autoDeleteMs = null,
-) {
-  const payload = { chat_id: chatId, text, parse_mode: "HTML" };
-  if (replyMarkup) payload.reply_markup = replyMarkup;
+async function callTelegram(method, payload, logLabel = method) {
   try {
     const res = await fetchWithTimeout(
-      `https://api.telegram.org/bot${TOKEN}/sendMessage`,
+      `https://api.telegram.org/bot${TOKEN}/${method}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -54,20 +26,70 @@ async function sendTelegramMessage(
     );
     const data = await res.json();
     if (!data.ok) {
-      console.error("[TELEGRAM] sendMessage failed:", data.description, "payload:", JSON.stringify(payload).substring(0, 200));
+      console.error(`[TELEGRAM] ${logLabel} failed:`, data.description);
+      return null;
     }
-    if (data.ok && data.result) {
-      if (autoDeleteMs)
-        setTimeout(
-          () => deleteTelegramMessage(chatId, data.result.message_id),
-          autoDeleteMs,
-        );
-      return data.result;
-    }
+    return data.result;
   } catch (err) {
-    console.error("Error sending message:", err);
+    console.error(`[TELEGRAM] ${logLabel} error:`, err);
+    return null;
   }
-  return null;
+}
+
+async function sendTelegramMessage(
+  chatId,
+  text,
+  replyMarkup = null,
+  autoDeleteMs = null,
+) {
+  const payload = { chat_id: chatId, text, parse_mode: "MarkdownV2" };
+  if (replyMarkup) payload.reply_markup = replyMarkup;
+  const result = await callTelegram("sendMessage", payload);
+  if (result && autoDeleteMs) {
+    setTimeout(
+      () => deleteTelegramMessage(chatId, result.message_id),
+      autoDeleteMs,
+    );
+  }
+  return result || null;
+}
+
+/**
+ * Sends a Bot API 10.3 ephemeral group message. The returned Message has
+ * message_id=0 and an ephemeral_message_id that must be used for later edits.
+ */
+async function sendEphemeralMessage(
+  chatId,
+  receiverUserId,
+  text,
+  replyMarkup = null,
+  options = {},
+) {
+  const ephemeralParams = { receiver_user_id: receiverUserId };
+  if (options.callbackQueryId) {
+    ephemeralParams.callback_query_id = options.callbackQueryId;
+  }
+  if (options.replaceCallbackQueryMessage) {
+    ephemeralParams.replace_callback_query_message = true;
+  }
+
+  const payload = {
+    chat_id: chatId,
+    text,
+    parse_mode: "MarkdownV2",
+    ephemeral_message_parameters: ephemeralParams,
+  };
+  if (replyMarkup) payload.reply_markup = replyMarkup;
+  if (options.replyToEphemeralMessageId) {
+    payload.reply_parameters = {
+      ephemeral_message_id: options.replyToEphemeralMessageId,
+    };
+  }
+
+  return (
+    (await callTelegram("sendMessage", payload, "send ephemeral message")) ||
+    null
+  );
 }
 
 async function editTelegramMessage(
@@ -80,39 +102,57 @@ async function editTelegramMessage(
     chat_id: chatId,
     message_id: messageId,
     text,
-    parse_mode: "HTML",
+    parse_mode: "MarkdownV2",
   };
   if (replyMarkup !== undefined) payload.reply_markup = replyMarkup;
-  try {
-    const res = await fetchWithTimeout(
-      `https://api.telegram.org/bot${TOKEN}/editMessageText`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      },
-    );
-    const data = await res.json();
-    return data.ok;
-  } catch (err) {
-    console.error("Error editing message:", err);
-    return false;
-  }
+  const result = await callTelegram("editMessageText", payload);
+  return result !== null;
+}
+
+async function editEphemeralMessage(
+  chatId,
+  receiverUserId,
+  ephemeralMessageId,
+  text,
+  replyMarkup = null,
+) {
+  const payload = {
+    chat_id: chatId,
+    receiver_user_id: receiverUserId,
+    ephemeral_message_id: ephemeralMessageId,
+    text,
+    parse_mode: "MarkdownV2",
+  };
+  if (replyMarkup !== undefined) payload.reply_markup = replyMarkup;
+  const result = await callTelegram(
+    "editEphemeralMessageText",
+    payload,
+    "edit ephemeral message",
+  );
+  return result !== null;
 }
 
 async function deleteTelegramMessage(chatId, messageId) {
-  try {
-    await fetchWithTimeout(
-      `https://api.telegram.org/bot${TOKEN}/deleteMessage`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: chatId, message_id: messageId }),
-      },
-    );
-  } catch (err) {
-    console.error("Error deleting message:", err);
-  }
+  return callTelegram("deleteMessage", {
+    chat_id: chatId,
+    message_id: messageId,
+  });
+}
+
+async function deleteEphemeralMessage(
+  chatId,
+  receiverUserId,
+  ephemeralMessageId,
+) {
+  return callTelegram(
+    "deleteEphemeralMessage",
+    {
+      chat_id: chatId,
+      receiver_user_id: receiverUserId,
+      ephemeral_message_id: ephemeralMessageId,
+    },
+    "delete ephemeral message",
+  );
 }
 
 async function answerCallbackQuery(
@@ -120,28 +160,35 @@ async function answerCallbackQuery(
   text = "",
   showAlert = false,
 ) {
-  try {
-    await fetchWithTimeout(
-      `https://api.telegram.org/bot${TOKEN}/answerCallbackQuery`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          callback_query_id: callbackQueryId,
-          text,
-          show_alert: showAlert,
-        }),
-      },
-    );
-  } catch (err) {
-    console.error("Error answering callback query:", err);
-  }
+  return callTelegram("answerCallbackQuery", {
+    callback_query_id: callbackQueryId,
+    text,
+    show_alert: showAlert,
+  });
+}
+
+async function setEphemeralGroupCommands(commands) {
+  return callTelegram(
+    "setMyCommands",
+    {
+      commands: commands.map((command) => ({
+        ...command,
+        is_ephemeral: true,
+      })),
+      scope: { type: "all_group_chats" },
+    },
+    "register ephemeral group commands",
+  );
 }
 
 module.exports = {
   sendTelegramMessage,
+  sendEphemeralMessage,
   editTelegramMessage,
+  editEphemeralMessage,
   deleteTelegramMessage,
+  deleteEphemeralMessage,
   answerCallbackQuery,
+  setEphemeralGroupCommands,
   fetchWithTimeout,
 };
