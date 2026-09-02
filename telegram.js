@@ -1,5 +1,48 @@
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/**
+ * The original bot writes messages with a small, Markdown-like vocabulary
+ * (**bold**, *italic*, `code`, ||spoiler|| and leading > quotes). Converting
+ * that vocabulary to Telegram HTML avoids MarkdownV2's fragile requirement
+ * to escape every period, parenthesis, hyphen and other reserved character.
+ * User-provided text is HTML-escaped before any request is sent.
+ */
+function formatTelegramHtml(text) {
+  const unescaped = String(text || "").replace(
+    /\\([_*\[\]()~`>#+\-=|{}.!\\])/g,
+    "$1",
+  );
+  let formatted = escapeHtml(unescaped);
+
+  formatted = formatted.replace(/`([^`\n]+)`/g, "<code>$1</code>");
+  formatted = formatted.replace(/\*\*([\s\S]+?)\*\*/g, "<b>$1</b>");
+  formatted = formatted.replace(
+    /(^|[^*])\*([^*\n]+)\*(?!\*)/g,
+    "$1<i>$2</i>",
+  );
+  formatted = formatted.replace(
+    /\|\|([\s\S]+?)\|\|/g,
+    "<tg-spoiler>$1</tg-spoiler>",
+  );
+  formatted = formatted
+    .split("\n")
+    .map((line) =>
+      line.startsWith("&gt; ")
+        ? `<blockquote>${line.slice(5)}</blockquote>`
+        : line,
+    )
+    .join("\n");
+
+  return formatted;
+}
+
 async function fetchWithTimeout(resource, options = {}) {
   const { timeout = 10000 } = options;
   const controller = new AbortController();
@@ -42,7 +85,11 @@ async function sendTelegramMessage(
   replyMarkup = null,
   autoDeleteMs = null,
 ) {
-  const payload = { chat_id: chatId, text, parse_mode: "MarkdownV2" };
+  const payload = {
+    chat_id: chatId,
+    text: formatTelegramHtml(text),
+    parse_mode: "HTML",
+  };
   if (replyMarkup) payload.reply_markup = replyMarkup;
   const result = await callTelegram("sendMessage", payload);
   if (result && autoDeleteMs) {
@@ -75,8 +122,8 @@ async function sendEphemeralMessage(
 
   const payload = {
     chat_id: chatId,
-    text,
-    parse_mode: "MarkdownV2",
+    text: formatTelegramHtml(text),
+    parse_mode: "HTML",
     ephemeral_message_parameters: ephemeralParams,
   };
   if (replyMarkup) payload.reply_markup = replyMarkup;
@@ -101,8 +148,8 @@ async function editTelegramMessage(
   const payload = {
     chat_id: chatId,
     message_id: messageId,
-    text,
-    parse_mode: "MarkdownV2",
+    text: formatTelegramHtml(text),
+    parse_mode: "HTML",
   };
   if (replyMarkup !== undefined) payload.reply_markup = replyMarkup;
   const result = await callTelegram("editMessageText", payload);
@@ -120,8 +167,8 @@ async function editEphemeralMessage(
     chat_id: chatId,
     receiver_user_id: receiverUserId,
     ephemeral_message_id: ephemeralMessageId,
-    text,
-    parse_mode: "MarkdownV2",
+    text: formatTelegramHtml(text),
+    parse_mode: "HTML",
   };
   if (replyMarkup !== undefined) payload.reply_markup = replyMarkup;
   const result = await callTelegram(
@@ -190,5 +237,6 @@ module.exports = {
   deleteEphemeralMessage,
   answerCallbackQuery,
   setEphemeralGroupCommands,
+  formatTelegramHtml,
   fetchWithTimeout,
 };
