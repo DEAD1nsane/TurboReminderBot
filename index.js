@@ -36,8 +36,8 @@ function resetMenuTimer(key, action) {
   );
 }
 
-const escapeMarkdownV2 = (str) =>
-  String(str || "").replace(/[_\*\[\]\(\)~`>#\+\-=\|{\}\!\\.]/g, "\\$&");
+const escapeHTML = (str) =>
+  String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 const app = express();
 app.use(express.json());
@@ -147,7 +147,7 @@ setInterval(async () => {
       ) {
         await sendTelegramMessage(
           r.chat_id || r.user_id,
-          `> **⚡ | ${escapeMarkdownV2(r.text)}**\n*Starts in ${r.early_offset}m (${formattedTime})*`,
+          `<blockquote><b>⚡ | ${escapeHTML(r.text)}</b>\n<i>Starts in ${r.early_offset}m (${formattedTime})</i></blockquote>`,
         );
         await pool.query(
           "UPDATE reminders SET early_alert_sent = TRUE WHERE id = $1",
@@ -156,7 +156,7 @@ setInterval(async () => {
       } else if (now >= remindAt && !r.sent) {
         await sendTelegramMessage(
           r.chat_id || r.user_id,
-          `> **🔔 | ${escapeMarkdownV2(r.text)}**\n*${formattedTime}*`,
+          `<blockquote><b>🔔 | ${escapeHTML(r.text)}</b>\n<i>${formattedTime}</i></blockquote>`,
         );
 
         if (r.recurring) {
@@ -457,7 +457,7 @@ async function getRemindersDashboardData(userId, userTz, passedName = null) {
 
     if (res.rows.length === 0) {
       return {
-        text: `📋 **${titleName} Active Reminders:**\n━━━━━━━━━━━━━━━━━━\n\n*📭 No active reminders found.*`,
+        text: `📋 <b>${titleName} Active Reminders:</b>\n━━━━━━━━━━━━━━━━━━\n\n<i>📭 No active reminders found.</i>`,
         keyboard: {
           inline_keyboard: [
             [{ text: "📭 No active reminders", callback_data: "noop" }],
@@ -476,7 +476,7 @@ async function getRemindersDashboardData(userId, userTz, passedName = null) {
     });
 
     return {
-      text: `📋 **${titleName} Active Reminders:**`,
+      text: `📋 <b>${titleName} Active Reminders:</b>`,
       keyboard: { inline_keyboard: buttons },
     };
   } catch (err) {
@@ -575,7 +575,7 @@ app.post("/webhook", async (req, res) => {
           wizardState.set(userId, state);
           await sendTelegramMessage(
             wizardChatId,
-            `⏰ **When should this remind you?**\n\nExamples:\n• \`tomorrow 5pm\`\n• \`in 2 hours 30 minutes\`\n• \`Aug 12 8am\`\n• \`daily 9am\` (with repeat)`,
+            `⏰ <b>When should this remind you?</b>\n\nExamples:\n• <code>tomorrow 5pm</code>\n• <code>in 2 hours 30 minutes</code>\n• <code>Aug 12 8am</code>\n• <code>daily 9am</code> (with repeat)`,
             {
               inline_keyboard: [
                 [{ text: "❌ Cancel", callback_data: "wizard_cancel" }],
@@ -589,7 +589,7 @@ app.post("/webhook", async (req, res) => {
           if (!parsed2) {
             await sendTelegramMessage(
               wizardChatId,
-              "⚠️ Could not parse the time. Please try again:\n• \`tomorrow 5pm\`\n• \`in 2h 30m\`\n• \`Aug 12 8am\`",
+              "⚠️ Could not parse the time. Please try again:\n• <code>tomorrow 5pm</code>\n• <code>in 2h 30m</code>\n• <code>Aug 12 8am</code>",
               {
                 inline_keyboard: [
                   [{ text: "❌ Cancel", callback_data: "wizard_cancel" }],
@@ -603,7 +603,7 @@ app.post("/webhook", async (req, res) => {
           wizardState.set(userId, state);
           await sendTelegramMessage(
             wizardChatId,
-            "🔄 **How often should it repeat?**",
+            "🔄 <b>How often should it repeat?</b>",
             {
               inline_keyboard: [
                 [
@@ -627,7 +627,7 @@ app.post("/webhook", async (req, res) => {
           if (!smartMatch) {
             await sendTelegramMessage(
               wizardChatId,
-              "⚠️ Couldn't understand that. Try something like:\n• \`every 56 hours\`\n• \`every 2 days\`\n• \`every 90 minutes\`",
+              "⚠️ Couldn't understand that. Try something like:\n• <code>every 56 hours</code>\n• <code>every 2 days</code>\n• <code>every 90 minutes</code>",
               {
                 inline_keyboard: [
                   [{ text: "❌ Cancel", callback_data: "wizard_cancel" }],
@@ -661,7 +661,7 @@ app.post("/webhook", async (req, res) => {
           wizardState.set(userId, state);
           await sendTelegramMessage(
             wizardChatId,
-            "⏳ **How many minutes early should the warning be?**\n\nExample: \`15\`, \`30\`, \`60\` (or \`0\` for no warning)",
+            "⏳ <b>How many minutes early should the warning be?</b>\n\nExample: <code>15</code>, <code>30</code>, <code>60</code> (or <code>0</code> for no warning)",
             {
               inline_keyboard: [
                 [
@@ -700,11 +700,11 @@ app.post("/webhook", async (req, res) => {
           );
 
           const summary =
-            `📝 **Review Your Reminder**\n\n` +
-            `📌 Title: **${escapeMarkdownV2(state.title)}**\n` +
-            `⏰ Time: **${timeStr}**\n` +
-            `🔄 Repeat: **${state.repeatText || "None"}**\n` +
-            `⏳ Early Warning: **${state.earlyWarning ? state.earlyWarning + "m before" : "None"}**`;
+            `📝 <b>Review Your Reminder</b>\n\n` +
+            `📌 Title: <b>${escapeHTML(state.title)}</b>\n` +
+            `⏰ Time: <b>${timeStr}</b>\n` +
+            `🔄 Repeat: <b>${state.repeatText || "None"}</b>\n` +
+            `⏳ Early Warning: <b>${state.earlyWarning ? state.earlyWarning + "m before" : "None"}</b>`;
           await sendTelegramMessage(wizardChatId, summary, {
             inline_keyboard: [
               [
@@ -738,7 +738,7 @@ app.post("/webhook", async (req, res) => {
           );
           await sendTelegramMessage(
             userId,
-            `✅ Reminder text updated to: "**${escapeMarkdownV2(text)}**"`,
+            `✅ Reminder text updated to: "<b>${escapeHTML(text)}</b>"`,
             null,
             5000,
           );
@@ -757,7 +757,7 @@ app.post("/webhook", async (req, res) => {
             );
             await sendTelegramMessage(
               userId,
-              `✅ Reminder time updated to: *${localDt.toFormat("EEE, LLL d, yyyy 'at' h:mm a")}*`,
+              `✅ Reminder time updated to: <i>${localDt.toFormat("EEE, LLL d, yyyy 'at' h:mm a")}</i>`,
               null,
               5000,
             );
@@ -781,7 +781,7 @@ app.post("/webhook", async (req, res) => {
             );
             await sendTelegramMessage(
               userId,
-              `✅ Recurrence set to **Every ${num} ${unit}**!`,
+              `✅ Recurrence set to <b>Every ${num} ${unit}</b>!`,
               null,
               5000,
             );
@@ -828,7 +828,7 @@ app.post("/webhook", async (req, res) => {
         } else {
           await sendTelegramMessage(
             userId,
-            "👋 **Welcome! Please select your primary timezone:**",
+            "👋 <b>Welcome! Please select your primary timezone:</b>",
             getTimezonePickerKeyboard(),
           );
         }
@@ -845,7 +845,7 @@ app.post("/webhook", async (req, res) => {
         });
         await sendTelegramMessage(
           isGroupChat ? userId : chatId,
-          "📝 **What's the reminder title?**\n\nType the title for your reminder (e.g., \`buy milk\`, \`team meeting\`, \`pay bills\`):",
+          "📝 <b>What's the reminder title?</b>\n\nType the title for your reminder (e.g., <code>buy milk</code>, <code>team meeting</code>, <code>pay bills</code>):",
           {
             inline_keyboard: [
               [{ text: "❌ Cancel", callback_data: "wizard_cancel" }],
@@ -856,12 +856,12 @@ app.post("/webhook", async (req, res) => {
       } else if (text.toLowerCase() === "/help") {
         await sendTelegramMessage(
           userId,
-          "🤖 **Bot Commands & Usage:**\n\n" +
-            "*/start* — Welcome message + timezone selection\n" +
-            "*/remind* — Create a reminder step-by-step\n" +
-            "*view* — Show your active reminders\n\n" +
+          "🤖 <b>Bot Commands & Usage:</b>\n\n" +
+            "<i>/start</i> — Welcome message + timezone selection\n" +
+            "<i>/remind</i> — Create a reminder step-by-step\n" +
+            "<i>view</i> — Show your active reminders\n\n" +
             "Or just type a natural reminder like:\n" +
-            "`reminder tomorrow 5pm buy milk`",
+            "<code>reminder tomorrow 5pm buy milk</code>",
           null,
         );
         return res.sendStatus(200);
@@ -904,7 +904,7 @@ app.post("/webhook", async (req, res) => {
         if (parsed.wantRepeatMenu) {
           await sendOrUpdateDashboard(
             userId,
-            `📝 Editing Reminder: "**${escapeMarkdownV2(parsed.reminderText)}**"\nSelect options below:`,
+            `📝 Editing Reminder: "<b>${escapeHTML(parsed.reminderText)}</b>"\nSelect options below:`,
             getEditMenuKeyboard(insertRes.rows[0].id, null, null),
           );
         } else {
@@ -939,8 +939,8 @@ app.post("/webhook", async (req, res) => {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 inline_message_id: inlineMsgId,
-                text: "✅ **Action completed\\.**",
-                parse_mode: "MarkdownV2",
+                text: "✅ <b>Action completed.</b>",
+                parse_mode: "HTML",
               }),
             },
           );
@@ -965,7 +965,7 @@ app.post("/webhook", async (req, res) => {
           const state = wizardState.get(userId);
           await sendTelegramMessage(
             state.wizardChatId,
-            "⚙️ **Enter custom repeat interval:**\n\nExamples:\n• \`daily:2\` (every 2 days)\n• \`weekly:2\` (every 2 weeks)\n• \`monthly:3\` (every 3 months)",
+            "⚙️ <b>Enter custom repeat interval:</b>\n\nExamples:\n• <code>daily:2</code> (every 2 days)\n• <code>weekly:2</code> (every 2 weeks)\n• <code>monthly:3</code> (every 3 months)",
             {
               inline_keyboard: [
                 [{ text: "❌ Cancel", callback_data: "wizard_cancel" }],
@@ -978,7 +978,7 @@ app.post("/webhook", async (req, res) => {
           const state = wizardState.get(userId);
           await sendTelegramMessage(
             state.wizardChatId,
-            "🧠 **Enter repeat interval in natural language:**\n\nExamples:\n• \`every 56 hours\`\n• \`every 2 days\`\n• \`every 90 minutes\`\n• \`every 3 weeks\`\n• \`every 6 months\`",
+            "🧠 <b>Enter repeat interval in natural language:</b>\n\nExamples:\n• <code>every 56 hours</code>\n• <code>every 2 days</code>\n• <code>every 90 minutes</code>\n• <code>every 3 weeks</code>\n• <code>every 6 months</code>",
             {
               inline_keyboard: [
                 [{ text: "❌ Cancel", callback_data: "wizard_cancel" }],
@@ -1001,7 +1001,7 @@ app.post("/webhook", async (req, res) => {
           wizardState.set(userId, state);
           await sendTelegramMessage(
             state.wizardChatId,
-            "⏳ **How many minutes early should the warning be?**\n\nExample: \`15\`, \`30\`, \`60\` (or \`0\` for no warning)",
+            "⏳ <b>How many minutes early should the warning be?</b>\n\nExample: <code>15</code>, <code>30</code>, <code>60</code> (or <code>0</code> for no warning)",
             {
               inline_keyboard: [
                 [
@@ -1028,11 +1028,11 @@ app.post("/webhook", async (req, res) => {
           );
 
           const summary =
-            `📝 **Review Your Reminder**\n\n` +
-            `📌 Title: **${escapeMarkdownV2(state.title)}**\n` +
-            `⏰ Time: **${timeStr}**\n` +
-            `🔄 Repeat: **${state.repeatText || "None"}**\n` +
-            `⏳ Early Warning: **${state.earlyWarning ? state.earlyWarning + "m before" : "None"}**`;
+            `📝 <b>Review Your Reminder</b>\n\n` +
+            `📌 Title: <b>${escapeHTML(state.title)}</b>\n` +
+            `⏰ Time: <b>${timeStr}</b>\n` +
+            `🔄 Repeat: <b>${state.repeatText || "None"}</b>\n` +
+            `⏳ Early Warning: <b>${state.earlyWarning ? state.earlyWarning + "m before" : "None"}</b>`;
           await sendTelegramMessage(state.wizardChatId, summary, {
             inline_keyboard: [
               [
@@ -1063,11 +1063,11 @@ app.post("/webhook", async (req, res) => {
           );
           await sendTelegramMessage(
             state.wizardChatId,
-            `✅ **Reminder Created!**\n\n` +
-              `📌 Title: **${escapeMarkdownV2(state.title)}**\n` +
-              `⏰ Time: **${timeStr}**\n` +
-              `🔄 Repeat: **${state.repeatText || "None"}**\n` +
-              `⏳ Early Warning: **${state.earlyWarning ? state.earlyWarning + "m before" : "None"}**`,
+            `✅ <b>Reminder Created!</b>\n\n` +
+              `📌 Title: <b>${escapeHTML(state.title)}</b>\n` +
+              `⏰ Time: <b>${timeStr}</b>\n` +
+              `🔄 Repeat: <b>${state.repeatText || "None"}</b>\n` +
+              `⏳ Early Warning: <b>${state.earlyWarning ? state.earlyWarning + "m before" : "None"}</b>`,
             null,
           );
           const dashData = await getRemindersDashboardData(userId, userTz3);
@@ -1082,11 +1082,11 @@ app.post("/webhook", async (req, res) => {
           await editTelegramMessage(
             callbackQuery.message.chat.id,
             callbackQuery.message.message_id,
-            "✅ Wizard cancelled\\. No reminder was created\\.",
+            "✅ Wizard cancelled\. No reminder was created\.",
             null,
           );
         } else {
-          await sendTelegramMessage(cancelChatId, "✅ Wizard cancelled\\. No reminder was created\\.", null, 5000);
+          await sendTelegramMessage(cancelChatId, "✅ Wizard cancelled\. No reminder was created\.", null, 5000);
         }
       } else if (data.startsWith("settz:")) {
         const tz = data.replace("settz:", "");
@@ -1171,7 +1171,7 @@ app.post("/webhook", async (req, res) => {
                 inline_message_id: callbackQuery.inline_message_id,
                 text: dashData.text,
                 reply_markup: dashData.keyboard,
-                parse_mode: "MarkdownV2",
+                parse_mode: "HTML",
               }),
             },
           );
@@ -1216,7 +1216,7 @@ app.post("/webhook", async (req, res) => {
               await editTelegramMessage(
                 userId,
                 targetMsgId,
-                `✏️ Editing Reminder: "**${escapeMarkdownV2(r.text)}**"\n━━━━━━━━━━━━━━━━━━\nSelect options below:`,
+                `✏️ Editing Reminder: "<b>${escapeHTML(r.text)}</b>"\n━━━━━━━━━━━━━━━━━━\nSelect options below:`,
                 getEditMenuKeyboard(
                   reminderId,
                   r.recurring,
@@ -1236,7 +1236,7 @@ app.post("/webhook", async (req, res) => {
                 inline_message_id: iMsgId,
                 text: dashData.text,
                 reply_markup: dashData.keyboard,
-                parse_mode: "MarkdownV2",
+                parse_mode: "HTML",
               }),
             },
           );
@@ -1265,7 +1265,7 @@ app.post("/webhook", async (req, res) => {
               `🔄 | Repeat: ${formatRepeatText(r.recurring)}${r.total_occurrences ? ` (${r.current_occurrence || 0}/${r.total_occurrences})` : ""}`,
             );
           if (r.early_offset)
-            extras.push(`⏳ | **Early Warning:** ${r.early_offset}m`);
+            extras.push(`⏳ | <b>Early Warning:</b> ${r.early_offset}m`);
           const extrasStr =
             extras.length > 0
               ? `\n\n━━━━━━━━━━━━━━━━━━\n${extras.join("\n")}`
@@ -1279,7 +1279,7 @@ app.post("/webhook", async (req, res) => {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   inline_message_id: callbackQuery.inline_message_id,
-                  text: `🔔 **Reminder Details**\n📝 ${escapeMarkdownV2(r.text)}\n🕒 ${formattedTime}${extrasStr}`,
+                  text: `🔔 <b>Reminder Details</b>\n📝 ${escapeHTML(r.text)}\n🕒 ${formattedTime}${extrasStr}`,
                   reply_markup: {
                     inline_keyboard: [
                       [
@@ -1289,7 +1289,7 @@ app.post("/webhook", async (req, res) => {
                       [{ text: "🔙 Back", callback_data: "menu:list" }],
                     ],
                   },
-                  parse_mode: "MarkdownV2",
+                  parse_mode: "HTML",
                 }),
               },
             );
@@ -1297,7 +1297,7 @@ app.post("/webhook", async (req, res) => {
             await editTelegramMessage(
               chatId,
               messageId,
-              `🔔 **Reminder Details**\n📝 ${escapeMarkdownV2(r.text)}\n🕒 ${formattedTime}${extrasStr}`,
+              `🔔 <b>Reminder Details</b>\n📝 ${escapeHTML(r.text)}\n🕒 ${formattedTime}${extrasStr}`,
               {
                 inline_keyboard: [
                   [
@@ -1330,7 +1330,7 @@ app.post("/webhook", async (req, res) => {
             await editTelegramMessage(
               userId,
               callbackQuery.message.message_id,
-              `✏️ Editing Reminder: "**${escapeMarkdownV2(r.text)}**"\n━━━━━━━━━━━━━━━━━━\nSelect options below:`,
+              `✏️ Editing Reminder: "<b>${escapeHTML(r.text)}</b>"\n━━━━━━━━━━━━━━━━━━\nSelect options below:`,
               getEditMenuKeyboard(
                 reminderId,
                 r.recurring,
@@ -1365,7 +1365,7 @@ app.post("/webhook", async (req, res) => {
               }
               await sendOrUpdateDashboard(
                 userId,
-                `✏️ Editing Reminder: "**${escapeMarkdownV2(r.text)}**"\n━━━━━━━━━━━━━━━━━━\nSelect options below:`,
+                `✏️ Editing Reminder: "<b>${escapeHTML(r.text)}</b>"\n━━━━━━━━━━━━━━━━━━\nSelect options below:`,
                 getEditMenuKeyboard(
                   reminderId,
                   r.recurring,
@@ -1382,8 +1382,8 @@ app.post("/webhook", async (req, res) => {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   inline_message_id: iMsgId,
-                  text: "📝 *Edit menu sent to your DM!*",
-                  parse_mode: "MarkdownV2",
+                  text: "📝 <i>Edit menu sent to your DM!</i>",
+                  parse_mode: "HTML",
                 }),
               },
             );
@@ -1429,7 +1429,7 @@ app.post("/webhook", async (req, res) => {
                   inline_message_id: iMsgId,
                   text: dashData.text,
                   reply_markup: dashData.keyboard,
-                  parse_mode: "MarkdownV2",
+                  parse_mode: "HTML",
                 }),
               },
             );
@@ -1459,7 +1459,7 @@ app.post("/webhook", async (req, res) => {
           await editTelegramMessage(
             chatId,
             messageId,
-            `✏️ **Editing Reminder**\n━━━━━━━━━━━━━━━━━━\nSelect options below:`,
+            `✏️ <b>Editing Reminder</b>\n━━━━━━━━━━━━━━━━━━\nSelect options below:`,
             getEditMenuKeyboard(
               reminderId,
               r.recurring,
@@ -1474,7 +1474,7 @@ app.post("/webhook", async (req, res) => {
         await editTelegramMessage(
           chatId,
           messageId,
-          `⚡ **How many minutes early should the warning be?**\n*Example: 15, 45, 120*\n━━━━━━━━━━━━━━━━━━`,
+          `⚡ <b>How many minutes early should the warning be?</b>\n<i>Example: 15, 45, 120</i>\n━━━━━━━━━━━━━━━━━━`,
           {
             inline_keyboard: [
               [{ text: "⬅️ Cancel", callback_data: `edit:${reminderId}` }],
@@ -1488,7 +1488,7 @@ app.post("/webhook", async (req, res) => {
         await editTelegramMessage(
           chatId,
           messageId,
-          `📝 **Please type the new note/text for this reminder:**\n━━━━━━━━━━━━━━━━━━`,
+          `📝 <b>Please type the new note/text for this reminder:</b>\n━━━━━━━━━━━━━━━━━━`,
           {
             inline_keyboard: [
               [{ text: "⬅️ Cancel", callback_data: `edit:${reminderId}` }],
@@ -1502,7 +1502,7 @@ app.post("/webhook", async (req, res) => {
         await editTelegramMessage(
           chatId,
           messageId,
-          `🕒 **Please type the new time/date for this reminder:**\n*Example: tomorrow at 8am, 2h, or Aug 12 5pm*\n━━━━━━━━━━━━━━━━━━`,
+          `🕒 <b>Please type the new time/date for this reminder:</b>\n<i>Example: tomorrow at 8am, 2h, or Aug 12 5pm</i>\n━━━━━━━━━━━━━━━━━━`,
           {
             inline_keyboard: [
               [{ text: "⬅️ Cancel", callback_data: `edit:${reminderId}` }],
@@ -1521,7 +1521,7 @@ app.post("/webhook", async (req, res) => {
           await editTelegramMessage(
             chatId,
             messageId,
-            `📅 **Select specific days to repeat:**\n━━━━━━━━━━━━━━━━━━`,
+            `📅 <b>Select specific days to repeat:</b>\n━━━━━━━━━━━━━━━━━━`,
             getDowMenuKeyboard(reminderId, result.rows[0].recurring),
           );
         }
@@ -1554,7 +1554,7 @@ app.post("/webhook", async (req, res) => {
           await editTelegramMessage(
             chatId,
             messageId,
-            `📅 **Select specific days to repeat:**\n━━━━━━━━━━━━━━━━━━`,
+            `📅 <b>Select specific days to repeat:</b>\n━━━━━━━━━━━━━━━━━━`,
             getDowMenuKeyboard(reminderId, newRec),
           );
         }
@@ -1564,7 +1564,7 @@ app.post("/webhook", async (req, res) => {
         await editTelegramMessage(
           chatId,
           messageId,
-          `⚙️ **Select Custom Interval Unit:**\n━━━━━━━━━━━━━━━━━━`,
+          `⚙️ <b>Select Custom Interval Unit:</b>\n━━━━━━━━━━━━━━━━━━`,
           getUnitMenuKeyboard(reminderId),
         );
       } else if (data.startsWith("nummenu:")) {
@@ -1573,7 +1573,7 @@ app.post("/webhook", async (req, res) => {
         await editTelegramMessage(
           chatId,
           messageId,
-          `⚙️ **Select Every How Many ${unit.toUpperCase()}:**\n━━━━━━━━━━━━━━━━━━`,
+          `⚙️ <b>Select Every How Many ${unit.toUpperCase()}:</b>\n━━━━━━━━━━━━━━━━━━`,
           getNumberMenuKeyboard(reminderId, unit),
         );
       } else if (data.startsWith("prompt_rec:")) {
@@ -1582,7 +1582,7 @@ app.post("/webhook", async (req, res) => {
         await editTelegramMessage(
           chatId,
           messageId,
-          `⚙️ **Enter custom repeat interval in ${unit.toUpperCase()}:**\n*Example: 56, 72, 100*\n━━━━━━━━━━━━━━━━━━`,
+          `⚙️ <b>Enter custom repeat interval in ${unit.toUpperCase()}:</b>\n<i>Example: 56, 72, 100</i>\n━━━━━━━━━━━━━━━━━━`,
           {
             inline_keyboard: [
               [
@@ -1606,7 +1606,7 @@ app.post("/webhook", async (req, res) => {
           await editTelegramMessage(
             chatId,
             messageId,
-            `🔁 **Select How Many Times to Repeat:**\n━━━━━━━━━━━━━━━━━━`,
+            `🔁 <b>Select How Many Times to Repeat:</b>\n━━━━━━━━━━━━━━━━━━`,
             getLimitMenuKeyboard(reminderId, result.rows[0].total_occurrences),
           );
         }
@@ -1632,7 +1632,7 @@ app.post("/webhook", async (req, res) => {
         await editTelegramMessage(
           chatId,
           messageId,
-          `✏️ **Editing Reminder**\n━━━━━━━━━━━━━━━━━━\nSelect options below:`,
+          `✏️ <b>Editing Reminder</b>\n━━━━━━━━━━━━━━━━━━\nSelect options below:`,
           getEditMenuKeyboard(
             reminderId,
             recurringVal,
@@ -1662,7 +1662,7 @@ app.post("/webhook", async (req, res) => {
         await editTelegramMessage(
           chatId,
           messageId,
-          `✏️ **Editing Reminder**\n━━━━━━━━━━━━━━━━━━\nSelect options below:`,
+          `✏️ <b>Editing Reminder</b>\n━━━━━━━━━━━━━━━━━━\nSelect options below:`,
           getEditMenuKeyboard(
             reminderId,
             result.rows[0].recurring,
@@ -1692,8 +1692,8 @@ app.post("/webhook", async (req, res) => {
             thumb_height: 72,
             input_message_content: {
               message_text:
-                "💻 **\\[INIT\\_DM\\] Establishing encrypted tunnel\\.\\.\\.**",
-              parse_mode: "MarkdownV2",
+                "💻 <b>[INIT_DM] Establishing encrypted tunnel...</b>",
+              parse_mode: "HTML",
             },
             reply_markup: {
               inline_keyboard: [
@@ -1709,8 +1709,8 @@ app.post("/webhook", async (req, res) => {
             thumbnail_url:
               "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f3.png",
             input_message_content: {
-              message_text: "📋 **Fetching active reminders\\.\\.\\.**",
-              parse_mode: "MarkdownV2",
+              message_text: "📋 <b>Fetching active reminders\.\.\.</b>",
+              parse_mode: "HTML",
             },
             reply_markup: {
               inline_keyboard: [
@@ -1745,8 +1745,8 @@ app.post("/webhook", async (req, res) => {
                 "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f0.png",
               description: `Scheduled for: ${dt.toFormat("EEEE, MMM d, yyyy 'at' h:mm a")}`,
               input_message_content: {
-                message_text: `⏳ **Creating reminder\\.\\.\\.**`,
-                parse_mode: "MarkdownV2",
+                message_text: `⏳ <b>Creating reminder\.\.\.</b>`,
+                parse_mode: "HTML",
               },
               reply_markup: {
                 inline_keyboard: [
@@ -1762,8 +1762,8 @@ app.post("/webhook", async (req, res) => {
               description: "Time must be >= 1 min.",
               input_message_content: {
                 message_text:
-                  "❌ **Reminders must be set for at least 1 minute from now\\.**",
-                parse_mode: "MarkdownV2",
+                  "❌ <b>Reminders must be set for at least 1 minute from now\.</b>",
+                parse_mode: "HTML",
               },
             });
           }
@@ -1818,8 +1818,8 @@ app.post("/webhook", async (req, res) => {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   inline_message_id: iMsgId,
-                  text: "❌ **I could not parse that reminder time. Please try again.**",
-                  parse_mode: "MarkdownV2",
+                  text: "❌ <b>I could not parse that reminder time. Please try again.</b>",
+                  parse_mode: "HTML",
                 }),
               },
             );
@@ -1833,7 +1833,7 @@ app.post("/webhook", async (req, res) => {
           if (parsed.wantRepeatMenu) {
             await sendOrUpdateDashboard(
               userId,
-              `📝 Editing Reminder: "**${escapeMarkdownV2(parsed.reminderText)}**"\n━━━━━━━━━━━━━━━━━━\nSelect options below:`,
+              `📝 Editing Reminder: "<b>${escapeHTML(parsed.reminderText)}</b>"\n━━━━━━━━━━━━━━━━━━\nSelect options below:`,
               getEditMenuKeyboard(insertRes.rows[0].id, null, null),
             );
           }
@@ -1853,8 +1853,8 @@ app.post("/webhook", async (req, res) => {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   inline_message_id: iMsgId,
-                  text: `✅ **Reminder set!**\n📝 *${escapeMarkdownV2(parsed.reminderText)}*\n⏰ ${formattedTime}`,
-                  parse_mode: "MarkdownV2",
+                  text: `✅ <b>Reminder set!</b>\n📝 <i>${escapeHTML(parsed.reminderText)}</i>\n⏰ ${formattedTime}`,
+                  parse_mode: "HTML",
                 }),
               },
             );
@@ -1874,8 +1874,8 @@ app.post("/webhook", async (req, res) => {
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({
                         inline_message_id: iMsgId,
-                        text: `✅ **Reminder Created for ${userFirstName || "you"}!**`,
-                        parse_mode: "MarkdownV2",
+                        text: `✅ <b>Reminder Created for ${userFirstName || "you"}!</b>`,
+                        parse_mode: "HTML",
                       }),
                     },
                   );
@@ -1908,8 +1908,8 @@ app.post("/webhook", async (req, res) => {
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
                     inline_message_id: iMsgId,
-                    text: `✅ **Reminders sent to your DM\\!**\n\n> ||${escapeMarkdownV2(dashData.text)}||`,
-                    parse_mode: "MarkdownV2",
+                    text: `✅ <b>Reminders sent to your DM!</b>\n\n<blockquote><tg-spoiler>${escapeHTML(dashData.text)}</tg-spoiler></blockquote>`,
+                    parse_mode: "HTML",
                   }),
                 },
               );
@@ -1936,7 +1936,7 @@ app.post("/webhook", async (req, res) => {
                 inline_message_id: iMsgId,
                 text: dashData.text,
                 reply_markup: dashData.keyboard,
-                parse_mode: "MarkdownV2",
+                parse_mode: "HTML",
               }),
             },
           );
@@ -1958,8 +1958,8 @@ app.post("/webhook", async (req, res) => {
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                       inline_message_id: iMsgId,
-                      text: `✅ **${escapeMarkdownV2(shortSummary)}**\n\n> ||${escapeMarkdownV2(dashData.text.replace(/^.*\n/, ""))}||`,
-                      parse_mode: "MarkdownV2",
+                      text: `✅ <b>${escapeHTML(shortSummary)}</b>\n\n<blockquote><tg-spoiler>${escapeHTML(dashData.text.replace(/^.*\n/, ""))}</tg-spoiler></blockquote>`,
+                      parse_mode: "HTML",
                     }),
                   },
                 );

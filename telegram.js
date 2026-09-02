@@ -32,13 +32,16 @@ function convertInlineKeyboardToRichBlocks(keyboard) {
   }));
 }
 
+const escapeHTML = (str) =>
+  String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
 async function sendTelegramMessage(
   chatId,
   text,
   replyMarkup = null,
   autoDeleteMs = null,
 ) {
-  const payload = { chat_id: chatId, text, parse_mode: "MarkdownV2" };
+  const payload = { chat_id: chatId, text, parse_mode: "HTML" };
   if (replyMarkup) payload.reply_markup = replyMarkup;
   try {
     const res = await fetchWithTimeout(
@@ -77,7 +80,7 @@ async function editTelegramMessage(
     chat_id: chatId,
     message_id: messageId,
     text,
-    parse_mode: "MarkdownV2",
+    parse_mode: "HTML",
   };
   if (replyMarkup !== undefined) payload.reply_markup = replyMarkup;
   try {
