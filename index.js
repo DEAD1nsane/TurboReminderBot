@@ -13,6 +13,7 @@ const {
   getNumberMenuKeyboard,
   getLimitMenuKeyboard,
   getDowMenuKeyboard,
+  buildCalendar,
 } = require("./keyboards");
 const {
   sendTelegramMessage,
@@ -328,6 +329,7 @@ setEphemeralGroupCommands([
   { command: "start", description: "Open your private reminder dashboard" },
   { command: "remind", description: "Create a reminder privately" },
   { command: "reminders", description: "View and manage your reminders" },
+  { command: "calendar", description: "View reminders in calendar" },
   { command: "help", description: "Show reminder help" },
   { command: "cancel", description: "Cancel the current operation" },
 ]).then((result) => {
@@ -587,6 +589,37 @@ function calculateNextOccurrence(currentDate, recurringStr, timeZone) {
   return dt.toJSDate();
 }
 
+async function detectTimezoneFromLocation(lat, lon) {
+  try {
+    const res = await fetchWithTimeout(
+      `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`,
+      { timeout: 5000 }
+    );
+    if (res.ok) {
+      const data = await res.json();
+      return data.timeZone?.id || null;
+    }
+  } catch (err) {
+    console.error("[TZ_DETECT] Error:", err);
+  }
+  return null;
+}
+
+async function getRemindersForMonth(userId, year, month) {
+  const start = DateTime.local(year, month, 1).startOf('month').toJSDate();
+  const end = DateTime.local(year, month, 1).endOf('month').toJSDate();
+  const res = await pool.query(
+    "SELECT EXTRACT(DAY FROM remind_at AT TIME ZONE COALESCE((SELECT timezone FROM user_settings WHERE user_id = $1), 'America/Chicago')) AS day FROM reminders WHERE user_id = $1 AND sent = FALSE AND remind_at >= $2 AND remind_at <= $3",
+    [userId, start, end]
+  );
+  const dayMap = {};
+  for (const row of res.rows) {
+    const d = parseInt(row.day, 10);
+    if (d) dayMap[d] = (dayMap[d] || 0) + 1;
+  }
+  return dayMap;
+}
+
 function parseFlexibleDate(text, timeZone) {
   let clean = text.trim().replace(/^reminder\s*/i, "");
   const cleanNoEmoji = clean
@@ -740,6 +773,9 @@ async function getRemindersDashboardData(userId, userTz, passedName = null) {
         richDivider(),
         richButtons([
           richButton("➕ Create Reminder", "wizard_new", "success"),
+          richButton("📅 Calendar", "menu:calendar", "primary"),
+        ]),
+        richButtons([
           richButton("✖️ Close", "surface_close", "danger"),
         ]),
       ]);
@@ -772,6 +808,9 @@ async function getRemindersDashboardData(userId, userTz, passedName = null) {
       richDivider(),
       richButtons([
         richButton("➕ New Reminder", "wizard_new", "success"),
+        richButton("📅 Calendar", "menu:calendar", "primary"),
+      ]),
+      richButtons([
         richButton("✖️ Close", "surface_close", "danger"),
       ]),
     ]);
@@ -901,16 +940,47 @@ app.post("/webhook", async (req, res) => {
         await removeUserInput(message, userId);
         if (state.step === 1) {
           state.title = text;
-          state.step = 2;
-          wizardState.set(userId, state);
-          await editRichSurface(state.surface, buildRichMessage([
-            richHeading("⏰ When should this remind you?", 1),
-            richParagraph("Examples:\n• tomorrow 5pm\n• in 2 hours 30 minutes\n• Aug 12 8am\n• daily 9am (with repeat)"),
-            richDivider(),
-            richButtons([
-              richButton("❌ Cancel", "wizard_cancel", "danger"),
-            ]),
-          ]));
+          if (state.prefillDate) {
+            const prefillDt = DateTime.fromJSDate(state.prefillDate).setZone("America/Chicago").set({ hour: 9, minute: 0, second: 0 });
+            if (prefillDt <= DateTime.now().setZone("America/Chicago")) {
+              prefillDt.plus({ days: 1 });
+            }
+            state.time = {
+              dt: prefillDt,
+              date: prefillDt.toJSDate(),
+              text: text,
+              reminderText: text,
+            };
+            state.step = 3;
+            wizardState.set(userId, state);
+            await editRichSurface(state.surface, buildRichMessage([
+              richHeading("🔄 How often should it repeat?", 1),
+              richDivider(),
+              richButtons([
+                richButton("None", "wizard_repeat:none", "primary"),
+                richButton("Daily", "wizard_repeat:daily:1", "primary"),
+                richButton("Weekly", "wizard_repeat:weekly:1", "primary"),
+              ]),
+              richButtons([
+                richButton("Monthly", "wizard_repeat:monthly:1", "primary"),
+                richButton("Every X Hours/Minutes", "wizard_repeat:smart", "link"),
+              ]),
+              richButtons([
+                richButton("❌ Cancel", "wizard_cancel", "danger"),
+              ]),
+            ]));
+          } else {
+            state.step = 2;
+            wizardState.set(userId, state);
+            await editRichSurface(state.surface, buildRichMessage([
+              richHeading("⏰ When should this remind you?", 1),
+              richParagraph("Examples:\n• tomorrow 5pm\n• in 2 hours 30 minutes\n• Aug 12 8am\n• daily 9am (with repeat)"),
+              richDivider(),
+              richButtons([
+                richButton("❌ Cancel", "wizard_cancel", "danger"),
+              ]),
+            ]));
+          }
           return res.sendStatus(200);
         } else if (state.step === 2) {
           const userTz2 = await getUserTimezone(userId);
@@ -1230,6 +1300,7 @@ app.post("/webhook", async (req, res) => {
           richParagraph("/start — Welcome message + timezone selection"),
           richParagraph("/remind — Create a reminder step-by-step"),
           richParagraph("/reminders — Show your active reminders"),
+          richParagraph("/calendar — View reminders in calendar"),
           richDivider(),
           richParagraph("Or just type a natural reminder like:\nreminder tomorrow 5pm buy milk"),
         ]);
@@ -1254,6 +1325,43 @@ app.post("/webhook", async (req, res) => {
             userId,
             "✅ Operation cancelled\\. No changes were saved\\.",
             null,
+          );
+        }
+        await removeUserInput(message, userId);
+        return res.sendStatus(200);
+      } else if (text.toLowerCase() === "/calendar" || text.toLowerCase() === "calendar") {
+        const calUserTz = await getUserTimezone(userId);
+        const now = DateTime.now().setZone(calUserTz || "America/Chicago");
+        const remindersOnDay = await getRemindersForMonth(userId, now.year, now.month);
+        const cal = buildCalendar(now.year, now.month, remindersOnDay);
+        const calRich = buildRichMessage([
+          richHeading(`📅 ${cal.monthName}`, 1),
+          richParagraph("Tap a day to see reminders:"),
+          richDivider(),
+        ]);
+        const surface = await beginRichSurface(message, userId, calRich, cal.keyboard);
+        if (surface) await removeUserInput(message, userId);
+        return res.sendStatus(200);
+      }
+
+      if (message.location) {
+        const { latitude, longitude } = message.location;
+        const detectedTz = await detectTimezoneFromLocation(latitude, longitude);
+        if (detectedTz) {
+          await setUserTimezone(userId, detectedTz);
+          await sendTelegramMessage(
+            userId,
+            `✅ Timezone auto-detected: *${detectedTz}*`,
+            null,
+            5000
+          );
+          const dashData = await getRemindersDashboardData(userId, detectedTz, userFirstName);
+          await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard, null, dashData.richMessage);
+        } else {
+          await sendTelegramMessage(
+            userId,
+            "⚠️ Could not detect timezone from that location. Please select manually:",
+            getTimezonePickerKeyboard()
           );
         }
         await removeUserInput(message, userId);
@@ -1527,6 +1635,112 @@ app.post("/webhook", async (req, res) => {
             ]),
           ]),
         );
+      } else if (data === "tz_detect") {
+        await answerCallbackQuery(callbackQuery.id, "📍 Share your location to auto-detect timezone", false);
+        await editRichCallbackSurface(buildRichMessage([
+          richHeading("📍 Share Your Location", 1),
+          richParagraph("Tap the button below to share your location, and I'll auto-detect your timezone."),
+          richDivider(),
+          richButtons([
+            richButton("📍 Send Location", "tz_send_loc", "primary"),
+          ]),
+          richButtons([
+            richButton("⬅️ Back", "menu:list", "link"),
+          ]),
+        ]));
+      } else if (data === "tz_send_loc") {
+        await answerCallbackQuery(callbackQuery.id);
+        await editRichCallbackSurface(buildRichMessage([
+          richHeading("📍 Share Your Location", 1),
+          richParagraph("Use the attachment menu (📎) to share your location with the bot."),
+          richDivider(),
+          richButtons([
+            richButton("⬅️ Back", "menu:list", "link"),
+          ]),
+        ]));
+      } else if (data.startsWith("calprev:") || data.startsWith("calnext:")) {
+        await answerCallbackQuery(callbackQuery.id);
+        const parts = data.split(":");
+        const calYear = parseInt(parts[1], 10);
+        const calMonth = parseInt(parts[2], 10);
+        const remindersOnDay = await getRemindersForMonth(userId, calYear, calMonth);
+        const cal = buildCalendar(calYear, calMonth, remindersOnDay);
+        await editRichCallbackSurface(buildRichMessage([
+          richHeading(`📅 ${cal.monthName}`, 1),
+          richParagraph("Tap a day to see reminders:"),
+          richDivider(),
+        ]), cal.keyboard);
+      } else if (data.startsWith("calday:")) {
+        await answerCallbackQuery(callbackQuery.id);
+        const dateKey = data.replace("calday:", "");
+        const [calYear, calMonth, calDay] = dateKey.split("-").map(Number);
+        const dayStart = DateTime.local(calYear, calMonth, calDay).startOf("day").toJSDate();
+        const dayEnd = DateTime.local(calYear, calMonth, calDay).endOf("day").toJSDate();
+        const res = await pool.query(
+          "SELECT id, text, remind_at, recurring FROM reminders WHERE user_id = $1 AND sent = FALSE AND remind_at >= $2 AND remind_at < $3 ORDER BY remind_at ASC",
+          [userId, dayStart, dayEnd]
+        );
+        const dateLabel = DateTime.local(calYear, calMonth, calDay).toFormat("EEEE, MMM d");
+        if (res.rows.length === 0) {
+          await editRichCallbackSurface(buildRichMessage([
+            richHeading(`📅 ${dateLabel}`, 1),
+            richParagraph("No reminders scheduled for this day."),
+            richDivider(),
+            richButtons([
+              richButton("➕ Add Reminder", `caladd:${dateKey}`, "success"),
+              richButton("⬅️ Back to Calendar", `calback:${calYear}:${calMonth}`, "link"),
+            ]),
+          ]));
+        } else {
+          const blocks = [
+            richHeading(`📅 ${dateLabel}`, 1),
+            richParagraph(`${res.rows.length} reminder(s):`),
+            richDivider(),
+          ];
+          for (const r of res.rows) {
+            const time = DateTime.fromJSDate(new Date(r.remind_at)).setZone(userTz || "America/Chicago").toFormat("h:mm a");
+            blocks.push(richButtons([
+              richButton(`${time} - ${r.text}`, `view:${r.id}`, "link"),
+            ]));
+          }
+          blocks.push(richDivider());
+          blocks.push(richButtons([
+            richButton("➕ Add Reminder", `caladd:${dateKey}`, "success"),
+            richButton("⬅️ Back to Calendar", `calback:${calYear}:${calMonth}`, "link"),
+          ]));
+          await editRichCallbackSurface(buildRichMessage(blocks));
+        }
+      } else if (data.startsWith("calback:")) {
+        await answerCallbackQuery(callbackQuery.id);
+        const parts = data.split(":");
+        const calYear = parseInt(parts[1], 10);
+        const calMonth = parseInt(parts[2], 10);
+        const remindersOnDay = await getRemindersForMonth(userId, calYear, calMonth);
+        const cal = buildCalendar(calYear, calMonth, remindersOnDay);
+        await editRichCallbackSurface(buildRichMessage([
+          richHeading(`📅 ${cal.monthName}`, 1),
+          richParagraph("Tap a day to see reminders:"),
+          richDivider(),
+        ]), cal.keyboard);
+      } else if (data.startsWith("caladd:")) {
+        await answerCallbackQuery(callbackQuery.id);
+        const dateKey = data.replace("caladd:", "");
+        const [calYear, calMonth, calDay] = dateKey.split("-").map(Number);
+        const dateLabel = DateTime.local(calYear, calMonth, calDay).toFormat("EEEE, MMM d");
+        wizardState.set(userId, {
+          step: 1,
+          surface: callbackSurface,
+          originalChatId: isGroupChat(callbackQuery.message?.chat) ? userId : chatId,
+          prefillDate: DateTime.local(calYear, calMonth, calDay),
+        });
+        await editRichCallbackSurface(buildRichMessage([
+          richHeading("📝 What's the reminder title?", 1),
+          richParagraph(`Adding a reminder for ${dateLabel}`),
+          richDivider(),
+          richButtons([
+            richButton("❌ Cancel", `calday:${dateKey}`, "danger"),
+          ]),
+        ]));
       } else if (data.startsWith("settz:")) {
         const tz = data.replace("settz:", "");
         await setUserTimezone(userId, tz);
@@ -1561,6 +1775,16 @@ app.post("/webhook", async (req, res) => {
         } else {
           await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard, null, dashData.richMessage);
         }
+      } else if (data === "menu:calendar") {
+        await answerCallbackQuery(callbackQuery.id);
+        const now = DateTime.now().setZone(userTz || "America/Chicago");
+        const remindersOnDay = await getRemindersForMonth(userId, now.year, now.month);
+        const cal = buildCalendar(now.year, now.month, remindersOnDay);
+        await editRichCallbackSurface(buildRichMessage([
+          richHeading(`📅 ${cal.monthName}`, 1),
+          richParagraph("Tap a day to see reminders:"),
+          richDivider(),
+        ]), cal.keyboard);
       } else if (data.startsWith("del:")) {
         const reminderId = data.replace("del:", "");
         await answerCallbackQuery(
