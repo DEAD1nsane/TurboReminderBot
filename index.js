@@ -2015,25 +2015,26 @@ app.post("/webhook", async (req, res) => {
             );
             resetMenuTimer(`inline_${callbackQuery.inline_message_id}`, async () => {
               try {
-                const reminderRows = (await getRemindersDashboardData(userId, userTz, userFirstName))
-                  .richMessage.blocks.filter(
-                    b => b.type === "buttons" && b.buttons?.some(btn => btn.callback_data?.startsWith("view:"))
-                  );
-                const summaryText = reminderRows.length === 1
-                  ? "1 active reminder"
-                  : `${reminderRows.length} active reminders`;
-                const collapsedRich = buildRichMessage([
-                  richHeading("📋 Active Reminders", 2),
-                  richDetails(summaryText, [
-                    ...reminderRows,
-                    richDivider(),
-                    richButtons([
-                      richButton("➕ New Reminder", "wizard_new", "success"),
-                      richButton("✖️ Close", "surface_close", "danger"),
-                    ]),
-                  ], false),
-                ]);
-                await editInlineRichMessage(callbackQuery.inline_message_id, collapsedRich);
+                const dashData = await getRemindersDashboardData(userId, userTz, userFirstName);
+                const reminderRows = dashData.richMessage.blocks.filter(
+                  b => b.type === "buttons" && b.buttons?.some(btn => btn.callback_data?.startsWith("view:"))
+                );
+                const count = reminderRows.length;
+                const summaryText = count === 1 ? "1 active reminder" : `${count} active reminders`;
+                const lines = reminderRows.map(b => {
+                  const btn = b.buttons.find(btn => btn.callback_data?.startsWith("view:"));
+                  return btn ? btn.text.replace(/^⏰ |^📅 /, "").replace(/ \\(.+\\)$/, "") : "";
+                }).filter(Boolean);
+                const collapsedText = `📋 **Active Reminders**\n${lines.length > 0 ? lines.map(l => `• ${escapeMarkdownV2(l)}`).join("\\n") : "No reminders"}\n\n_${summaryText}_`;
+                await editInlineMessage(
+                  callbackQuery.inline_message_id,
+                  collapsedText,
+                  {
+                    inline_keyboard: [
+                      [{ text: "📋 View Reminders", callback_data: "menu:list" }],
+                    ],
+                  },
+                );
               } catch (err) {
                 console.error("Failed to collapse inline details:", err);
               }
