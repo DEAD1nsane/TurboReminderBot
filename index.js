@@ -149,9 +149,10 @@ const isGroupChat = (chat) =>
 // keyboard is created. Ephemeral surfaces opt in from their first frame so
 // typed answers stay private in the group.
 function withPrivateReply(markup) {
+  if (markup && markup.inline_keyboard) return markup;
   return {
-    ...(markup || { inline_keyboard: [] }),
     force_reply: true,
+    ...(markup || {}),
   };
 }
 
@@ -197,11 +198,17 @@ async function editSurface(surface, text, markup = null) {
 }
 
 async function editRichSurface(surface, richMessage, markup = null) {
-  if (!surface) return false;
+  if (!surface) {
+    console.log("[EDIT_RICH] surface is null, returning false");
+    return false;
+  }
+  console.log("[EDIT_RICH] surface:", JSON.stringify({ephemeral: surface.ephemeral, chatId: surface.chatId, messageId: surface.messageId}));
   if (!isRichMessageSupported()) {
+    console.log("[EDIT_RICH] rich not supported, falling back to editSurface");
     return editSurface(surface, richMessage.markdown || richMessage.html || "", markup);
   }
   if (surface.ephemeral) {
+    console.log("[EDIT_RICH] editing ephemeral message");
     return editRichEphemeralMessage(
       surface.chatId,
       surface.receiverUserId,
@@ -210,6 +217,7 @@ async function editRichSurface(surface, richMessage, markup = null) {
       withPrivateReply(markup),
     );
   }
+  console.log("[EDIT_RICH] editing regular message");
   return editRichMessage(
     surface.chatId,
     surface.messageId,
@@ -867,7 +875,7 @@ async function sendOrUpdateDashboard(
 
   let newMsg = null;
   if (richMessage && isRichMessageSupported()) {
-    newMsg = await sendRichMessage(userId, richMessage, markup);
+    newMsg = await sendRichMessage(userId, richMessage, null);
   }
   if (!newMsg) {
     newMsg = await sendTelegramMessage(userId, text, markup);
@@ -1432,22 +1440,7 @@ app.post("/webhook", async (req, res) => {
 
       const inlineMsgId = callbackQuery.inline_message_id;
       console.log("[CALLBACK] data:", data, "inlineMsgId:", inlineMsgId, "hasMessage:", !!callbackQuery.message);
-      if (inlineMsgId && data !== "surface_close") {
-        resetMenuTimer(`inline_${inlineMsgId}`, async () => {
-          await fetchWithTimeout(
-            `https://api.telegram.org/bot${TOKEN}/editMessageText`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                inline_message_id: inlineMsgId,
-                text: "✅ **Action completed\\.**",
-                parse_mode: "MarkdownV2",
-              }),
-            },
-          );
-        });
-      } else if (messageId && chatId) {
+      if (messageId && chatId) {
         resetMenuTimer(`dm_dashboard_${userId}`, async () => {
           await deleteTelegramMessage(chatId, messageId);
           await setActiveMenuMsgId(userId, null);
@@ -1461,11 +1454,10 @@ app.post("/webhook", async (req, res) => {
       }
 
       if (data === "wizard_new") {
-        await answerCallbackQuery(callbackQuery.id);
+        await answerCallbackQuery(callbackQuery.id, "Opening reminder wizard in your DMs...", false);
         let surface = callbackSurface;
         if (!surface && inlineMsgId) {
-          const sent = await sendRichEphemeralMessage(
-            chatId,
+          const sent = await sendRichMessage(
             userId,
             buildRichMessage([
               richHeading("📝 What's the reminder title?", 1),
@@ -1475,7 +1467,6 @@ app.post("/webhook", async (req, res) => {
                 richButton("❌ Cancel", "wizard_cancel", "danger"),
               ]),
             ]),
-            { replaceCallbackQueryMessage: true },
           );
           if (sent) {
             surface = surfaceFromTelegramMessage(sent, userId);
@@ -1523,7 +1514,7 @@ app.post("/webhook", async (req, res) => {
           console.log("[CLOSE] editing inline message:", callbackQuery.inline_message_id);
           const closeResult = await editInlineMessage(
             callbackQuery.inline_message_id,
-            "✅ **Closed\\.**",
+            "✅ Closed.",
           );
           console.log("[CLOSE] edit result:", closeResult);
         } else {
@@ -1800,8 +1791,10 @@ app.post("/webhook", async (req, res) => {
         pendingEditSurfaces.delete(userId);
         if (callbackSurface) {
           await editRichCallbackSurface(dashData.richMessage);
+        } else if (inlineMsgId) {
+          await editInlineRichMessage(inlineMsgId, dashData.richMessage);
         } else {
-          await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard, null, dashData.richMessage);
+          await sendOrUpdateDashboard(userId, dashData.text, null, null, dashData.richMessage);
         }
       } else if (data === "menu:calendar") {
         await answerCallbackQuery(callbackQuery.id);
@@ -1979,6 +1972,7 @@ app.post("/webhook", async (req, res) => {
           false,
         );
         const iMsgId = callbackQuery.inline_message_id;
+        console.log("[EDIT] reminderId:", reminderId, "iMsgId:", iMsgId, "callbackSurface:", !!callbackSurface, "hasMessage:", !!callbackQuery.message);
 
         if (!iMsgId) {
           await answerCallbackQuery(callbackQuery.id);
@@ -1988,6 +1982,7 @@ app.post("/webhook", async (req, res) => {
           );
           if (result.rows.length > 0) {
             const r = result.rows[0];
+            console.log("[EDIT] DM path - calling editRichCallbackSurface");
             await editRichCallbackSurface(
               buildEditMenuRich(reminderId, r.recurring, r.total_occurrences, r.early_offset),
             );
@@ -2614,27 +2609,55 @@ app.post("/webhook", async (req, res) => {
           userTz,
           userFirstName,
         );
-        await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard, null, dashData.richMessage);
 
         if (iMsgId) {
-          setTimeout(async () => {
-            try {
-              await fetchWithTimeout(
-                `https://api.telegram.org/bot${TOKEN}/editMessageText`,
-                {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    inline_message_id: iMsgId,
-                    text: `✅ **Reminders sent to your DM\\!**\n\n> ||${escapeMarkdownV2(dashData.text)}||`,
-                    parse_mode: "MarkdownV2",
-                  }),
-                },
-              );
-            } catch (err) {
-              console.error("Failed to collapse inline DM message:", err);
-            }
-          }, 10000);
+          const editRes = await fetchWithTimeout(
+            `https://api.telegram.org/bot${TOKEN}/editMessageText`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                inline_message_id: iMsgId,
+                text: dashData.text,
+                reply_markup: dashData.keyboard,
+                parse_mode: "MarkdownV2",
+              }),
+            },
+          );
+
+          if (!editRes.ok) {
+            console.error(
+              "Failed to populate inline DM reminders:",
+              await editRes.text(),
+            );
+          } else {
+            resetMenuTimer(`inline_${iMsgId}`, async () => {
+              try {
+                const reminderRows = dashData.richMessage.blocks.filter(
+                  b => b.type === "buttons" && b.buttons?.some(btn => btn.callback_data?.startsWith("view:"))
+                );
+                const summaryText = reminderRows.length === 1
+                  ? "1 active reminder"
+                  : `${reminderRows.length} active reminders`;
+                const collapsedRich = buildRichMessage([
+                  richHeading("📋 Active Reminders", 2),
+                  richDetails(summaryText, [
+                    ...reminderRows,
+                    richDivider(),
+                    richButtons([
+                      richButton("➕ New Reminder", "wizard_new", "success"),
+                      richButton("✖️ Close", "surface_close", "danger"),
+                    ]),
+                  ], false),
+                ]);
+                await editInlineRichMessage(iMsgId, collapsedRich);
+              } catch (err) {
+                console.error("Failed to collapse inline DM reminders:", err);
+              }
+            });
+          }
+        } else {
+          await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard, null, dashData.richMessage);
         }
       } else if (selectedResultId === "show_reminders_inline_v6") {
         const userTz = (await getUserTimezone(userId)) || "America/Chicago";

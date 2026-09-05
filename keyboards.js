@@ -31,39 +31,62 @@ function buildCalendar(year, month, remindersOnDay = {}) {
     const monthName = firstDay.toFormat('MMMM yyyy');
     const header = `📅 ${monthName}`;
 
-    const dayLabels = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
+    const prevMonth = month === 1 ? 12 : month - 1;
+    const prevYear = month === 1 ? year - 1 : year;
+    const nextMonth = month === 12 ? 1 : month + 1;
+    const nextYear = month === 12 ? year + 1 : year;
 
-    let cells = [];
+    const rows = [];
+
+    rows.push([
+        { text: `◀️ ${DateTime.local(prevYear, prevMonth, 1).toFormat('MMM')}`, callback_data: `calprev:${prevYear}:${prevMonth}` },
+        { text: header, callback_data: 'noop' },
+        { text: `${DateTime.local(nextYear, nextMonth, 1).toFormat('MMM')} ▶️`, callback_data: `calnext:${nextYear}:${nextMonth}` },
+    ]);
+
+    rows.push([
+        { text: 'Mo', callback_data: 'noop' },
+        { text: 'Tu', callback_data: 'noop' },
+        { text: 'We', callback_data: 'noop' },
+        { text: 'Th', callback_data: 'noop' },
+        { text: 'Fr', callback_data: 'noop' },
+        { text: 'Sa', callback_data: 'noop' },
+        { text: 'Su', callback_data: 'noop' },
+    ]);
+
+    let row = [];
     for (let i = 0; i < startWeekday; i++) {
-        cells.push([{ text: ' ', callback_data: 'noop' }]);
+        row.push({ text: ' ', callback_data: 'noop' });
     }
 
     for (let day = 1; day <= daysInMonth; day++) {
         const dateKey = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const hasReminders = remindersOnDay[day];
         const label = hasReminders ? `📅${day}` : `${day}`;
-        cells.push([{ text: label, callback_data: `calday:${dateKey}` }]);
+        row.push({ text: label, callback_data: `calday:${dateKey}` });
+        if (row.length === 7) {
+            rows.push(row);
+            row = [];
+        }
     }
 
-    const prevMonth = month === 1 ? 12 : month - 1;
-    const prevYear = month === 1 ? year - 1 : year;
-    const nextMonth = month === 12 ? 1 : month + 1;
-    const nextYear = month === 12 ? year + 1 : year;
+    if (row.length > 0) {
+        while (row.length < 7) {
+            row.push({ text: ' ', callback_data: 'noop' });
+        }
+        rows.push(row);
+    }
+
+    rows.push([
+        { text: '📋 List View', callback_data: 'menu:list' },
+        { text: '✖️ Close', callback_data: 'surface_close' },
+    ]);
 
     return {
         monthName,
-        cells,
         keyboard: {
-            inline_keyboard: [
-                [{ text: `◀️ ${DateTime.local(prevYear, prevMonth, 1).toFormat('MMM')}`, callback_data: `calprev:${prevYear}:${prevMonth}` },
-                 { text: header, callback_data: 'noop' },
-                 { text: `${DateTime.local(nextYear, nextMonth, 1).toFormat('MMM')} ▶️`, callback_data: `calnext:${nextYear}:${nextMonth}` }],
-                [{ text: dayLabels.join(' '), callback_data: 'noop' }],
-                ...cells,
-                [{ text: '📋 List View', callback_data: 'menu:list' },
-                 { text: '✖️ Close', callback_data: 'surface_close' }]
-            ]
-        }
+            inline_keyboard: rows,
+        },
     };
 }
 

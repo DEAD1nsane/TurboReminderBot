@@ -170,7 +170,7 @@ async function editTelegramMessage(
     text: formatTelegramHtml(text),
     parse_mode: "HTML",
   };
-  if (replyMarkup !== undefined) payload.reply_markup = replyMarkup;
+  if (replyMarkup != null) payload.reply_markup = replyMarkup;
   const result = await callTelegram("editMessageText", payload);
   return result !== null;
 }
@@ -189,7 +189,7 @@ async function editEphemeralMessage(
     text: formatTelegramHtml(text),
     parse_mode: "HTML",
   };
-  if (replyMarkup !== undefined) payload.reply_markup = replyMarkup;
+  if (replyMarkup != null) payload.reply_markup = replyMarkup;
   const result = await callTelegram(
     "editEphemeralMessageText",
     payload,
@@ -261,8 +261,8 @@ async function editRichMessage(chatId, messageId, richMessage, replyMarkup = nul
     chat_id: chatId,
     message_id: messageId,
     rich_message: richMessage,
+    reply_markup: replyMarkup || { inline_keyboard: [] },
   };
-  if (replyMarkup !== undefined) payload.reply_markup = replyMarkup;
   const result = await callTelegram("editMessageText", payload, "edit rich message");
   return result !== null;
 }
@@ -313,7 +313,7 @@ async function editRichEphemeralMessage(
     ephemeral_message_id: ephemeralMessageId,
     rich_message: richMessage,
   };
-  if (replyMarkup !== undefined) payload.reply_markup = replyMarkup;
+  if (replyMarkup != null) payload.reply_markup = replyMarkup;
   const result = await callTelegram(
     "editEphemeralMessageText",
     payload,
@@ -324,12 +324,14 @@ async function editRichEphemeralMessage(
 
 // ── Inline message edit (no chat_id needed) ────────────────────────────────
 
+// ── Inline message edit (no chat_id needed) ────────────────────────────────
+
 async function editInlineRichMessage(inlineMessageId, richMessage, replyMarkup = null) {
   const payload = {
     inline_message_id: inlineMessageId,
     rich_message: richMessage,
+    reply_markup: replyMarkup || { inline_keyboard: [] },
   };
-  if (replyMarkup !== undefined) payload.reply_markup = replyMarkup;
   const result = await callTelegram("editMessageText", payload, "edit inline rich message");
   return result !== null;
 }
@@ -340,7 +342,7 @@ async function editInlineMessage(inlineMessageId, text, replyMarkup = null) {
     text,
     parse_mode: "MarkdownV2",
   };
-  if (replyMarkup !== undefined) payload.reply_markup = replyMarkup;
+  if (replyMarkup != null) payload.reply_markup = replyMarkup;
   const result = await callTelegram("editMessageText", payload, "edit inline message");
   return result !== null;
 }
