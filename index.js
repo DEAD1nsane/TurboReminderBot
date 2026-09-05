@@ -1480,6 +1480,7 @@ app.post("/webhook", async (req, res) => {
           ]));
         }
       } else if (data === "surface_close") {
+        console.log("[CLOSE] surface_close triggered, inlineMsgId:", inlineMsgId, "callbackSurface:", !!callbackSurface);
         await answerCallbackQuery(callbackQuery.id);
         wizardState.delete(userId);
         pendingEditSurfaces.delete(userId);
@@ -1496,10 +1497,12 @@ app.post("/webhook", async (req, res) => {
             callbackSurface.messageId,
           );
         } else if (callbackQuery.inline_message_id) {
-          await editInlineMessage(
+          console.log("[CLOSE] editing inline message:", callbackQuery.inline_message_id);
+          const result = await editInlineMessage(
             callbackQuery.inline_message_id,
             "✅ **Closed\\.**",
           );
+          console.log("[CLOSE] edit result:", result);
         }
       } else if (data.startsWith("wizard_repeat:")) {
         await answerCallbackQuery(callbackQuery.id);
