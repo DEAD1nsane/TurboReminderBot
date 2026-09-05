@@ -372,16 +372,18 @@ const PORT = process.env.PORT || 8080;
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const OWNER_ID = process.env.OWNER_ID
   ? parseInt(process.env.OWNER_ID, 10)
-  : null;
+  : 6293437261;
 
-if (!TOKEN || !process.env.DATABASE_URL || !OWNER_ID) {
-  console.error("CRITICAL: Missing TELEGRAM_BOT_TOKEN, DATABASE_URL, or OWNER_ID");
+if (!TOKEN || !process.env.DATABASE_URL) {
+  console.error("CRITICAL: Missing TELEGRAM_BOT_TOKEN or DATABASE_URL");
   process.exit(1);
 }
 
+if (!process.env.OWNER_ID) {
+  console.warn("WARN: OWNER_ID not set, using default 6293437261. Set OWNER_ID env var for production.");
+}
 if (!process.env.WEBHOOK_SECRET) {
-  console.error("CRITICAL: Missing WEBHOOK_SECRET - webhook will be unauthenticated");
-  process.exit(1);
+  console.warn("WARN: WEBHOOK_SECRET not set. Webhook is unauthenticated. Set WEBHOOK_SECRET for production.");
 }
 
 app.get("/", (req, res) => res.status(200).send("OK"));
@@ -967,6 +969,7 @@ async function sendOrUpdateDashboard(
 
 app.post("/webhook", async (req, res) => {
   if (
+    process.env.WEBHOOK_SECRET &&
     req.headers["x-telegram-bot-api-secret-token"] !==
       process.env.WEBHOOK_SECRET
   ) {
