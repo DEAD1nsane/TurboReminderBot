@@ -867,7 +867,7 @@ async function sendOrUpdateDashboard(
 
   let newMsg = null;
   if (richMessage && isRichMessageSupported()) {
-    newMsg = await sendRichMessage(userId, richMessage);
+    newMsg = await sendRichMessage(userId, richMessage, markup);
   }
   if (!newMsg) {
     newMsg = await sendTelegramMessage(userId, text, markup);
@@ -1481,29 +1481,33 @@ app.post("/webhook", async (req, res) => {
           ]));
         }
       } else if (data === "surface_close") {
-        console.log("[CLOSE] surface_close triggered, inlineMsgId:", inlineMsgId, "callbackSurface:", !!callbackSurface);
+        console.log("[CLOSE] surface_close triggered, inlineMsgId:", inlineMsgId, "callbackSurface:", !!callbackSurface, "inline_message_id:", callbackQuery.inline_message_id);
         await answerCallbackQuery(callbackQuery.id);
         wizardState.delete(userId);
         pendingEditSurfaces.delete(userId);
         await setPendingEdit(userId, null);
         if (callbackSurface?.ephemeral) {
+          console.log("[CLOSE] deleting ephemeral");
           await deleteEphemeralMessage(
             callbackSurface.chatId,
             userId,
             callbackSurface.ephemeralMessageId,
           );
         } else if (callbackSurface) {
+          console.log("[CLOSE] deleting regular message");
           await deleteTelegramMessage(
             callbackSurface.chatId,
             callbackSurface.messageId,
           );
         } else if (callbackQuery.inline_message_id) {
           console.log("[CLOSE] editing inline message:", callbackQuery.inline_message_id);
-          const result = await editInlineMessage(
+          const closeResult = await editInlineMessage(
             callbackQuery.inline_message_id,
             "✅ **Closed\\.**",
           );
-          console.log("[CLOSE] edit result:", result);
+          console.log("[CLOSE] edit result:", closeResult);
+        } else {
+          console.log("[CLOSE] no surface to close!");
         }
       } else if (data.startsWith("wizard_repeat:")) {
         await answerCallbackQuery(callbackQuery.id);
