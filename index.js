@@ -1998,10 +1998,6 @@ app.post("/webhook", async (req, res) => {
             ]),
             richDivider(),
             richButtons([
-              richButton("✏️ Edit", `edit:${reminderId}`, "primary"),
-              richButton("❌ Del", `del:${reminderId}`, "danger"),
-            ]),
-            richButtons([
               richButton("🔙 Back", "menu:list", "link"),
             ]),
           ];
@@ -2013,14 +2009,35 @@ app.post("/webhook", async (req, res) => {
               `🔔 **Reminder Details**\n📝 ${escapeMarkdownV2(r.text)}\n🕒 ${formattedTime}${extrasStr}`,
               {
                 inline_keyboard: [
-                  [
-                    { text: "✏️ Edit", callback_data: `edit:${reminderId}` },
-                    { text: "❌ Del", callback_data: `del:${reminderId}` },
-                  ],
                   [{ text: "🔙 Back", callback_data: "menu:list" }],
                 ],
               },
             );
+            resetMenuTimer(`inline_${callbackQuery.inline_message_id}`, async () => {
+              try {
+                const reminderRows = (await getRemindersDashboardData(userId, userTz, userFirstName))
+                  .richMessage.blocks.filter(
+                    b => b.type === "buttons" && b.buttons?.some(btn => btn.callback_data?.startsWith("view:"))
+                  );
+                const summaryText = reminderRows.length === 1
+                  ? "1 active reminder"
+                  : `${reminderRows.length} active reminders`;
+                const collapsedRich = buildRichMessage([
+                  richHeading("📋 Active Reminders", 2),
+                  richDetails(summaryText, [
+                    ...reminderRows,
+                    richDivider(),
+                    richButtons([
+                      richButton("➕ New Reminder", "wizard_new", "success"),
+                      richButton("✖️ Close", "surface_close", "danger"),
+                    ]),
+                  ], false),
+                ]);
+                await editInlineRichMessage(callbackQuery.inline_message_id, collapsedRich);
+              } catch (err) {
+                console.error("Failed to collapse inline details:", err);
+              }
+            });
           } else {
             await editRichCallbackSurface(buildRichMessage(richBlocks));
           }
