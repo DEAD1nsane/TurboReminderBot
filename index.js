@@ -554,7 +554,10 @@ async function getUserTimezone(userId) {
   } catch (err) {
     console.error("[DB] getUserTimezone error:", err.message);
     return "America/Chicago";
-  }(userId, tz) {
+  }
+}
+
+async function setUserTimezone(userId, tz) {
   if (!process.env.DATABASE_URL) return;
   try {
     await pool.query(
@@ -581,7 +584,9 @@ async function getActiveMenuMsgId(userId) {
     console.error("[DB] getActiveMenuMsgId error:", err.message);
     return null;
   }
-}(userId, msgId, triggerMsgId = null) {
+}
+
+async function setActiveMenuMsgId(userId, msgId, triggerMsgId = null) {
   if (!process.env.DATABASE_URL) return;
   try {
     const collapseAt = msgId ? new Date(Date.now() + 30000) : null;
@@ -612,7 +617,9 @@ async function getPendingEdit(userId) {
     console.error("[DB] getPendingEdit error:", err.message);
     return null;
   }
-}(userId, pendingStr) {
+}
+
+async function setPendingEdit(userId, pendingStr) {
   if (!process.env.DATABASE_URL) return;
   try {
     await pool.query(
