@@ -36,8 +36,6 @@ const {
 } = require("./telegram");
 
 const activityTimers = new Map();
-const wizardState = new Map();
-const pendingEditSurfaces = new Map();
 
 // ── Bounded caches with TTL ────────────────────────────────────────────────
 const MAX_CACHE_SIZE = 5000;
@@ -1022,7 +1020,7 @@ app.post("/webhook", async (req, res) => {
       const msgId = message.message_id;
       const text = message.text.trim();
 
-      if (wizardState.has(userId)) {
+      if (wizardStateBounded.has(userId)) {
         const state = wizardStateBounded.get(userId);
         if (state.surface?.chatId !== chatId) {
           return res.sendStatus(200);
