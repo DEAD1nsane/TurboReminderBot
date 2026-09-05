@@ -1512,9 +1512,11 @@ app.post("/webhook", async (req, res) => {
           );
         } else if (callbackQuery.inline_message_id) {
           console.log("[CLOSE] editing inline message:", callbackQuery.inline_message_id);
-          const closeResult = await editInlineMessage(
+          const closeResult = await editInlineRichMessage(
             callbackQuery.inline_message_id,
-            "✅ Closed.",
+            buildRichMessage([
+              richHeading("✅ Closed", 1),
+            ]),
           );
           console.log("[CLOSE] edit result:", closeResult);
         } else {
