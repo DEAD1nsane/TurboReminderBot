@@ -1481,6 +1481,10 @@ app.post("/webhook", async (req, res) => {
         }
       } else if (data === "surface_close") {
         await answerCallbackQuery(callbackQuery.id);
+        if (inlineMsgId) {
+          clearTimeout(activityTimers.get(`inline_${inlineMsgId}`));
+          activityTimers.delete(`inline_${inlineMsgId}`);
+        }
         wizardState.delete(userId);
         pendingEditSurfaces.delete(userId);
         await setPendingEdit(userId, null);
