@@ -1792,7 +1792,24 @@ app.post("/webhook", async (req, res) => {
         if (callbackSurface) {
           await editRichCallbackSurface(dashData.richMessage);
         } else if (inlineMsgId) {
-          await editInlineRichMessage(inlineMsgId, dashData.richMessage);
+          const reminderRows = dashData.richMessage.blocks.filter(
+            b => b.type === "buttons" && b.buttons?.some(btn => btn.callback_data?.startsWith("view:"))
+          );
+          const summaryText = reminderRows.length === 1
+            ? "1 active reminder"
+            : `${reminderRows.length} active reminders`;
+          const collapsedRich = buildRichMessage([
+            richHeading("📋 Active Reminders", 2),
+            richDetails(summaryText, [
+              ...reminderRows,
+              richDivider(),
+              richButtons([
+                richButton("➕ New Reminder", "wizard_new", "success"),
+                richButton("✖️ Close", "surface_close", "danger"),
+              ]),
+            ], false),
+          ]);
+          await editInlineRichMessage(inlineMsgId, collapsedRich);
         } else {
           await sendOrUpdateDashboard(userId, dashData.text, null, null, dashData.richMessage);
         }
