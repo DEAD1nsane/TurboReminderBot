@@ -2611,51 +2611,24 @@ app.post("/webhook", async (req, res) => {
         );
 
         if (iMsgId) {
-          const editRes = await fetchWithTimeout(
-            `https://api.telegram.org/bot${TOKEN}/editMessageText`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                inline_message_id: iMsgId,
-                text: dashData.text,
-                reply_markup: dashData.keyboard,
-                parse_mode: "MarkdownV2",
-              }),
-            },
+          const reminderRows = dashData.richMessage.blocks.filter(
+            b => b.type === "buttons" && b.buttons?.some(btn => btn.callback_data?.startsWith("view:"))
           );
-
-          if (!editRes.ok) {
-            console.error(
-              "Failed to populate inline DM reminders:",
-              await editRes.text(),
-            );
-          } else {
-            resetMenuTimer(`inline_${iMsgId}`, async () => {
-              try {
-                const reminderRows = dashData.richMessage.blocks.filter(
-                  b => b.type === "buttons" && b.buttons?.some(btn => btn.callback_data?.startsWith("view:"))
-                );
-                const summaryText = reminderRows.length === 1
-                  ? "1 active reminder"
-                  : `${reminderRows.length} active reminders`;
-                const collapsedRich = buildRichMessage([
-                  richHeading("📋 Active Reminders", 2),
-                  richDetails(summaryText, [
-                    ...reminderRows,
-                    richDivider(),
-                    richButtons([
-                      richButton("➕ New Reminder", "wizard_new", "success"),
-                      richButton("✖️ Close", "surface_close", "danger"),
-                    ]),
-                  ], false),
-                ]);
-                await editInlineRichMessage(iMsgId, collapsedRich);
-              } catch (err) {
-                console.error("Failed to collapse inline DM reminders:", err);
-              }
-            });
-          }
+          const summaryText = reminderRows.length === 1
+            ? "1 active reminder"
+            : `${reminderRows.length} active reminders`;
+          const collapsedRich = buildRichMessage([
+            richHeading("📋 Active Reminders", 2),
+            richDetails(summaryText, [
+              ...reminderRows,
+              richDivider(),
+              richButtons([
+                richButton("➕ New Reminder", "wizard_new", "success"),
+                richButton("✖️ Close", "surface_close", "danger"),
+              ]),
+            ], false),
+          ]);
+          await editInlineRichMessage(iMsgId, collapsedRich);
         } else {
           await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard, null, dashData.richMessage);
         }
