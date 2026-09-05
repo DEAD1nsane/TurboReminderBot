@@ -43,6 +43,8 @@ function formatTelegramHtml(text) {
   return formatted;
 }
 
+let richMessageSupported = true;
+
 async function fetchWithTimeout(resource, options = {}) {
   const { timeout = 10000 } = options;
   const controller = new AbortController();
@@ -55,6 +57,23 @@ async function fetchWithTimeout(resource, options = {}) {
   } finally {
     clearTimeout(id);
   }
+}
+
+async function checkRichMessageSupport() {
+  try {
+    const res = await callTelegram("getBotInfo", {}, "getBotInfo");
+    if (res) {
+      richMessageSupported = true;
+      console.log("[TELEGRAM] Rich message support: assumed available (Bot API 10.2+)");
+    }
+  } catch {
+    richMessageSupported = false;
+    console.log("[TELEGRAM] Could not verify rich message support, will fallback to MarkdownV2");
+  }
+}
+
+function isRichMessageSupported() {
+  return richMessageSupported;
 }
 
 async function callTelegram(method, payload, logLabel = method) {
@@ -228,6 +247,104 @@ async function setEphemeralGroupCommands(commands) {
   );
 }
 
+// ── Rich Message API (Bot API 10.2+) ──────────────────────────────────────
+
+async function sendRichMessage(chatId, richMessage, replyMarkup = null) {
+  const payload = { chat_id: chatId, rich_message: richMessage };
+  if (replyMarkup) payload.reply_markup = replyMarkup;
+  const result = await callTelegram("sendRichMessage", payload, "send rich message");
+  return result || null;
+}
+
+async function editRichMessage(chatId, messageId, richMessage, replyMarkup = null) {
+  const payload = {
+    chat_id: chatId,
+    message_id: messageId,
+    rich_message: richMessage,
+  };
+  if (replyMarkup !== undefined) payload.reply_markup = replyMarkup;
+  const result = await callTelegram("editMessageText", payload, "edit rich message");
+  return result !== null;
+}
+
+async function sendRichEphemeralMessage(
+  chatId,
+  receiverUserId,
+  richMessage,
+  replyMarkup = null,
+  options = {},
+) {
+  const ephemeralParams = { receiver_user_id: receiverUserId };
+  if (options.callbackQueryId) {
+    ephemeralParams.callback_query_id = options.callbackQueryId;
+  }
+  if (options.replaceCallbackQueryMessage) {
+    ephemeralParams.replace_callback_query_message = true;
+  }
+
+  const payload = {
+    chat_id: chatId,
+    rich_message: richMessage,
+    ephemeral_message_parameters: ephemeralParams,
+  };
+  if (replyMarkup) payload.reply_markup = replyMarkup;
+  if (options.replyToEphemeralMessageId) {
+    payload.reply_parameters = {
+      ephemeral_message_id: options.replyToEphemeralMessageId,
+    };
+  }
+
+  return (
+    (await callTelegram("sendRichMessage", payload, "send rich ephemeral message")) ||
+    null
+  );
+}
+
+async function editRichEphemeralMessage(
+  chatId,
+  receiverUserId,
+  ephemeralMessageId,
+  richMessage,
+  replyMarkup = null,
+) {
+  const payload = {
+    chat_id: chatId,
+    receiver_user_id: receiverUserId,
+    ephemeral_message_id: ephemeralMessageId,
+    rich_message: richMessage,
+  };
+  if (replyMarkup !== undefined) payload.reply_markup = replyMarkup;
+  const result = await callTelegram(
+    "editEphemeralMessageText",
+    payload,
+    "edit rich ephemeral message",
+  );
+  return result !== null;
+}
+
+// ── Inline message edit (no chat_id needed) ────────────────────────────────
+
+async function editInlineRichMessage(inlineMessageId, richMessage, replyMarkup = null) {
+  const payload = {
+    inline_message_id: inlineMessageId,
+    rich_message: richMessage,
+  };
+  if (replyMarkup !== undefined) payload.reply_markup = replyMarkup;
+  const result = await callTelegram("editMessageText", payload, "edit inline rich message");
+  return result !== null;
+}
+
+async function editInlineMessage(inlineMessageId, text, replyMarkup = null) {
+  const payload = {
+    inline_message_id: inlineMessageId,
+    text,
+    parse_mode: "MarkdownV2",
+  };
+  if (replyMarkup !== undefined) payload.reply_markup = replyMarkup;
+  const result = await callTelegram("editMessageText", payload, "edit inline message");
+  return result !== null;
+}
+
 module.exports = {
   sendTelegramMessage,
   sendEphemeralMessage,
@@ -239,4 +356,12 @@ module.exports = {
   setEphemeralGroupCommands,
   formatTelegramHtml,
   fetchWithTimeout,
+  sendRichMessage,
+  editRichMessage,
+  sendRichEphemeralMessage,
+  editRichEphemeralMessage,
+  editInlineRichMessage,
+  editInlineMessage,
+  checkRichMessageSupport,
+  isRichMessageSupported,
 };
