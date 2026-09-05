@@ -1443,19 +1443,6 @@ app.post("/webhook", async (req, res) => {
         return res.sendStatus(200);
       }
 
-      if (
-        text.startsWith("/delete") || text.startsWith("/del")
-      ) {
-        const replyMsg = message.reply_to_message;
-        if (replyMsg?.from?.is_bot) {
-          await deleteTelegramMessage(chatId, replyMsg.message_id);
-          if (typeof chatId !== "undefined" && typeof msgId !== "undefined") {
-            await deleteTelegramMessage(chatId, msgId);
-          }
-        }
-        return res.sendStatus(200);
-      }
-
       const userTz = await getUserTimezone(userId);
       const parsed = parseFlexibleDate(text, userTz);
 
