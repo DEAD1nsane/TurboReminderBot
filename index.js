@@ -2377,8 +2377,8 @@ app.post("/webhook", async (req, res) => {
           results.push({
             type: "article",
             id: "show_reminders_inline_v6",
-            title: "👀 View Reminders (Private)",
-            description: "Only you can see this. Collapses in 30s.",
+            title: "👀 View Reminders (Inline)",
+            description: "Shows reminders in chat. Collapses in 30s.",
             thumbnail_url:
               "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f3.png",
             input_message_content: {
@@ -2617,21 +2617,54 @@ app.post("/webhook", async (req, res) => {
         );
 
         if (iMsgId) {
-          await fetchWithTimeout(
+          const editRes = await fetchWithTimeout(
             `https://api.telegram.org/bot${TOKEN}/editMessageText`,
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 inline_message_id: iMsgId,
-                text: `✅ **Reminders sent to your DM\\!**`,
+                text: dashData.text,
+                reply_markup: dashData.keyboard,
                 parse_mode: "MarkdownV2",
               }),
             },
           );
-        }
 
-        await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard, null, dashData.richMessage);
+          if (!editRes.ok) {
+            console.error(
+              "Failed to populate inline active reminders:",
+              await editRes.text(),
+            );
+          } else {
+            resetMenuTimer(`inline_${iMsgId}`, async () => {
+              try {
+                const reminderRows = dashData.richMessage.blocks.filter(
+                  b => b.type === "buttons" && b.buttons?.some(btn => btn.callback_data?.startsWith("view:"))
+                );
+                const summaryText = reminderRows.length === 1
+                  ? "1 active reminder"
+                  : `${reminderRows.length} active reminders`;
+                const collapsedRich = buildRichMessage([
+                  richHeading("📋 Active Reminders", 2),
+                  richDetails(summaryText, [
+                    ...reminderRows,
+                    richDivider(),
+                    richButtons([
+                      richButton("➕ New Reminder", "wizard_new", "success"),
+                      richButton("✖️ Close", "surface_close", "danger"),
+                    ]),
+                  ], false),
+                ]);
+                await editInlineRichMessage(iMsgId, collapsedRich);
+              } catch (err) {
+                console.error("Failed to collapse inline reminders list:", err);
+              }
+            });
+          }
+        } else {
+          await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard, null, dashData.richMessage);
+        }
       } else if (selectedResultId === "show_reminders_share") {
         const userTz = (await getUserTimezone(userId)) || "America/Chicago";
         const dashData = await getRemindersDashboardData(
