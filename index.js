@@ -1,7 +1,6 @@
 const chrono = require("chrono-node");
 const crypto = require("crypto");
 const pendingInlineEdits = new Set();
-const inlineQueryCache = new Map();
 const express = require("express");
 const { Pool } = require("pg");
 const { DateTime } = require("luxon");
@@ -39,6 +38,55 @@ const activityTimers = new Map();
 const wizardState = new Map();
 const pendingEditSurfaces = new Map();
 
+// ── Bounded caches with TTL ────────────────────────────────────────────────
+const MAX_CACHE_SIZE = 5000;
+const CACHE_TTL_MS = 10 * 60 * 1000;
+
+function boundedMap(ttlMs = CACHE_TTL_MS, maxSize = MAX_CACHE_SIZE) {
+  const map = new Map();
+  return {
+    get(key) {
+      const entry = map.get(key);
+      if (!entry) return undefined;
+      if (Date.now() > entry.expires) { map.delete(key); return undefined; }
+      return entry.value;
+    },
+    set(key, value) {
+      if (map.size >= maxSize) {
+        const oldest = map.keys().next().value;
+        map.delete(oldest);
+      }
+      map.set(key, { value, expires: Date.now() + ttlMs });
+    },
+    delete(key) { map.delete(key); },
+    has(key) { return this.get(key) !== undefined; },
+    get size() { return map.size; },
+  };
+}
+
+const wizardStateBounded = boundedMap(10 * 60 * 1000, 1000);
+const pendingEditSurfacesBounded = boundedMap(5 * 60 * 1000, 1000);
+const inlineQueryCacheBounded = boundedMap(10 * 60 * 1000, 5000);
+
+// ── Rate limiter ───────────────────────────────────────────────────────────
+const rateLimitCounts = new Map();
+function checkRateLimit(key, maxRequests = 30, windowMs = 1000) {
+  const now = Date.now();
+  const entry = rateLimitCounts.get(key);
+  if (!entry || now - entry.windowStart > windowMs) {
+    rateLimitCounts.set(key, { count: 1, windowStart: now });
+    return true;
+  }
+  entry.count++;
+  return entry.count <= maxRequests;
+}
+setInterval(() => {
+  const cutoff = Date.now() - 5000;
+  for (const [k, v] of rateLimitCounts) {
+    if (v.windowStart < cutoff) rateLimitCounts.delete(k);
+  }
+}, 10000);
+
 function resetMenuTimer(key, action) {
   if (activityTimers.has(key)) clearTimeout(activityTimers.get(key));
   activityTimers.set(
@@ -52,6 +100,13 @@ function resetMenuTimer(key, action) {
 
 const escapeMarkdownV2 = (str) =>
   String(str || "").replace(/[_\*\[\]\(\)~`>#\+\-=\|{\}\!\\.]/g, "\\$&");
+
+function parseReminderId(data, prefix) {
+  const raw = data.split(":")[1];
+  const id = parseInt(raw, 10);
+  if (isNaN(id) || id <= 0) return null;
+  return id;
+}
 
 // ── Rich Message Block Builders ────────────────────────────────────────────
 
@@ -317,10 +372,15 @@ const PORT = process.env.PORT || 8080;
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const OWNER_ID = process.env.OWNER_ID
   ? parseInt(process.env.OWNER_ID, 10)
-  : 6293437261;
+  : null;
 
-if (!TOKEN || !process.env.DATABASE_URL) {
-  console.error("CRITICAL: Missing TELEGRAM_BOT_TOKEN or DATABASE_URL");
+if (!TOKEN || !process.env.DATABASE_URL || !OWNER_ID) {
+  console.error("CRITICAL: Missing TELEGRAM_BOT_TOKEN, DATABASE_URL, or OWNER_ID");
+  process.exit(1);
+}
+
+if (!process.env.WEBHOOK_SECRET) {
+  console.error("CRITICAL: Missing WEBHOOK_SECRET - webhook will be unauthenticated");
   process.exit(1);
 }
 
@@ -355,7 +415,7 @@ const pool = new Pool({
   ssl: isInternalHost
     ? false
     : process.env.DATABASE_URL
-      ? { rejectUnauthorized: false }
+      ? { rejectUnauthorized: true }
       : false,
   max: 5,
   idleTimeoutMillis: 10000,
@@ -412,10 +472,13 @@ async function initDb() {
 }
 initDb();
 
+let pollingLocked = false;
 setInterval(async () => {
+  if (pollingLocked) return;
+  pollingLocked = true;
   try {
     const res = await pool.query(
-      `SELECT * FROM reminders WHERE (remind_at <= NOW() AND sent = FALSE) OR (early_offset IS NOT NULL AND early_alert_sent = FALSE AND remind_at - (early_offset * INTERVAL '1 minute') <= NOW())`,
+      `SELECT * FROM reminders WHERE (remind_at <= NOW() AND sent = FALSE) OR (early_offset IS NOT NULL AND early_alert_sent = FALSE AND remind_at - (early_offset * INTERVAL '1 minute') <= NOW()) FOR UPDATE SKIP LOCKED`,
     );
     for (const r of res.rows) {
       const now = new Date();
@@ -475,6 +538,8 @@ setInterval(async () => {
     }
   } catch (err) {
     console.error("Reminder execution error:", err);
+  } finally {
+    pollingLocked = false;
   }
 }, 30000);
 
@@ -487,11 +552,9 @@ async function getUserTimezone(userId) {
     );
     return res.rows.length > 0 ? res.rows[0].timezone : "America/Chicago";
   } catch (err) {
+    console.error("[DB] getUserTimezone error:", err.message);
     return "America/Chicago";
-  }
-}
-
-async function setUserTimezone(userId, tz) {
+  }(userId, tz) {
   if (!process.env.DATABASE_URL) return;
   try {
     await pool.query(
@@ -515,11 +578,10 @@ async function getActiveMenuMsgId(userId) {
       ? res.rows[0].active_menu_msg_id
       : null;
   } catch (err) {
+    console.error("[DB] getActiveMenuMsgId error:", err.message);
     return null;
   }
-}
-
-async function setActiveMenuMsgId(userId, msgId, triggerMsgId = null) {
+}(userId, msgId, triggerMsgId = null) {
   if (!process.env.DATABASE_URL) return;
   try {
     const collapseAt = msgId ? new Date(Date.now() + 30000) : null;
@@ -547,11 +609,10 @@ async function getPendingEdit(userId) {
     );
     return res.rows.length > 0 ? res.rows[0].pending_edit : null;
   } catch (err) {
+    console.error("[DB] getPendingEdit error:", err.message);
     return null;
   }
-}
-
-async function setPendingEdit(userId, pendingStr) {
+}(userId, pendingStr) {
   if (!process.env.DATABASE_URL) return;
   try {
     await pool.query(
@@ -899,11 +960,13 @@ async function sendOrUpdateDashboard(
 
 app.post("/webhook", async (req, res) => {
   if (
-    process.env.WEBHOOK_SECRET &&
     req.headers["x-telegram-bot-api-secret-token"] !==
       process.env.WEBHOOK_SECRET
   ) {
     return res.sendStatus(403);
+  }
+  if (!checkRateLimit("webhook", 100, 1000)) {
+    return res.sendStatus(429);
   }
   try {
     const {
@@ -941,7 +1004,7 @@ app.post("/webhook", async (req, res) => {
       const text = message.text.trim();
 
       if (wizardState.has(userId)) {
-        const state = wizardState.get(userId);
+        const state = wizardStateBounded.get(userId);
         if (state.surface?.chatId !== chatId) {
           return res.sendStatus(200);
         }
@@ -960,7 +1023,7 @@ app.post("/webhook", async (req, res) => {
               reminderText: text,
             };
             state.step = 3;
-            wizardState.set(userId, state);
+            wizardStateBounded.set(userId, state);
             await editRichSurface(state.surface, buildRichMessage([
               richHeading("🔄 How often should it repeat?", 1),
               richDivider(),
@@ -979,7 +1042,7 @@ app.post("/webhook", async (req, res) => {
             ]));
           } else {
             state.step = 2;
-            wizardState.set(userId, state);
+            wizardStateBounded.set(userId, state);
             await editRichSurface(state.surface, buildRichMessage([
               richHeading("⏰ When should this remind you?", 1),
               richParagraph("Examples:\n• tomorrow 5pm\n• in 2 hours 30 minutes\n• Aug 12 8am\n• daily 9am (with repeat)"),
@@ -1006,7 +1069,7 @@ app.post("/webhook", async (req, res) => {
           }
           state.time = parsed2;
           state.step = 3;
-          wizardState.set(userId, state);
+          wizardStateBounded.set(userId, state);
           await editRichSurface(state.surface, buildRichMessage([
             richHeading("🔄 How often should it repeat?", 1),
             richDivider(),
@@ -1061,7 +1124,7 @@ app.post("/webhook", async (req, res) => {
           state.repeat = `${unit}:${num}`;
           state.repeatText = `Every ${num} ${unitLabel}`;
           state.step = 4;
-          wizardState.set(userId, state);
+          wizardStateBounded.set(userId, state);
           await editRichSurface(state.surface, buildRichMessage([
             richHeading("⏳ How many minutes early should the warning be?", 1),
             richParagraph("Example: 15, 30, 60 (or 0 for no warning)"),
@@ -1093,7 +1156,7 @@ app.post("/webhook", async (req, res) => {
           }
           state.earlyWarning = mins === 0 ? null : mins;
           state.step = 5;
-          wizardState.set(userId, state);
+          wizardStateBounded.set(userId, state);
           const timeStr = state.time.dt.toFormat("EEE, MMM d, yyyy 'at' h:mm a");
 
           await editRichSurface(state.surface, buildRichMessage([
@@ -1115,7 +1178,7 @@ app.post("/webhook", async (req, res) => {
       }
 
       if (text.length > 500) {
-        const pendingSurface = pendingEditSurfaces.get(userId);
+        const pendingSurface = pendingEditSurfacesBounded.get(userId);
         if (pendingSurface) {
           await editSurface(
             pendingSurface,
@@ -1139,7 +1202,7 @@ app.post("/webhook", async (req, res) => {
         const field = parts[0];
         const reminderId = parts[1];
         const userTz = await getUserTimezone(userId);
-        const pendingSurface = pendingEditSurfaces.get(userId);
+        const pendingSurface = pendingEditSurfacesBounded.get(userId);
 
         if (pendingSurface && pendingSurface.chatId !== chatId) {
           return res.sendStatus(200);
@@ -1231,7 +1294,7 @@ app.post("/webhook", async (req, res) => {
         }
 
         await setPendingEdit(userId, null);
-        pendingEditSurfaces.delete(userId);
+        pendingEditSurfacesBounded.delete(userId);
         const dashData = await getRemindersDashboardData(
           userId,
           userTz,
@@ -1282,7 +1345,7 @@ app.post("/webhook", async (req, res) => {
         return res.sendStatus(200);
       } else if (text.toLowerCase() === "/remind") {
         console.log("[WIZARD] /remind triggered for user:", userId);
-        wizardState.delete(userId);
+        wizardStateBounded.delete(userId);
         const openingRich = buildRichMessage([
           richHeading("📝 What's the reminder title?", 1),
           richParagraph("Type the title for your reminder (e.g., buy milk, team meeting, pay bills):"),
@@ -1294,7 +1357,7 @@ app.post("/webhook", async (req, res) => {
         const surface = await beginRichSurface(message, userId, openingRich);
 
         if (!surface) return res.sendStatus(200);
-        wizardState.set(userId, {
+        wizardStateBounded.set(userId, {
           step: 1,
           surface,
           originalChatId: isGroupChat(message.chat) ? userId : chatId,
@@ -1316,10 +1379,10 @@ app.post("/webhook", async (req, res) => {
         if (surface) await removeUserInput(message, userId);
         return res.sendStatus(200);
       } else if (text.toLowerCase() === "/cancel") {
-        const state = wizardState.get(userId);
-        const pendingSurface = pendingEditSurfaces.get(userId);
-        wizardState.delete(userId);
-        pendingEditSurfaces.delete(userId);
+        const state = wizardStateBounded.get(userId);
+        const pendingSurface = pendingEditSurfacesBounded.get(userId);
+        wizardStateBounded.delete(userId);
+        pendingEditSurfacesBounded.delete(userId);
         await setPendingEdit(userId, null);
         if (state?.surface || pendingSurface) {
           await editSurface(
@@ -1483,7 +1546,7 @@ app.post("/webhook", async (req, res) => {
           ]));
         }
         if (surface) {
-          wizardState.set(userId, {
+          wizardStateBounded.set(userId, {
             step: 1,
             surface,
             originalChatId: isGroupChat(callbackQuery.message?.chat)
@@ -1494,8 +1557,8 @@ app.post("/webhook", async (req, res) => {
       } else if (data === "surface_close") {
         console.log("[CLOSE] surface_close triggered, inlineMsgId:", inlineMsgId, "callbackSurface:", !!callbackSurface, "inline_message_id:", callbackQuery.inline_message_id);
         await answerCallbackQuery(callbackQuery.id);
-        wizardState.delete(userId);
-        pendingEditSurfaces.delete(userId);
+        wizardStateBounded.delete(userId);
+        pendingEditSurfacesBounded.delete(userId);
         await setPendingEdit(userId, null);
         if (callbackSurface?.ephemeral) {
           console.log("[CLOSE] deleting ephemeral");
@@ -1527,7 +1590,7 @@ app.post("/webhook", async (req, res) => {
         const parts = data.split(":");
         const repeatType = parts[1];
         if (repeatType === "custom") {
-          const state = wizardState.get(userId);
+          const state = wizardStateBounded.get(userId);
           if (!state) return res.sendStatus(200);
           await editRichSurface(state.surface, buildRichMessage([
             richHeading("⚙️ Enter custom repeat interval", 1),
@@ -1540,7 +1603,7 @@ app.post("/webhook", async (req, res) => {
           return res.sendStatus(200);
         }
         if (repeatType === "smart") {
-          const state = wizardState.get(userId);
+          const state = wizardStateBounded.get(userId);
           if (!state) return res.sendStatus(200);
           await editRichSurface(state.surface, buildRichMessage([
             richHeading("🧠 Enter repeat interval in natural language", 1),
@@ -1551,10 +1614,10 @@ app.post("/webhook", async (req, res) => {
             ]),
           ]));
           state.step = 3.5;
-          wizardState.set(userId, state);
+          wizardStateBounded.set(userId, state);
           return res.sendStatus(200);
         }
-        const state = wizardState.get(userId);
+        const state = wizardStateBounded.get(userId);
         if (state) {
           state.repeat =
             repeatType === "none" ? null : `${repeatType}:${parts[2] || "1"}`;
@@ -1563,7 +1626,7 @@ app.post("/webhook", async (req, res) => {
               ? "None"
               : repeatType.charAt(0).toUpperCase() + repeatType.slice(1);
           state.step = 4;
-          wizardState.set(userId, state);
+          wizardStateBounded.set(userId, state);
           await editRichSurface(state.surface, buildRichMessage([
             richHeading("⏳ How many minutes early should the warning be?", 1),
             richParagraph("Example: 15, 30, 60 (or 0 for no warning)"),
@@ -1583,11 +1646,11 @@ app.post("/webhook", async (req, res) => {
       } else if (data.startsWith("wizard_early:")) {
         await answerCallbackQuery(callbackQuery.id);
         const mins = parseInt(data.split(":")[1], 10);
-        const state = wizardState.get(userId);
+        const state = wizardStateBounded.get(userId);
         if (state) {
           state.earlyWarning = mins === 0 ? null : mins;
           state.step = 5;
-          wizardState.set(userId, state);
+          wizardStateBounded.set(userId, state);
           const timeStr = state.time.dt.toFormat("EEE, MMM d, yyyy 'at' h:mm a");
 
           await editRichSurface(state.surface, buildRichMessage([
@@ -1607,7 +1670,7 @@ app.post("/webhook", async (req, res) => {
         }
       } else if (data === "wizard_confirm") {
         await answerCallbackQuery(callbackQuery.id);
-        const state = wizardState.get(userId);
+        const state = wizardStateBounded.get(userId);
         if (state) {
           await pool.query(
             "INSERT INTO reminders (user_id, chat_id, text, remind_at, recurring, early_offset) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
@@ -1620,7 +1683,7 @@ app.post("/webhook", async (req, res) => {
               state.earlyWarning,
             ],
           );
-          wizardState.delete(userId);
+          wizardStateBounded.delete(userId);
           const timeStr = state.time.dt.toFormat("EEE, MMM d, yyyy 'at' h:mm a");
           await editRichSurface(state.surface, buildRichMessage([
             richHeading("✅ Reminder Created!", 1),
@@ -1641,8 +1704,8 @@ app.post("/webhook", async (req, res) => {
           ]));
         }
       } else if (data === "wizard_cancel") {
-        const state = wizardState.get(userId);
-        wizardState.delete(userId);
+        const state = wizardStateBounded.get(userId);
+        wizardStateBounded.delete(userId);
         await answerCallbackQuery(callbackQuery.id, "Wizard cancelled.", false);
         await editRichSurface(
           state?.surface || callbackSurface,
@@ -1748,7 +1811,7 @@ app.post("/webhook", async (req, res) => {
         const dateKey = data.replace("caladd:", "");
         const [calYear, calMonth, calDay] = dateKey.split("-").map(Number);
         const dateLabel = DateTime.local(calYear, calMonth, calDay).toFormat("EEEE, MMM d");
-        wizardState.set(userId, {
+        wizardStateBounded.set(userId, {
           step: 1,
           surface: callbackSurface,
           originalChatId: isGroupChat(callbackQuery.message?.chat) ? userId : chatId,
@@ -1764,6 +1827,9 @@ app.post("/webhook", async (req, res) => {
         ]));
       } else if (data.startsWith("settz:")) {
         const tz = data.replace("settz:", "");
+        if (!DateTime.now().setZone(tz).isValid) {
+          return res.sendStatus(200);
+        }
         await setUserTimezone(userId, tz);
         await answerCallbackQuery(
           callbackQuery.id,
@@ -1790,7 +1856,7 @@ app.post("/webhook", async (req, res) => {
           userTz,
           userFirstName,
         );
-        pendingEditSurfaces.delete(userId);
+        pendingEditSurfacesBounded.delete(userId);
         if (callbackSurface) {
           await editRichCallbackSurface(dashData.richMessage);
         } else if (inlineMsgId) {
@@ -1826,7 +1892,8 @@ app.post("/webhook", async (req, res) => {
           richDivider(),
         ]), cal.keyboard);
       } else if (data.startsWith("del:")) {
-        const reminderId = data.replace("del:", "");
+        const reminderId = parseReminderId(data, "del:");
+        if (!reminderId) return res.sendStatus(200);
         await answerCallbackQuery(
           callbackQuery.id,
           "🗑️ Delete this reminder?",
@@ -1876,7 +1943,8 @@ app.post("/webhook", async (req, res) => {
         }
         return res.sendStatus(200);
       } else if (data.startsWith("confirm_del:")) {
-        const reminderId = data.replace("confirm_del:", "");
+        const reminderId = parseReminderId(data, "confirm_del:");
+        if (!reminderId) return res.sendStatus(200);
         await pool.query(
           "DELETE FROM reminders WHERE id = $1 AND user_id = $2",
           [reminderId, userId],
@@ -1912,7 +1980,8 @@ app.post("/webhook", async (req, res) => {
         }
         return res.sendStatus(200);
       } else if (data.startsWith("view:")) {
-        const reminderId = data.replace("view:", "");
+        const reminderId = parseReminderId(data, "view:");
+        if (!reminderId) return res.sendStatus(200);
         const result = await pool.query(
           "SELECT text, remind_at, recurring, total_occurrences, current_occurrence, early_offset FROM reminders WHERE id = $1 AND user_id = $2",
           [reminderId, userId],
@@ -1982,9 +2051,10 @@ app.post("/webhook", async (req, res) => {
           await answerCallbackQuery(callbackQuery.id, "Reminder not found.", true);
         }
       } else if (data.startsWith("edit:")) {
-        const reminderId = data.replace("edit:", "");
+        const reminderId = parseReminderId(data, "edit:");
+        if (!reminderId) return res.sendStatus(200);
         await setPendingEdit(userId, null);
-        pendingEditSurfaces.delete(userId);
+        pendingEditSurfacesBounded.delete(userId);
         await answerCallbackQuery(
           callbackQuery.id,
           "✏️ Edit this reminder?",
@@ -2107,7 +2177,8 @@ app.post("/webhook", async (req, res) => {
         }
       } else if (data.startsWith("setearly:")) {
         const parts = data.split(":");
-        const reminderId = parts[1];
+        const reminderId = parseInt(parts[1], 10);
+        if (isNaN(reminderId) || reminderId <= 0) return res.sendStatus(200);
         const mins = parseInt(parts[2], 10);
         const offsetVal = mins === 0 ? null : mins;
         await pool.query(
@@ -2132,7 +2203,7 @@ app.post("/webhook", async (req, res) => {
       } else if (data.startsWith("prompt_early:")) {
         const reminderId = data.replace("prompt_early:", "");
         await setPendingEdit(userId, `early:${reminderId}`);
-        if (callbackSurface) pendingEditSurfaces.set(userId, callbackSurface);
+        if (callbackSurface) pendingEditSurfacesBounded.set(userId, callbackSurface);
         await editRichCallbackSurface(buildRichMessage([
           richHeading("⚡ How many minutes early?", 1),
           richParagraph("Example: 15, 45, 120"),
@@ -2143,9 +2214,10 @@ app.post("/webhook", async (req, res) => {
         ]));
         await answerCallbackQuery(callbackQuery.id);
       } else if (data.startsWith("prompt_edit_text:")) {
-        const reminderId = data.replace("prompt_edit_text:", "");
+        const reminderId = parseReminderId(data, "prompt_edit_text:");
+        if (!reminderId) return res.sendStatus(200);
         await setPendingEdit(userId, `text:${reminderId}`);
-        if (callbackSurface) pendingEditSurfaces.set(userId, callbackSurface);
+        if (callbackSurface) pendingEditSurfacesBounded.set(userId, callbackSurface);
         await editRichCallbackSurface(buildRichMessage([
           richHeading("📝 Type the new note/text", 1),
           richParagraph("Enter the new text for this reminder:"),
@@ -2156,9 +2228,10 @@ app.post("/webhook", async (req, res) => {
         ]));
         await answerCallbackQuery(callbackQuery.id);
       } else if (data.startsWith("prompt_edit_time:")) {
-        const reminderId = data.replace("prompt_edit_time:", "");
+        const reminderId = parseReminderId(data, "prompt_edit_time:");
+        if (!reminderId) return res.sendStatus(200);
         await setPendingEdit(userId, `time:${reminderId}`);
-        if (callbackSurface) pendingEditSurfaces.set(userId, callbackSurface);
+        if (callbackSurface) pendingEditSurfacesBounded.set(userId, callbackSurface);
         await editRichCallbackSurface(buildRichMessage([
           richHeading("🕒 Type the new time/date", 1),
           richParagraph("Example: tomorrow at 8am, 2h, or Aug 12 5pm"),
@@ -2203,7 +2276,8 @@ app.post("/webhook", async (req, res) => {
         }
       } else if (data.startsWith("toggledow:")) {
         const parts = data.split(":");
-        const reminderId = parts[1];
+        const reminderId = parseInt(parts[1], 10);
+        if (isNaN(reminderId) || reminderId <= 0) return res.sendStatus(200);
         const dayNum = parseInt(parts[2], 10);
         const result = await pool.query(
           "SELECT recurring FROM reminders WHERE id = $1 AND user_id = $2",
@@ -2251,7 +2325,8 @@ app.post("/webhook", async (req, res) => {
           await answerCallbackQuery(callbackQuery.id, "Reminder not found.", true);
         }
       } else if (data.startsWith("unitmenu:")) {
-        const reminderId = data.replace("unitmenu:", "");
+        const reminderId = parseReminderId(data, "unitmenu:");
+        if (!reminderId) return res.sendStatus(200);
         await answerCallbackQuery(callbackQuery.id);
         await editRichCallbackSurface(buildRichMessage([
           richHeading("⚙️ Select Custom Interval Unit", 1),
@@ -2270,9 +2345,11 @@ app.post("/webhook", async (req, res) => {
           ]),
         ]));
       } else if (data.startsWith("nummenu:")) {
-        const [, reminderId, unit] = data.split(":");
+        const [, reminderIdStr, unit] = data.split(":");
+        const reminderId = parseInt(reminderIdStr, 10);
+        if (isNaN(reminderId) || reminderId <= 0) return res.sendStatus(200);
         await setPendingEdit(userId, null);
-        pendingEditSurfaces.delete(userId);
+        pendingEditSurfacesBounded.delete(userId);
         await answerCallbackQuery(callbackQuery.id);
         const nums = [2, 3, 4, 5, 6, 8, 10, 12, 14, 21, 30];
         const numButtons = [];
@@ -2297,7 +2374,7 @@ app.post("/webhook", async (req, res) => {
       } else if (data.startsWith("prompt_rec:")) {
         const [, reminderId, unit] = data.split(":");
         await setPendingEdit(userId, `rec:${reminderId}:${unit}`);
-        if (callbackSurface) pendingEditSurfaces.set(userId, callbackSurface);
+        if (callbackSurface) pendingEditSurfacesBounded.set(userId, callbackSurface);
         await editRichCallbackSurface(buildRichMessage([
           richHeading(`⚙️ Enter custom repeat interval in ${unit.toUpperCase()}`, 1),
           richParagraph("Example: 56, 72, 100"),
@@ -2338,7 +2415,9 @@ app.post("/webhook", async (req, res) => {
           await answerCallbackQuery(callbackQuery.id, "Reminder not found.", true);
         }
       } else if (data.startsWith("setrec:")) {
-        const [, reminderId, recType, interval = "1"] = data.split(":");
+        const [, reminderIdStr, recType, interval = "1"] = data.split(":");
+        const reminderId = parseInt(reminderIdStr, 10);
+        if (isNaN(reminderId) || reminderId <= 0) return res.sendStatus(200);
         const recurringVal =
           recType === "none" ? null : `${recType}:${interval}`;
 
@@ -2362,7 +2441,9 @@ app.post("/webhook", async (req, res) => {
           );
         }
       } else if (data.startsWith("setlimit:")) {
-        const [, reminderId, countStr] = data.split(":");
+        const [, reminderIdStr, countStr] = data.split(":");
+        const reminderId = parseInt(reminderIdStr, 10);
+        if (isNaN(reminderId) || reminderId <= 0) return res.sendStatus(200);
         const count = parseInt(countStr, 10);
         const limitVal = count === 0 ? null : count;
 
@@ -2465,9 +2546,9 @@ app.post("/webhook", async (req, res) => {
               type: "article",
               id: (() => {
                 const genId = `create_inline_${crypto.createHash("sha256").update(queryText).digest("hex").slice(0, 24)}`;
-                inlineQueryCache.set(genId, queryText);
+                inlineQueryCacheBounded.set(genId, queryText);
                 setTimeout(
-                  () => inlineQueryCache.delete(genId),
+                  () => inlineQueryCacheBounded.delete(genId),
                   10 * 60 * 1000,
                 );
                 return genId;
@@ -2532,7 +2613,7 @@ app.post("/webhook", async (req, res) => {
       if (selectedResultId.startsWith("create_inline_")) {
         let rawQuery = chosenResult.query || "";
         if (!rawQuery) {
-          const cachedQuery = inlineQueryCache.get(selectedResultId);
+          const cachedQuery = inlineQueryCacheBounded.get(selectedResultId);
           if (cachedQuery) {
             rawQuery = cachedQuery;
           }

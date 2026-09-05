@@ -64,7 +64,7 @@ async function checkRichMessageSupport() {
     const res = await callTelegram("getBotInfo", {}, "getBotInfo");
     if (res) {
       richMessageSupported = true;
-      console.log("[TELEGRAM] Rich message support: assumed available (Bot API 10.2+)");
+      console.log("[TELEGRAM] Rich message support: enabled (Bot API 10.2+ required)");
     }
   } catch {
     richMessageSupported = false;
