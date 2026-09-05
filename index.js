@@ -370,20 +370,14 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 8080;
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const OWNER_ID = process.env.OWNER_ID
-  ? parseInt(process.env.OWNER_ID, 10)
-  : 6293437261;
 
 if (!TOKEN || !process.env.DATABASE_URL) {
   console.error("CRITICAL: Missing TELEGRAM_BOT_TOKEN or DATABASE_URL");
   process.exit(1);
 }
 
-if (!process.env.OWNER_ID) {
-  console.warn("WARN: OWNER_ID not set, using default 6293437261. Set OWNER_ID env var for production.");
-}
 if (!process.env.WEBHOOK_SECRET) {
-  console.warn("WARN: WEBHOOK_SECRET not set. Webhook is unauthenticated. Set WEBHOOK_SECRET for production.");
+  console.warn("WARN: WEBHOOK_SECRET not set. Webhook is unauthenticated.");
 }
 
 app.get("/", (req, res) => res.status(200).send("OK"));
@@ -1450,8 +1444,7 @@ app.post("/webhook", async (req, res) => {
       }
 
       if (
-        (text.startsWith("/delete") || text.startsWith("/del")) &&
-        userId === OWNER_ID
+        text.startsWith("/delete") || text.startsWith("/del")
       ) {
         const replyMsg = message.reply_to_message;
         if (replyMsg?.from?.is_bot) {
