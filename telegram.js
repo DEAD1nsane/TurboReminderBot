@@ -347,6 +347,17 @@ async function editInlineMessage(inlineMessageId, text, replyMarkup = null) {
   return result !== null;
 }
 
+async function answerInlineQuery(inlineQueryId, results, options = {}) {
+  const payload = {
+    inline_query_id: inlineQueryId,
+    results,
+    cache_time: options.cacheTime ?? 0,
+  };
+  if (options.isPersonal !== undefined) payload.is_personal = options.isPersonal;
+  if (options.nextOffset) payload.next_offset = options.nextOffset;
+  return callTelegram("answerInlineQuery", payload, "answer inline query");
+}
+
 module.exports = {
   sendTelegramMessage,
   sendEphemeralMessage,
@@ -355,6 +366,7 @@ module.exports = {
   deleteTelegramMessage,
   deleteEphemeralMessage,
   answerCallbackQuery,
+  answerInlineQuery,
   setEphemeralGroupCommands,
   formatTelegramHtml,
   fetchWithTimeout,

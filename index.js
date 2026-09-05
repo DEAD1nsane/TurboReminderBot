@@ -30,6 +30,7 @@ const {
   editRichEphemeralMessage,
   editInlineRichMessage,
   editInlineMessage,
+  answerInlineQuery,
   checkRichMessageSupport,
   isRichMessageSupported,
 } = require("./telegram");
@@ -366,7 +367,7 @@ async function beginRichSurface(message, userId, richMessage, markup) {
 }
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "10kb" }));
 
 const PORT = process.env.PORT || 8080;
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -381,9 +382,26 @@ if (!process.env.WEBHOOK_SECRET) {
 }
 
 app.get("/", (req, res) => res.status(200).send("OK"));
-app.listen(PORT, "0.0.0.0", () =>
+app.get("/health", async (req, res) => {
+  try {
+    await pool.query("SELECT 1");
+    res.status(200).json({ status: "ok", db: "connected" });
+  } catch (err) {
+    res.status(503).json({ status: "error", db: "disconnected" });
+  }
+});
+
+const server = app.listen(PORT, "0.0.0.0", () =>
   console.log(`Server listening on port ${PORT}`),
 );
+
+process.on("SIGTERM", () => {
+  console.log("SIGTERM received, shutting down gracefully...");
+  server.close(() => {
+    pool.end().then(() => process.exit(0));
+  });
+  setTimeout(() => process.exit(1), 10000);
+});
 
 checkRichMessageSupport().then(() => {
   console.log("[STARTUP] Rich message support:", isRichMessageSupported() ? "enabled" : "fallback to MarkdownV2");
@@ -463,7 +481,8 @@ async function initDb() {
         `);
     console.log("Database initialized successfully!");
   } catch (err) {
-    console.error("Error initializing database:", err);
+    console.error("CRITICAL: Database initialization failed:", err);
+    process.exit(1);
   }
 }
 initDb();
@@ -724,18 +743,14 @@ function parseFlexibleDate(text, timeZone) {
 
   if (match && match[1].trim().length > 0) {
     const timePart = match[1];
-    const days = (timePart.match(/(\d+)d/i) || [])[1]
-      ? parseInt(RegExp.$1, 10)
-      : 0;
-    const hours = (timePart.match(/(\d+)h/i) || [])[1]
-      ? parseInt(RegExp.$1, 10)
-      : 0;
-    const minutes = (timePart.match(/(\d+)m/i) || [])[1]
-      ? parseInt(RegExp.$1, 10)
-      : 0;
-    const seconds = (timePart.match(/(\d+)s/i) || [])[1]
-      ? parseInt(RegExp.$1, 10)
-      : 0;
+    const dMatch = timePart.match(/(\d+)d/i);
+    const hMatch = timePart.match(/(\d+)h/i);
+    const mMatch = timePart.match(/(\d+)m/i);
+    const sMatch = timePart.match(/(\d+)s/i);
+    const days = dMatch ? parseInt(dMatch[1], 10) : 0;
+    const hours = hMatch ? parseInt(hMatch[1], 10) : 0;
+    const minutes = mMatch ? parseInt(mMatch[1], 10) : 0;
+    const seconds = sMatch ? parseInt(sMatch[1], 10) : 0;
 
     if (days > 0 || hours > 0 || minutes > 0 || seconds > 0) {
       let dt = nowInZone;
@@ -1016,8 +1031,9 @@ app.post("/webhook", async (req, res) => {
         if (state.step === 1) {
           state.title = text;
           if (state.prefillDate) {
-            const prefillDt = DateTime.fromJSDate(state.prefillDate).setZone("America/Chicago").set({ hour: 9, minute: 0, second: 0 });
-            if (prefillDt <= DateTime.now().setZone("America/Chicago")) {
+            const userTz = await getUserTimezone(userId);
+            const prefillDt = DateTime.fromJSDate(state.prefillDate).setZone(userTz).set({ hour: 9, minute: 0, second: 0 });
+            if (prefillDt <= DateTime.now().setZone(userTz)) {
               prefillDt.plus({ days: 1 });
             }
             state.time = {
@@ -1545,35 +1561,28 @@ app.post("/webhook", async (req, res) => {
           });
         }
       } else if (data === "surface_close") {
-        console.log("[CLOSE] surface_close triggered, inlineMsgId:", inlineMsgId, "callbackSurface:", !!callbackSurface, "inline_message_id:", callbackQuery.inline_message_id);
         await answerCallbackQuery(callbackQuery.id);
         wizardStateBounded.delete(userId);
         pendingEditSurfacesBounded.delete(userId);
         await setPendingEdit(userId, null);
         if (callbackSurface?.ephemeral) {
-          console.log("[CLOSE] deleting ephemeral");
           await deleteEphemeralMessage(
             callbackSurface.chatId,
             userId,
             callbackSurface.ephemeralMessageId,
           );
         } else if (callbackSurface) {
-          console.log("[CLOSE] deleting regular message");
           await deleteTelegramMessage(
             callbackSurface.chatId,
             callbackSurface.messageId,
           );
         } else if (callbackQuery.inline_message_id) {
-          console.log("[CLOSE] editing inline message:", callbackQuery.inline_message_id);
-          const closeResult = await editInlineRichMessage(
+          await editInlineRichMessage(
             callbackQuery.inline_message_id,
             buildRichMessage([
               richHeading("✅ Closed", 1),
             ]),
           );
-          console.log("[CLOSE] edit result:", closeResult);
-        } else {
-          console.log("[CLOSE] no surface to close!");
         }
       } else if (data.startsWith("wizard_repeat:")) {
         await answerCallbackQuery(callbackQuery.id);
@@ -1748,8 +1757,13 @@ app.post("/webhook", async (req, res) => {
         await answerCallbackQuery(callbackQuery.id);
         const dateKey = data.replace("calday:", "");
         const [calYear, calMonth, calDay] = dateKey.split("-").map(Number);
-        const dayStart = DateTime.local(calYear, calMonth, calDay).startOf("day").toJSDate();
-        const dayEnd = DateTime.local(calYear, calMonth, calDay).endOf("day").toJSDate();
+        if (isNaN(calYear) || isNaN(calMonth) || isNaN(calDay) || calMonth < 1 || calMonth > 12 || calDay < 1 || calDay > 31) {
+          return res.sendStatus(200);
+        }
+        const calDt = DateTime.local(calYear, calMonth, calDay);
+        if (!calDt.isValid) return res.sendStatus(200);
+        const dayStart = calDt.startOf("day").toJSDate();
+        const dayEnd = calDt.endOf("day").toJSDate();
         const res = await pool.query(
           "SELECT id, text, remind_at, recurring FROM reminders WHERE user_id = $1 AND sent = FALSE AND remind_at >= $2 AND remind_at < $3 ORDER BY remind_at ASC",
           [userId, dayStart, dayEnd]
@@ -1800,12 +1814,17 @@ app.post("/webhook", async (req, res) => {
         await answerCallbackQuery(callbackQuery.id);
         const dateKey = data.replace("caladd:", "");
         const [calYear, calMonth, calDay] = dateKey.split("-").map(Number);
-        const dateLabel = DateTime.local(calYear, calMonth, calDay).toFormat("EEEE, MMM d");
+        if (isNaN(calYear) || isNaN(calMonth) || isNaN(calDay) || calMonth < 1 || calMonth > 12 || calDay < 1 || calDay > 31) {
+          return res.sendStatus(200);
+        }
+        const calDt = DateTime.local(calYear, calMonth, calDay);
+        if (!calDt.isValid) return res.sendStatus(200);
+        const dateLabel = calDt.toFormat("EEEE, MMM d");
         wizardStateBounded.set(userId, {
           step: 1,
           surface: callbackSurface,
           originalChatId: isGroupChat(callbackQuery.message?.chat) ? userId : chatId,
-          prefillDate: DateTime.local(calYear, calMonth, calDay),
+          prefillDate: calDt,
         });
         await editRichCallbackSurface(buildRichMessage([
           richHeading("📝 What's the reminder title?", 1),
@@ -1917,19 +1936,7 @@ app.post("/webhook", async (req, res) => {
         if (callbackSurface) {
           await editCallbackSurface(dashData.text, dashData.keyboard);
         } else if (callbackQuery.inline_message_id) {
-          await fetchWithTimeout(
-            `https://api.telegram.org/bot${TOKEN}/editMessageText`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                inline_message_id: callbackQuery.inline_message_id,
-                text: dashData.text,
-                reply_markup: dashData.keyboard,
-                parse_mode: "MarkdownV2",
-              }),
-            },
-          );
+          await editInlineMessage(callbackQuery.inline_message_id, dashData.text, dashData.keyboard);
         }
         return res.sendStatus(200);
       } else if (data.startsWith("confirm_del:")) {
@@ -1954,19 +1961,7 @@ app.post("/webhook", async (req, res) => {
           await editRichCallbackSurface(dashData.richMessage);
         } else if (callbackQuery.inline_message_id) {
           const iMsgId = callbackQuery.inline_message_id;
-          await fetchWithTimeout(
-            `https://api.telegram.org/bot${TOKEN}/editMessageText`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                inline_message_id: iMsgId,
-                text: dashData.text,
-                reply_markup: dashData.keyboard,
-                parse_mode: "MarkdownV2",
-              }),
-            },
-          );
+          await editInlineMessage(iMsgId, dashData.text, dashData.keyboard);
         }
         return res.sendStatus(200);
       } else if (data.startsWith("view:")) {
@@ -2013,25 +2008,17 @@ app.post("/webhook", async (req, res) => {
 
           if (callbackQuery.inline_message_id) {
             const extrasStr = extras.length > 0 ? `\n\n━━━━━━━━━━━━━━━━━━\n${extras.join("\n")}` : "";
-            await fetchWithTimeout(
-              `https://api.telegram.org/bot${TOKEN}/editMessageText`,
+            await editInlineMessage(
+              callbackQuery.inline_message_id,
+              `🔔 **Reminder Details**\n📝 ${escapeMarkdownV2(r.text)}\n🕒 ${formattedTime}${extrasStr}`,
               {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  inline_message_id: callbackQuery.inline_message_id,
-                  text: `🔔 **Reminder Details**\n📝 ${escapeMarkdownV2(r.text)}\n🕒 ${formattedTime}${extrasStr}`,
-                  reply_markup: {
-                    inline_keyboard: [
-                      [
-                        { text: "✏️ Edit", callback_data: `edit:${reminderId}` },
-                        { text: "❌ Del", callback_data: `del:${reminderId}` },
-                      ],
-                      [{ text: "🔙 Back", callback_data: "menu:list" }],
-                    ],
-                  },
-                  parse_mode: "MarkdownV2",
-                }),
+                inline_keyboard: [
+                  [
+                    { text: "✏️ Edit", callback_data: `edit:${reminderId}` },
+                    { text: "❌ Del", callback_data: `del:${reminderId}` },
+                  ],
+                  [{ text: "🔙 Back", callback_data: "menu:list" }],
+                ],
               },
             );
           } else {
@@ -2104,18 +2091,7 @@ app.post("/webhook", async (req, res) => {
               );
             }
 
-            await fetchWithTimeout(
-              `https://api.telegram.org/bot${TOKEN}/editMessageText`,
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  inline_message_id: iMsgId,
-                  text: "📝 *Edit menu sent to your DM!*",
-                  parse_mode: "MarkdownV2",
-                }),
-              },
-            );
+            await editInlineMessage(iMsgId, "📝 *Edit menu sent to your DM!*");
           } else {
             pendingInlineEdits.add(key);
             setTimeout(() => pendingInlineEdits.delete(key), 10000);
@@ -2149,19 +2125,7 @@ app.post("/webhook", async (req, res) => {
                 });
             }
 
-            await fetchWithTimeout(
-              `https://api.telegram.org/bot${TOKEN}/editMessageText`,
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  inline_message_id: iMsgId,
-                  text: dashData.text,
-                  reply_markup: dashData.keyboard,
-                  parse_mode: "MarkdownV2",
-                }),
-              },
-            );
+            await editInlineMessage(iMsgId, dashData.text, dashData.keyboard);
           }
           return res.sendStatus(200);
         }
@@ -2573,24 +2537,7 @@ app.post("/webhook", async (req, res) => {
         }
 
         console.log("[INLINE] Sending", results.length, "results");
-        const answerRes = await fetchWithTimeout(
-          `https://api.telegram.org/bot${TOKEN}/answerInlineQuery`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              inline_query_id: inlineQuery.id,
-              results,
-              cache_time: 0,
-            }),
-          },
-        );
-        const answerBody = await answerRes.text();
-        console.log(
-          "[INLINE] answerInlineQuery:",
-          answerRes.status,
-          answerBody,
-        );
+        await answerInlineQuery(inlineQuery.id, results);
       } catch (inlineErr) {
         console.error("[INLINE] Error handling inline query:", inlineErr);
       }
@@ -2614,18 +2561,7 @@ app.post("/webhook", async (req, res) => {
 
         if (!parsed) {
           if (iMsgId) {
-            await fetchWithTimeout(
-              `https://api.telegram.org/bot${TOKEN}/editMessageText`,
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  inline_message_id: iMsgId,
-                  text: "❌ **I could not parse that reminder time. Please try again.**",
-                  parse_mode: "MarkdownV2",
-                }),
-              },
-            );
+            await editInlineMessage(iMsgId, "❌ **I could not parse that reminder time. Please try again.**");
           }
         } else {
           const insertRes = await pool.query(
@@ -2649,44 +2585,16 @@ app.post("/webhook", async (req, res) => {
           );
 
           if (iMsgId) {
-            const editRes = await fetchWithTimeout(
-              `https://api.telegram.org/bot${TOKEN}/editMessageText`,
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  inline_message_id: iMsgId,
-                  text: `✅ **Reminder set!**\n📝 *${escapeMarkdownV2(parsed.reminderText)}*\n⏰ ${formattedTime}`,
-                  parse_mode: "MarkdownV2",
-                }),
-              },
-            );
+            const editOk = await editInlineMessage(iMsgId, `✅ **Reminder set!**\n📝 *${escapeMarkdownV2(parsed.reminderText)}*\n⏰ ${formattedTime}`);
 
-            if (!editRes.ok) {
-              console.error(
-                "Failed to update inline confirmation:",
-                await editRes.text(),
-              );
+            if (!editOk) {
+              console.error("Failed to update inline confirmation");
             } else {
               setTimeout(async () => {
                 try {
-                  await fetchWithTimeout(
-                    `https://api.telegram.org/bot${TOKEN}/editMessageText`,
-                    {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        inline_message_id: iMsgId,
-                        text: `✅ **Reminder Created for ${userFirstName || "you"}!**`,
-                        parse_mode: "MarkdownV2",
-                      }),
-                    },
-                  );
+                  await editInlineMessage(iMsgId, `✅ **Reminder Created for ${userFirstName || "you"}!**`);
                 } catch (err) {
-                  console.error(
-                    "Failed to collapse inline creation message:",
-                    err,
-                  );
+                  console.error("Failed to collapse inline creation message:", err);
                 }
               }, 30000);
             }
@@ -2704,18 +2612,7 @@ app.post("/webhook", async (req, res) => {
         if (iMsgId) {
           setTimeout(async () => {
             try {
-              await fetchWithTimeout(
-                `https://api.telegram.org/bot${TOKEN}/editMessageText`,
-                {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    inline_message_id: iMsgId,
-                    text: `✅ **Reminders sent to your DM\\!**`,
-                    parse_mode: "MarkdownV2",
-                  }),
-                },
-              );
+              await editInlineMessage(iMsgId, `✅ **Reminders sent to your DM\\!**`);
             } catch (err) {
               console.error("Failed to collapse inline DM message:", err);
             }
@@ -2760,19 +2657,7 @@ app.post("/webhook", async (req, res) => {
         );
 
         if (iMsgId) {
-          await fetchWithTimeout(
-            `https://api.telegram.org/bot${TOKEN}/editMessageText`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                inline_message_id: iMsgId,
-                text: dashData.text,
-                reply_markup: dashData.keyboard,
-                parse_mode: "MarkdownV2",
-              }),
-            },
-          );
+          await editInlineMessage(iMsgId, dashData.text, dashData.keyboard);
         }
       }
     }
