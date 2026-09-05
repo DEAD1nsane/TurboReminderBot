@@ -1431,7 +1431,7 @@ app.post("/webhook", async (req, res) => {
         editRichSurface(callbackSurface, richMessage, markup);
 
       const inlineMsgId = callbackQuery.inline_message_id;
-      if (inlineMsgId) {
+      if (inlineMsgId && data !== "surface_close") {
         resetMenuTimer(`inline_${inlineMsgId}`, async () => {
           await fetchWithTimeout(
             `https://api.telegram.org/bot${TOKEN}/editMessageText`,
@@ -1481,10 +1481,6 @@ app.post("/webhook", async (req, res) => {
         }
       } else if (data === "surface_close") {
         await answerCallbackQuery(callbackQuery.id);
-        if (inlineMsgId) {
-          clearTimeout(activityTimers.get(`inline_${inlineMsgId}`));
-          activityTimers.delete(`inline_${inlineMsgId}`);
-        }
         wizardState.delete(userId);
         pendingEditSurfaces.delete(userId);
         await setPendingEdit(userId, null);
