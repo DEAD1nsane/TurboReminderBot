@@ -1431,6 +1431,7 @@ app.post("/webhook", async (req, res) => {
         editRichSurface(callbackSurface, richMessage, markup);
 
       const inlineMsgId = callbackQuery.inline_message_id;
+      console.log("[CALLBACK] data:", data, "inlineMsgId:", inlineMsgId, "hasMessage:", !!callbackQuery.message);
       if (inlineMsgId && data !== "surface_close") {
         resetMenuTimer(`inline_${inlineMsgId}`, async () => {
           await fetchWithTimeout(
