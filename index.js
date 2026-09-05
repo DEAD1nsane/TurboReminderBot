@@ -1462,7 +1462,35 @@ app.post("/webhook", async (req, res) => {
 
       if (data === "wizard_new") {
         await answerCallbackQuery(callbackQuery.id);
-        const surface = callbackSurface;
+        let surface = callbackSurface;
+        if (!surface && inlineMsgId) {
+          const sent = await sendRichEphemeralMessage(
+            chatId,
+            userId,
+            buildRichMessage([
+              richHeading("📝 What's the reminder title?", 1),
+              richParagraph("Type the title for your reminder (e.g., buy milk, team meeting, pay bills):"),
+              richDivider(),
+              richButtons([
+                richButton("❌ Cancel", "wizard_cancel", "danger"),
+              ]),
+            ]),
+            { replaceCallbackQueryMessage: true },
+          );
+          if (sent) {
+            surface = surfaceFromTelegramMessage(sent, userId);
+            if (surface) surface.richContent = true;
+          }
+        } else if (surface) {
+          await editRichSurface(surface, buildRichMessage([
+            richHeading("📝 What's the reminder title?", 1),
+            richParagraph("Type the title for your reminder (e.g., buy milk, team meeting, pay bills):"),
+            richDivider(),
+            richButtons([
+              richButton("❌ Cancel", "wizard_cancel", "danger"),
+            ]),
+          ]));
+        }
         if (surface) {
           wizardState.set(userId, {
             step: 1,
@@ -1471,14 +1499,6 @@ app.post("/webhook", async (req, res) => {
               ? userId
               : chatId,
           });
-          await editRichCallbackSurface(buildRichMessage([
-            richHeading("📝 What's the reminder title?", 1),
-            richParagraph("Type the title for your reminder (e.g., buy milk, team meeting, pay bills):"),
-            richDivider(),
-            richButtons([
-              richButton("❌ Cancel", "wizard_cancel", "danger"),
-            ]),
-          ]));
         }
       } else if (data === "surface_close") {
         console.log("[CLOSE] surface_close triggered, inlineMsgId:", inlineMsgId, "callbackSurface:", !!callbackSurface, "inline_message_id:", callbackQuery.inline_message_id);
