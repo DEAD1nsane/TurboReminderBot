@@ -2015,25 +2015,9 @@ app.post("/webhook", async (req, res) => {
             );
             resetMenuTimer(`inline_${callbackQuery.inline_message_id}`, async () => {
               try {
-                const dashData = await getRemindersDashboardData(userId, userTz, userFirstName);
-                const reminderRows = dashData.richMessage.blocks.filter(
-                  b => b.type === "buttons" && b.buttons?.some(btn => btn.callback_data?.startsWith("view:"))
-                );
-                const count = reminderRows.length;
-                const summaryText = count === 1 ? "1 active reminder" : `${count} active reminders`;
-                const lines = reminderRows.map(b => {
-                  const btn = b.buttons.find(btn => btn.callback_data?.startsWith("view:"));
-                  return btn ? btn.text.replace(/^⏰ |^📅 /, "").replace(/ \\(.+\\)$/, "") : "";
-                }).filter(Boolean);
-                const collapsedText = `📋 **Active Reminders**\n${lines.length > 0 ? lines.map(l => `• ${escapeMarkdownV2(l)}`).join("\\n") : "No reminders"}\n\n_${summaryText}_`;
                 await editInlineMessage(
                   callbackQuery.inline_message_id,
-                  collapsedText,
-                  {
-                    inline_keyboard: [
-                      [{ text: "📋 View Reminders", callback_data: "menu:list" }],
-                    ],
-                  },
+                  "✅ Closed.",
                 );
               } catch (err) {
                 console.error("Failed to collapse inline details:", err);
