@@ -509,18 +509,24 @@ setInterval(async () => {
         !r.early_alert_sent &&
         now >= new Date(remindAt.getTime() - r.early_offset * 60000)
       ) {
-        await sendTelegramMessage(
+        await sendRichMessage(
           r.chat_id || r.user_id,
-          `> **⚡ | ${escapeMarkdownV2(r.text)}**\n*Starts in ${r.early_offset}m (${formattedTime})*`,
+          buildRichMessage([
+            richHeading(`⚡ ${r.text}`, 1),
+            richParagraph(`Starts in ${r.early_offset}m (${formattedTime})`),
+          ]),
         );
         await pool.query(
           "UPDATE reminders SET early_alert_sent = TRUE WHERE id = $1",
           [r.id],
         );
       } else if (now >= remindAt && !r.sent) {
-        await sendTelegramMessage(
+        await sendRichMessage(
           r.chat_id || r.user_id,
-          `> **🔔 | ${escapeMarkdownV2(r.text)}**\n*${formattedTime}*`,
+          buildRichMessage([
+            richHeading(`🔔 ${r.text}`, 1),
+            richParagraph(formattedTime),
+          ]),
         );
 
         if (r.recurring) {
