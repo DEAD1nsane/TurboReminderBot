@@ -2573,7 +2573,7 @@ app.post("/webhook", async (req, res) => {
             type: "article",
             id: "noop_text",
             title: "⚠️ Don't type — just tap below",
-            description: "👇🏼 Swipe up for more options 👇🏼",
+            description: "↕️ Swipe to see options",
             input_message_content: {
               message_text: "📝 **No text needed\\!** Just pick an option below\\.",
               parse_mode: "MarkdownV2",
@@ -2584,15 +2584,15 @@ app.post("/webhook", async (req, res) => {
         results.push({
           type: "article",
           id: "create_wizard_dm",
-          title: "🪄 Create Reminder",
-          description: "Tap to start the reminder wizard",
+          title: "➕ Create Reminder",
+          description: "Set time & message to get notified",
           thumbnail_url:
-            "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1fa84.png",
+            "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f0.png",
           thumb_width: 72,
           thumb_height: 72,
           input_message_content: {
             message_text:
-              "📝 **Opening reminder wizard\\.\\.\\.**",
+              "📝 **Creating your reminder\\.\\.\\.**",
             parse_mode: "MarkdownV2",
           },
           reply_markup: {
@@ -2605,7 +2605,7 @@ app.post("/webhook", async (req, res) => {
           type: "article",
           id: "show_reminders_dm",
           title: "📋 View Reminders (DM)",
-          description: "👇🏼 Manage in your DM",
+          description: "Manage your reminders via DM",
           thumbnail_url:
             "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4e9.png",
           thumb_width: 72,
@@ -2625,7 +2625,7 @@ app.post("/webhook", async (req, res) => {
           type: "article",
           id: "show_reminders_inline_v6",
           title: "📋 View Reminders Inline",
-          description: "👇🏼 Show list in this chat",
+          description: "Show reminder list here",
           thumbnail_url:
             "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f5e8.png",
           thumb_width: 72,
