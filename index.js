@@ -1048,9 +1048,9 @@ app.post("/webhook", async (req, res) => {
           state.title = text;
           if (state.prefillDate) {
             const userTz = await getUserTimezone(userId);
-            const prefillDt = DateTime.fromJSDate(state.prefillDate).setZone(userTz).set({ hour: 9, minute: 0, second: 0 });
+            let prefillDt = DateTime.fromJSDate(state.prefillDate).setZone(userTz).set({ hour: 9, minute: 0, second: 0 });
             if (prefillDt <= DateTime.now().setZone(userTz)) {
-              prefillDt.plus({ days: 1 });
+              prefillDt = prefillDt.plus({ days: 1 });
             }
             state.time = {
               dt: prefillDt,
@@ -1120,49 +1120,72 @@ app.post("/webhook", async (req, res) => {
           const userTz2 = await getUserTimezone(userId);
           const parsed2 = parseFlexibleDate(text, userTz2);
           if (!parsed2) {
-            await editRichSurface(state.surface, buildRichMessage([
-              richHeading("⚠️ Could not parse the time", 2),
-              richParagraph("Please try again:\n• tomorrow 5pm\n• in 2h 30m\n• Aug 12 8am"),
-              richDivider(),
-              richButtons([
-                richButton("❌ Cancel", "wizard_cancel", "danger"),
-              ]),
-            ]));
+            if (state.iMsgId) {
+              await editInlineMessage(state.iMsgId, "⚠️ **Could not parse the time**\nPlease try again:\n• tomorrow 5pm\n• in 2h 30m\n• Aug 12 8am", {
+                inline_keyboard: [[{ text: "❌ Cancel", callback_data: "wizard_cancel" }]],
+              });
+            } else {
+              await editRichSurface(state.surface, buildRichMessage([
+                richHeading("⚠️ Could not parse the time", 2),
+                richParagraph("Please try again:\n• tomorrow 5pm\n• in 2h 30m\n• Aug 12 8am"),
+                richDivider(),
+                richButtons([
+                  richButton("❌ Cancel", "wizard_cancel", "danger"),
+                ]),
+              ]));
+            }
             return res.sendStatus(200);
           }
           state.time = parsed2;
           state.step = 3;
           wizardStateBounded.set(userId, state);
-          await editRichSurface(state.surface, buildRichMessage([
-            richHeading("🔄 How often should it repeat?", 1),
-            richDivider(),
-            richButtons([
-              richButton("None", "wizard_repeat:none", "primary"),
-              richButton("Daily", "wizard_repeat:daily:1", "primary"),
-              richButton("Weekly", "wizard_repeat:weekly:1", "primary"),
-            ]),
-            richButtons([
-              richButton("Monthly", "wizard_repeat:monthly:1", "primary"),
-              richButton("Every X Hours/Minutes", "wizard_repeat:smart", "link"),
-            ]),
-            richButtons([
-              richButton("❌ Cancel", "wizard_cancel", "danger"),
-            ]),
-          ]));
+          if (state.iMsgId) {
+            await editInlineMessage(state.iMsgId, "🔄 **How often should it repeat?**", {
+              inline_keyboard: [
+                [{ text: "None", callback_data: "wizard_repeat:none" }, { text: "Daily", callback_data: "wizard_repeat:daily:1" }],
+                [{ text: "Weekly", callback_data: "wizard_repeat:weekly:1" }, { text: "Monthly", callback_data: "wizard_repeat:monthly:1" }],
+                [{ text: "Every X Hours/Minutes", callback_data: "wizard_repeat:smart" }],
+                [{ text: "❌ Cancel", callback_data: "wizard_cancel" }],
+              ],
+            });
+          } else {
+            await editRichSurface(state.surface, buildRichMessage([
+              richHeading("🔄 How often should it repeat?", 1),
+              richDivider(),
+              richButtons([
+                richButton("None", "wizard_repeat:none", "primary"),
+                richButton("Daily", "wizard_repeat:daily:1", "primary"),
+                richButton("Weekly", "wizard_repeat:weekly:1", "primary"),
+              ]),
+              richButtons([
+                richButton("Monthly", "wizard_repeat:monthly:1", "primary"),
+                richButton("Every X Hours/Minutes", "wizard_repeat:smart", "link"),
+              ]),
+              richButtons([
+                richButton("❌ Cancel", "wizard_cancel", "danger"),
+              ]),
+            ]));
+          }
           return res.sendStatus(200);
         } else if (state.step === 3.5) {
           const smartMatch = text.toLowerCase().match(
             /(?:every\s+)?(\d+)\s*(minutes?|mins?|hours?|hrs?|days?|weeks?|months?)/i,
           );
           if (!smartMatch) {
-            await editRichSurface(state.surface, buildRichMessage([
-              richHeading("⚠️ Couldn't understand that", 2),
-              richParagraph("Try something like:\n• every 56 hours\n• every 2 days\n• every 90 minutes"),
-              richDivider(),
-              richButtons([
-                richButton("❌ Cancel", "wizard_cancel", "danger"),
-              ]),
-            ]));
+            if (state.iMsgId) {
+              await editInlineMessage(state.iMsgId, "⚠️ **Couldn't understand that**\nTry something like:\n• every 56 hours\n• every 2 days\n• every 90 minutes", {
+                inline_keyboard: [[{ text: "❌ Cancel", callback_data: "wizard_cancel" }]],
+              });
+            } else {
+              await editRichSurface(state.surface, buildRichMessage([
+                richHeading("⚠️ Couldn't understand that", 2),
+                richParagraph("Try something like:\n• every 56 hours\n• every 2 days\n• every 90 minutes"),
+                richDivider(),
+                richButtons([
+                  richButton("❌ Cancel", "wizard_cancel", "danger"),
+                ]),
+              ]));
+            }
             return res.sendStatus(200);
           }
           const num = parseInt(smartMatch[1], 10);
@@ -1188,33 +1211,48 @@ app.post("/webhook", async (req, res) => {
           state.repeatText = `Every ${num} ${unitLabel}`;
           state.step = 4;
           wizardStateBounded.set(userId, state);
-          await editRichSurface(state.surface, buildRichMessage([
-            richHeading("⏳ How many minutes early should the warning be?", 1),
-            richParagraph("Example: 15, 30, 60 (or 0 for no warning)"),
-            richDivider(),
-            richButtons([
-              richButton("5m", "wizard_early:5", "primary"),
-              richButton("15m", "wizard_early:15", "primary"),
-              richButton("30m", "wizard_early:30", "primary"),
-              richButton("60m", "wizard_early:60", "primary"),
-            ]),
-            richButtons([
-              richButton("None", "wizard_early:0", "link"),
-              richButton("❌ Cancel", "wizard_cancel", "danger"),
-            ]),
-          ]));
+          if (state.iMsgId) {
+            await editInlineMessage(state.iMsgId, "⏳ **How many minutes early should the warning be?**\nExample: 15, 30, 60 (or 0 for no warning)", {
+              inline_keyboard: [
+                [{ text: "5m", callback_data: "wizard_early:5" }, { text: "15m", callback_data: "wizard_early:15" }, { text: "30m", callback_data: "wizard_early:30" }, { text: "60m", callback_data: "wizard_early:60" }],
+                [{ text: "None", callback_data: "wizard_early:0" }, { text: "❌ Cancel", callback_data: "wizard_cancel" }],
+              ],
+            });
+          } else {
+            await editRichSurface(state.surface, buildRichMessage([
+              richHeading("⏳ How many minutes early should the warning be?", 1),
+              richParagraph("Example: 15, 30, 60 (or 0 for no warning)"),
+              richDivider(),
+              richButtons([
+                richButton("5m", "wizard_early:5", "primary"),
+                richButton("15m", "wizard_early:15", "primary"),
+                richButton("30m", "wizard_early:30", "primary"),
+                richButton("60m", "wizard_early:60", "primary"),
+              ]),
+              richButtons([
+                richButton("None", "wizard_early:0", "link"),
+                richButton("❌ Cancel", "wizard_cancel", "danger"),
+              ]),
+            ]));
+          }
           return res.sendStatus(200);
         } else if (state.step === 4) {
           const mins = parseInt(text, 10);
           if (isNaN(mins) || mins < 0) {
-            await editRichSurface(state.surface, buildRichMessage([
-              richHeading("⚠️ Invalid number", 2),
-              richParagraph("Please enter a valid number of minutes (0 = no warning):"),
-              richDivider(),
-              richButtons([
-                richButton("❌ Cancel", "wizard_cancel", "danger"),
-              ]),
-            ]));
+            if (state.iMsgId) {
+              await editInlineMessage(state.iMsgId, "⚠️ **Invalid number**\nPlease enter a valid number of minutes (0 = no warning):", {
+                inline_keyboard: [[{ text: "❌ Cancel", callback_data: "wizard_cancel" }]],
+              });
+            } else {
+              await editRichSurface(state.surface, buildRichMessage([
+                richHeading("⚠️ Invalid number", 2),
+                richParagraph("Please enter a valid number of minutes (0 = no warning):"),
+                richDivider(),
+                richButtons([
+                  richButton("❌ Cancel", "wizard_cancel", "danger"),
+                ]),
+              ]));
+            }
             return res.sendStatus(200);
           }
           state.earlyWarning = mins === 0 ? null : mins;
@@ -1222,20 +1260,28 @@ app.post("/webhook", async (req, res) => {
           wizardStateBounded.set(userId, state);
           const timeStr = state.time.dt.toFormat("EEE, MMM d, yyyy 'at' h:mm a");
 
-          await editRichSurface(state.surface, buildRichMessage([
-            richHeading("📝 Review Your Reminder", 1),
-            richTable([
-              [{ text: "📌 Title" }, { text: state.title }],
-              [{ text: "⏰ Time" }, { text: timeStr }],
-              [{ text: "🔄 Repeat" }, { text: state.repeatText || "None" }],
-              [{ text: "⏳ Early Warning" }, { text: state.earlyWarning ? `${state.earlyWarning}m before` : "None" }],
-            ]),
-            richDivider(),
-            richButtons([
-              richButton("✅ Create", "wizard_confirm", "success"),
-              richButton("❌ Cancel", "wizard_cancel", "danger"),
-            ]),
-          ]));
+          if (state.iMsgId) {
+            await editInlineMessage(state.iMsgId, `📝 **Review Your Reminder**\n\n📌 **Title:** ${state.title}\n⏰ **Time:** ${timeStr}\n🔄 **Repeat:** ${state.repeatText || "None"}\n⏳ **Early Warning:** ${state.earlyWarning ? `${state.earlyWarning}m before` : "None"}`, {
+              inline_keyboard: [
+                [{ text: "✅ Create", callback_data: "wizard_confirm" }, { text: "❌ Cancel", callback_data: "wizard_cancel" }],
+              ],
+            });
+          } else {
+            await editRichSurface(state.surface, buildRichMessage([
+              richHeading("📝 Review Your Reminder", 1),
+              richTable([
+                [{ text: "📌 Title" }, { text: state.title }],
+                [{ text: "⏰ Time" }, { text: timeStr }],
+                [{ text: "🔄 Repeat" }, { text: state.repeatText || "None" }],
+                [{ text: "⏳ Early Warning" }, { text: state.earlyWarning ? `${state.earlyWarning}m before` : "None" }],
+              ]),
+              richDivider(),
+              richButtons([
+                richButton("✅ Create", "wizard_confirm", "success"),
+                richButton("❌ Cancel", "wizard_cancel", "danger"),
+              ]),
+            ]));
+          }
           return res.sendStatus(200);
         }
       }
