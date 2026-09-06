@@ -452,11 +452,6 @@ checkRichMessageSupport().then(() => {
 
 setEphemeralGroupCommands([
   { command: "start", description: "Open your private reminder dashboard" },
-  { command: "remind", description: "Create a reminder privately" },
-  { command: "reminders", description: "View and manage your reminders" },
-  { command: "calendar", description: "View reminders in calendar" },
-  { command: "help", description: "Show reminder help" },
-  { command: "cancel", description: "Cancel the current operation" },
 ]).then((result) => {
   if (result !== null) {
     console.log("Ephemeral group commands registered.");
@@ -933,9 +928,9 @@ async function getRemindersDashboardData(userId, userTz, passedName = null) {
     }
 
     const reminderButtons = res.rows.map((r) => {
-      let statusIcon = r.recurring ? (r.total_occurrences ? "🔢 " : "🔄 ") : "";
+      let statusIcon = r.recurring ? (r.total_occurrences ? " | 🔢" : " | 🔄") : "";
       return richButtons([
-        richButton(`${statusIcon}${r.text}`, `view:${r.id}`, "link"),
+        richButton(`${r.text}${statusIcon}`, `view:${r.id}`, "link"),
       ]);
     });
 
@@ -954,9 +949,9 @@ async function getRemindersDashboardData(userId, userTz, passedName = null) {
     ]);
 
     let buttons = res.rows.map((r) => {
-      let statusIcon = r.recurring ? (r.total_occurrences ? "🔢 " : "🔄 ") : "";
+      let statusIcon = r.recurring ? (r.total_occurrences ? " | 🔢" : " | 🔄") : "";
       return [
-        { text: `${statusIcon}${r.text}`, callback_data: `view:${r.id}` },
+        { text: `${r.text}${statusIcon}`, callback_data: `view:${r.id}` },
       ];
     });
     buttons.push([
@@ -1453,9 +1448,7 @@ app.post("/webhook", async (req, res) => {
       }
 
       if (
-        text.startsWith("/start") ||
-        text.toLowerCase() === "view" ||
-        text.toLowerCase().startsWith("/reminders")
+        text.toLowerCase() === "view"
       ) {
         const existingTz = await getUserTimezone(userId);
         if (existingTz) {
@@ -2604,7 +2597,7 @@ app.post("/webhook", async (req, res) => {
         results.push({
           type: "article",
           id: "show_reminders_dm",
-          title: "📋 View Reminders (DM)",
+          title: "👀 View Reminders (DM)",
           description: "Manage your reminders via DM",
           thumbnail_url:
             "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4e9.png",
@@ -2624,7 +2617,7 @@ app.post("/webhook", async (req, res) => {
         results.push({
           type: "article",
           id: "show_reminders_inline_v6",
-          title: "📋 View Reminders Inline",
+          title: "👀 View Reminders (Inline)",
           description: "Show reminder list here",
           thumbnail_url:
             "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f5e8.png",
