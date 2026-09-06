@@ -2174,7 +2174,15 @@ app.post("/webhook", async (req, res) => {
               false,
             );
 
-            await editInlineMessage(iMsgId, "⚠️ **Tap Edit again within 10s** to send options to your DM");
+            await editInlineMessage(
+              iMsgId,
+              "⚠️ **Tap Edit again within 10s** to send options to your DM",
+              {
+                inline_keyboard: [
+                  [{ text: "✏️ Edit", callback_data: `edit:${reminderId}` }],
+                ],
+              },
+            );
           }
           return res.sendStatus(200);
         }
