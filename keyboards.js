@@ -29,7 +29,6 @@ function buildCalendar(year, month, remindersOnDay = {}) {
     const startWeekday = firstDay.weekday % 7;
 
     const monthName = firstDay.toFormat('MMMM yyyy');
-    const header = `📅 ${monthName}`;
 
     const prevMonth = month === 1 ? 12 : month - 1;
     const prevYear = month === 1 ? year - 1 : year;
@@ -40,7 +39,7 @@ function buildCalendar(year, month, remindersOnDay = {}) {
 
     rows.push([
         { text: `◀️ ${DateTime.local(prevYear, prevMonth, 1).toFormat('MMM')}`, callback_data: `calprev:${prevYear}:${prevMonth}` },
-        { text: header, callback_data: 'noop' },
+        { text: `📅 ${monthName}`, callback_data: 'noop' },
         { text: `${DateTime.local(nextYear, nextMonth, 1).toFormat('MMM')} ▶️`, callback_data: `calnext:${nextYear}:${nextMonth}` },
     ]);
 
@@ -84,36 +83,67 @@ function buildCalendar(year, month, remindersOnDay = {}) {
 
     return {
         monthName,
-        keyboard: {
-            inline_keyboard: rows,
-        },
+        richBlocks: (() => {
+            const blocks = [];
+            blocks.push({ type: "buttons", buttons: rows[0].map(b => ({ text: b.text, callback_data: b.callback_data })), align: "center" });
+            blocks.push({ type: "buttons", buttons: rows[1].map(b => ({ text: b.text, callback_data: b.callback_data })), align: "center" });
+            for (let i = 2; i < rows.length - 1; i++) {
+                blocks.push({ type: "buttons", buttons: rows[i].map(b => ({ text: b.text, callback_data: b.callback_data })), align: "center" });
+            }
+            blocks.push({ type: "divider" });
+            blocks.push({ type: "buttons", buttons: rows[rows.length - 1].map(b => ({ text: b.text, callback_data: b.callback_data })), align: "center" });
+            return blocks;
+        })(),
     };
 }
 
 function getEditMenuKeyboard(reminderId, currentRecurring, totalOccurrences, earlyOffset) {
     const recType = formatRepeatText(currentRecurring);
     const limitLabel = totalOccurrences ? `${totalOccurrences}x` : 'Forever';
+    const earlyLabel = earlyOffset ? `${earlyOffset}m` : 'Off';
+
+    const rows = [
+        [{ text: '📝 Edit Note/Text', callback_data: `prompt_edit_text:${reminderId}` }, { text: '🕒 Edit Time/Date', callback_data: `prompt_edit_time:${reminderId}` }],
+        [{ text: currentRecurring === null ? ' ✅ None' : 'None', callback_data: `setrec:${reminderId}:none` }, { text: currentRecurring === 'daily:1' ? '✅ Daily' : 'Daily', callback_data: `setrec:${reminderId}:daily:1` }],
+        [{ text: currentRecurring === 'weekly:1' ? '✅ Weekly' : 'Weekly', callback_data: `setrec:${reminderId}:weekly:1` }, { text: currentRecurring === 'monthly:1' ? '✅ Monthly' : 'Monthly', callback_data: `setrec:${reminderId}:monthly:1` }],
+        [{ text: `⚙️ Interval (${recType})`, callback_data: `unitmenu:${reminderId}` }, { text: `📅 Pick Days`, callback_data: `dowmenu:${reminderId}` }],
+        [{ text: `🔁 Repeat Limit (${limitLabel})`, callback_data: `limitmenu:${reminderId}` }],
+        [{ text: earlyOffset === 5 ? '✅ 5m ⏳' : '5m ⏳', callback_data: `setearly:${reminderId}:5` }, { text: earlyOffset === 10 ? '✅ 10m ⏳' : '10m ⏳', callback_data: `setearly:${reminderId}:10` }, { text: (earlyOffset && earlyOffset !== 5 && earlyOffset !== 10) ? `✅ ${earlyOffset}m ⏳` : 'Custom ⏳', callback_data: `prompt_early:${reminderId}` }, { text: !earlyOffset ? '✅ Off' : 'Off ❌', callback_data: `setearly:${reminderId}:0` }],
+        [{ text: '⬅️ Back to Reminders', callback_data: 'menu:list' }]
+    ];
+
+    const richBlocks = [
+        { type: 'buttons', buttons: rows[0].map(b => ({ text: b.text, callback_data: b.callback_data })), align: 'center' },
+        { type: 'buttons', buttons: rows[1].map(b => ({ text: b.text, callback_data: b.callback_data })), align: 'center' },
+        { type: 'buttons', buttons: rows[2].map(b => ({ text: b.text, callback_data: b.callback_data })), align: 'center' },
+        { type: 'buttons', buttons: rows[3].map(b => ({ text: b.text, callback_data: b.callback_data })), align: 'center' },
+        { type: 'buttons', buttons: rows[4].map(b => ({ text: b.text, callback_data: b.callback_data })), align: 'center' },
+        { type: 'buttons', buttons: rows[5].map(b => ({ text: b.text, callback_data: b.callback_data })), align: 'center' },
+        { type: 'divider' },
+        { type: 'buttons', buttons: rows[6].map(b => ({ text: b.text, callback_data: b.callback_data })), align: 'center' },
+    ];
+
     return {
-        inline_keyboard: [
-            [{ text: '📝 Edit Note/Text', callback_data: `prompt_edit_text:${reminderId}` }, { text: '🕒 Edit Time/Date', callback_data: `prompt_edit_time:${reminderId}` }],
-            [{ text: currentRecurring === null ? ' ✅ None' : 'None', callback_data: `setrec:${reminderId}:none` }, { text: currentRecurring === 'daily:1' ? '✅ Daily' : 'Daily', callback_data: `setrec:${reminderId}:daily:1` }],
-            [{ text: currentRecurring === 'weekly:1' ? '✅ Weekly' : 'Weekly', callback_data: `setrec:${reminderId}:weekly:1` }, { text: currentRecurring === 'monthly:1' ? '✅ Monthly' : 'Monthly', callback_data: `setrec:${reminderId}:monthly:1` }],
-            [{ text: `⚙️ Interval (${recType})`, callback_data: `unitmenu:${reminderId}` }, { text: `📅 Pick Days`, callback_data: `dowmenu:${reminderId}` }],
-            [{ text: `🔁 Repeat Limit (${limitLabel})`, callback_data: `limitmenu:${reminderId}` }],
-            [{ text: earlyOffset === 5 ? '✅ 5m ⏳' : '5m ⏳', callback_data: `setearly:${reminderId}:5` }, { text: earlyOffset === 10 ? '✅ 10m ⏳' : '10m ⏳', callback_data: `setearly:${reminderId}:10` }, { text: (earlyOffset && earlyOffset !== 5 && earlyOffset !== 10) ? `✅ ${earlyOffset}m ⏳` : 'Custom ⏳', callback_data: `prompt_early:${reminderId}` }, { text: !earlyOffset ? '✅ Off' : 'Off ❌', callback_data: `setearly:${reminderId}:0` }],
-            [{ text: '⬅️ Back to Reminders', callback_data: 'menu:list' }]
-        ]
+        inline_keyboard: rows,
+        richBlocks,
     };
 }
 
 function getUnitMenuKeyboard(reminderId) {
-    return {
-        inline_keyboard: [
-            [{ text: '⏱️ Hours', callback_data: `nummenu:${reminderId}:hours` }, { text: '📅 Days', callback_data: `nummenu:${reminderId}:days` }],
-            [{ text: '🗓️ Weeks', callback_data: `nummenu:${reminderId}:weeks` }, { text: '📆 Months', callback_data: `nummenu:${reminderId}:months` }],
-            [{ text: '⬅️ Back to Edit', callback_data: `edit:${reminderId}` }]
-        ]
-    };
+    const rows = [
+        [{ text: '⏱️ Hours', callback_data: `nummenu:${reminderId}:hours` }, { text: '📅 Days', callback_data: `nummenu:${reminderId}:days` }],
+        [{ text: '🗓️ Weeks', callback_data: `nummenu:${reminderId}:weeks` }, { text: '📆 Months', callback_data: `nummenu:${reminderId}:months` }],
+        [{ text: '⬅️ Back to Edit', callback_data: `edit:${reminderId}` }]
+    ];
+
+    const richBlocks = [
+        { type: 'buttons', buttons: rows[0].map(b => ({ text: b.text, callback_data: b.callback_data })), align: 'center' },
+        { type: 'buttons', buttons: rows[1].map(b => ({ text: b.text, callback_data: b.callback_data })), align: 'center' },
+        { type: 'divider' },
+        { type: 'buttons', buttons: rows[2].map(b => ({ text: b.text, callback_data: b.callback_data })), align: 'center' },
+    ];
+
+    return { inline_keyboard: rows, richBlocks };
 }
 
 function getNumberMenuKeyboard(reminderId, unit) {
@@ -125,7 +155,15 @@ function getNumberMenuKeyboard(reminderId, unit) {
     });
     buttons.push([{ text: '✍️ Custom Number...', callback_data: `prompt_rec:${reminderId}:${unit}` }]);
     buttons.push([{ text: '⬅️ Back to Units', callback_data: `unitmenu:${reminderId}` }]);
-    return { inline_keyboard: buttons };
+
+    const richBlocks = [
+        ...buttons.slice(0, -2).map(r => ({ type: 'buttons', buttons: r.map(b => ({ text: b.text, callback_data: b.callback_data })), align: 'center' })),
+        { type: 'divider' },
+        { type: 'buttons', buttons: buttons[buttons.length - 2].map(b => ({ text: b.text, callback_data: b.callback_data })), align: 'center' },
+        { type: 'buttons', buttons: buttons[buttons.length - 1].map(b => ({ text: b.text, callback_data: b.callback_data })), align: 'center' },
+    ];
+
+    return { inline_keyboard: buttons, richBlocks };
 }
 
 function getLimitMenuKeyboard(reminderId, totalOccurrences) {
@@ -138,18 +176,33 @@ function getLimitMenuKeyboard(reminderId, totalOccurrences) {
         if (row.length === 3 || idx === limits.length - 1) { buttons.push(row); row = []; }
     });
     buttons.push([{ text: '⬅️ Back to Edit', callback_data: `edit:${reminderId}` }]);
-    return { inline_keyboard: buttons };
+
+    const richBlocks = [
+        ...buttons.slice(0, -1).map(r => ({ type: 'buttons', buttons: r.map(b => ({ text: b.text, callback_data: b.callback_data })), align: 'center' })),
+        { type: 'divider' },
+        { type: 'buttons', buttons: buttons[buttons.length - 1].map(b => ({ text: b.text, callback_data: b.callback_data })), align: 'center' },
+    ];
+
+    return { inline_keyboard: buttons, richBlocks };
 }
 
 function getDowMenuKeyboard(reminderId, currentRecurring) {
     const selected = (currentRecurring && currentRecurring.startsWith('dow:')) ? currentRecurring.split(':')[1].split(',').map(Number) : [];
     const d = (n, label) => ({ text: selected.includes(n) ? `✅ ${label}` : label, callback_data: `toggledow:${reminderId}:${n}` });
-    return {
-        inline_keyboard: [
-            [d(1, 'Mon'), d(2, 'Tue'), d(3, 'Wed'), d(4, 'Thu')],
-            [d(5, 'Fri'), d(6, 'Sat'), d(7, 'Sun')],
-            [{ text: '💾 Save / Back', callback_data: `edit:${reminderId}` }]
-        ]
-    };
+
+    const rows = [
+        [d(1, 'Mon'), d(2, 'Tue'), d(3, 'Wed'), d(4, 'Thu')],
+        [d(5, 'Fri'), d(6, 'Sat'), d(7, 'Sun')],
+        [{ text: '💾 Save / Back', callback_data: `edit:${reminderId}` }]
+    ];
+
+    const richBlocks = [
+        { type: 'buttons', buttons: rows[0].map(b => ({ text: b.text, callback_data: b.callback_data })), align: 'center' },
+        { type: 'buttons', buttons: rows[1].map(b => ({ text: b.text, callback_data: b.callback_data })), align: 'center' },
+        { type: 'divider' },
+        { type: 'buttons', buttons: rows[2].map(b => ({ text: b.text, callback_data: b.callback_data })), align: 'center' },
+    ];
+
+    return { inline_keyboard: rows, richBlocks };
 }
 module.exports = { formatRepeatText, getTimezonePickerKeyboard, getEditMenuKeyboard, getUnitMenuKeyboard, getNumberMenuKeyboard, getLimitMenuKeyboard, getDowMenuKeyboard, buildCalendar };

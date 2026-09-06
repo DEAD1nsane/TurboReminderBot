@@ -1,6 +1,6 @@
 const chrono = require("chrono-node");
 const crypto = require("crypto");
-const pendingInlineEdits = new Set();
+
 const express = require("express");
 const { Pool } = require("pg");
 const { DateTime } = require("luxon");
@@ -36,6 +36,8 @@ const {
 } = require("./telegram");
 
 const activityTimers = new Map();
+const pendingDeletes = new Set();
+const pendingInlineEdits = new Set();
 
 // ── Bounded caches with TTL ────────────────────────────────────────────────
 const MAX_CACHE_SIZE = 5000;
@@ -107,6 +109,28 @@ function resetMenuTimer(key, action) {
       action();
     }, 30000),
   );
+}
+
+function clearMenuTimer(key) {
+  if (activityTimers.has(key)) {
+    clearTimeout(activityTimers.get(key));
+    activityTimers.delete(key);
+  }
+}
+
+function clearUserPendingState(userId) {
+  for (const k of Array.from(pendingDeletes)) {
+    if (k.includes(`:${userId}:`)) pendingDeletes.delete(k);
+  }
+  for (const k of Array.from(pendingInlineEdits)) {
+    if (k.includes(`:${userId}:`)) pendingInlineEdits.delete(k);
+  }
+  for (const k of Array.from(activityTimers.keys())) {
+    if (k.includes(`_${userId}`) || k.includes(`:${userId}:`)) {
+      clearTimeout(activityTimers.get(k));
+      activityTimers.delete(k);
+    }
+  }
 }
 
 const escapeMarkdownV2 = (str) =>
@@ -270,8 +294,8 @@ async function editRichSurface(surface, richMessage, markup = null) {
   }
   console.log("[EDIT_RICH] surface:", JSON.stringify({ephemeral: surface.ephemeral, chatId: surface.chatId, messageId: surface.messageId}));
   if (!isRichMessageSupported()) {
-    console.log("[EDIT_RICH] rich not supported, falling back to editSurface");
-    return editSurface(surface, richMessage.markdown || richMessage.html || "", markup);
+    const fallbackText = richMessage.markdown || richMessage.html || "...";
+    return editSurface(surface, fallbackText, markup);
   }
   if (surface.ephemeral) {
     console.log("[EDIT_RICH] editing ephemeral message");
@@ -407,10 +431,19 @@ const server = app.listen(PORT, "0.0.0.0", () =>
 
 process.on("SIGTERM", () => {
   console.log("SIGTERM received, shutting down gracefully...");
+  let exited = false;
+  const forceExit = () => {
+    if (!exited) {
+      exited = true;
+      process.exit(1);
+    }
+  };
+  setTimeout(forceExit, 10000);
   server.close(() => {
-    pool.end().then(() => process.exit(0));
+    pool.end()
+      .then(() => { if (!exited) { exited = true; process.exit(0); } })
+      .catch((err) => { console.error("pool.end() failed:", err); forceExit(); });
   });
-  setTimeout(() => process.exit(1), 10000);
 });
 
 checkRichMessageSupport().then(() => {
@@ -503,13 +536,18 @@ setInterval(async () => {
   pollingLocked = true;
   try {
     const res = await pool.query(
-      `SELECT * FROM reminders WHERE (remind_at <= NOW() AND sent = FALSE) OR (early_offset IS NOT NULL AND early_alert_sent = FALSE AND remind_at - (early_offset * INTERVAL '1 minute') <= NOW()) FOR UPDATE SKIP LOCKED`,
+      `SELECT r.*, COALESCE(s.timezone, 'America/Chicago') AS user_timezone
+       FROM reminders r
+       LEFT JOIN user_settings s ON s.user_id = r.user_id
+       WHERE (r.remind_at <= NOW() AND r.sent = FALSE)
+          OR (r.early_offset IS NOT NULL AND r.early_alert_sent = FALSE AND r.remind_at - (r.early_offset * INTERVAL '1 minute') <= NOW())
+       FOR UPDATE OF r SKIP LOCKED`,
     );
     for (const r of res.rows) {
       const now = new Date();
 
       const remindAt = new Date(r.remind_at);
-      const tz = r.timezone || "America/Chicago";
+      const tz = r.user_timezone || "America/Chicago";
       const formattedTime = DateTime.fromJSDate(remindAt)
         .setZone(tz)
         .toFormat("EEE, MMM d, yyyy 'at' h:mm a")
@@ -542,11 +580,10 @@ setInterval(async () => {
         );
 
         if (r.recurring) {
-          const userTz = tz;
           const nextDate = calculateNextOccurrence(
-            new Date(),
+            remindAt,
             r.recurring,
-            userTz,
+            tz,
           );
           const newCount = (r.current_occurrence || 0) + 1;
 
@@ -713,8 +750,8 @@ async function detectTimezoneFromLocation(lat, lon) {
 }
 
 async function getRemindersForMonth(userId, year, month) {
-  const start = DateTime.local(year, month, 1).startOf('month').toJSDate();
-  const end = DateTime.local(year, month, 1).endOf('month').toJSDate();
+  const start = DateTime.fromObject({ year, month, day: 1 }, { zone: "utc" }).startOf('month').toJSDate();
+  const end = DateTime.fromObject({ year, month, day: 1 }, { zone: "utc" }).endOf('month').toJSDate();
   const res = await pool.query(
     "SELECT EXTRACT(DAY FROM remind_at AT TIME ZONE COALESCE((SELECT timezone FROM user_settings WHERE user_id = $1), 'America/Chicago')) AS day FROM reminders WHERE user_id = $1 AND sent = FALSE AND remind_at >= $2 AND remind_at <= $3",
     [userId, start, end]
@@ -899,8 +936,6 @@ async function getRemindersDashboardData(userId, userTz, passedName = null) {
       let statusIcon = r.recurring ? (r.total_occurrences ? "🔢 " : "🔄 ") : "";
       return richButtons([
         richButton(`${statusIcon}${r.text}`, `view:${r.id}`, "link"),
-        richButton("✏️ Edit", `edit:${r.id}`, "primary"),
-        richButton("❌ Del", `del:${r.id}`, "danger"),
       ]);
     });
 
@@ -922,8 +957,6 @@ async function getRemindersDashboardData(userId, userTz, passedName = null) {
       let statusIcon = r.recurring ? (r.total_occurrences ? "🔢 " : "🔄 ") : "";
       return [
         { text: `${statusIcon}${r.text}`, callback_data: `view:${r.id}` },
-        { text: "✏️ Edit", callback_data: `edit:${r.id}` },
-        { text: "❌ Del", callback_data: `del:${r.id}` },
       ];
     });
     buttons.push([
@@ -981,7 +1014,9 @@ async function sendOrUpdateDashboard(
   }
 
   if (targetMsgId) {
-    resetMenuTimer(`dm_dashboard_${userId}`, async () => {
+    const timerKey = `dm_dashboard_${userId}`;
+    clearMenuTimer(timerKey);
+    resetMenuTimer(timerKey, async () => {
       try {
         await deleteTelegramMessage(userId, targetMsgId);
         await setActiveMenuMsgId(userId, null);
@@ -1493,6 +1528,7 @@ app.post("/webhook", async (req, res) => {
         wizardStateBounded.delete(userId);
         pendingEditSurfacesBounded.delete(userId);
         await setPendingEdit(userId, null);
+        clearUserPendingState(userId);
         if (state?.surface || pendingSurface) {
           await editSurface(
             state?.surface || pendingSurface,
@@ -1518,8 +1554,9 @@ app.post("/webhook", async (req, res) => {
           richHeading(`📅 ${cal.monthName}`, 1),
           richParagraph("Tap a day to see reminders:"),
           richDivider(),
+          ...cal.richBlocks,
         ]);
-        const surface = await beginRichSurface(message, userId, calRich, cal.keyboard);
+        const surface = await beginRichSurface(message, userId, calRich);
         if (surface) await removeUserInput(message, userId);
         return res.sendStatus(200);
       }
@@ -1551,6 +1588,24 @@ app.post("/webhook", async (req, res) => {
       const userTz = await getUserTimezone(userId);
       const parsed = parseFlexibleDate(text, userTz);
 
+      if (!parsed) {
+        if (typeof chatId !== "undefined" && typeof msgId !== "undefined") {
+          await deleteTelegramMessage(chatId, msgId);
+        }
+        await beginPrivateSurface(
+          message,
+          userId,
+          "⚠️ Could not understand that as a reminder\\. Try something like:\\n• tomorrow 5pm buy milk\\n• in 2 hours call mom\\n• Aug 12 8am meeting\\n• daily 9am take vitamins",
+          {
+            inline_keyboard: [
+              [{ text: "❌ Close", callback_data: "surface_close" }],
+            ],
+          },
+        );
+        await removeUserInput(message, userId);
+        return res.sendStatus(200);
+      }
+
       if (parsed) {
         if (typeof chatId !== "undefined" && typeof msgId !== "undefined") {
           await deleteTelegramMessage(chatId, msgId);
@@ -1560,10 +1615,18 @@ app.post("/webhook", async (req, res) => {
           [userId, chatId, parsed.reminderText, parsed.date],
         );
         if (parsed.wantRepeatMenu) {
+          const editKb = getEditMenuKeyboard(insertRes.rows[0].id, null, null);
           await sendOrUpdateDashboard(
             userId,
             `📝 Editing Reminder: "**${escapeMarkdownV2(parsed.reminderText)}**"\nSelect options below:`,
-            getEditMenuKeyboard(insertRes.rows[0].id, null, null),
+            editKb,
+            null,
+            buildRichMessage([
+              richHeading("✏️ Editing Reminder", 1),
+              richParagraph("Select options below:"),
+              richDivider(),
+              ...editKb.richBlocks,
+            ]),
           );
         } else {
           const dashData = await getRemindersDashboardData(
@@ -1608,7 +1671,9 @@ app.post("/webhook", async (req, res) => {
 
       console.log("[CALLBACK] data:", data, "inlineMsgId:", inlineMsgId, "hasMessage:", !!callbackQuery.message);
       if (messageId && chatId) {
-        resetMenuTimer(`dm_dashboard_${userId}`, async () => {
+        const timerKey = `dm_dashboard_${userId}`;
+        clearMenuTimer(timerKey);
+        resetMenuTimer(timerKey, async () => {
           await deleteTelegramMessage(chatId, messageId);
           await setActiveMenuMsgId(userId, null);
         });
@@ -1663,6 +1728,7 @@ app.post("/webhook", async (req, res) => {
         wizardStateBounded.delete(userId);
         pendingEditSurfacesBounded.delete(userId);
         await setPendingEdit(userId, null);
+        clearUserPendingState(userId);
         if (callbackSurface?.ephemeral) {
           await deleteEphemeralMessage(
             callbackSurface.chatId,
@@ -1833,6 +1899,7 @@ app.post("/webhook", async (req, res) => {
       } else if (data === "wizard_cancel") {
         const state = wizardStateBounded.get(userId);
         wizardStateBounded.delete(userId);
+        clearUserPendingState(userId);
         await answerCallbackQuery(callbackQuery.id, "Wizard cancelled.", false);
         await editRichSurface(
           state?.surface || callbackSurface,
@@ -1880,7 +1947,8 @@ app.post("/webhook", async (req, res) => {
           richHeading(`📅 ${cal.monthName}`, 1),
           richParagraph("Tap a day to see reminders:"),
           richDivider(),
-        ]), cal.keyboard);
+          ...cal.richBlocks,
+        ]));
       } else if (data.startsWith("calday:")) {
         await answerCallbackQuery(callbackQuery.id);
         const dateKey = data.replace("calday:", "");
@@ -1937,7 +2005,8 @@ app.post("/webhook", async (req, res) => {
           richHeading(`📅 ${cal.monthName}`, 1),
           richParagraph("Tap a day to see reminders:"),
           richDivider(),
-        ]), cal.keyboard);
+          ...cal.richBlocks,
+        ]));
       } else if (data.startsWith("caladd:")) {
         await answerCallbackQuery(callbackQuery.id);
         const dateKey = data.replace("caladd:", "");
@@ -1988,6 +2057,9 @@ app.post("/webhook", async (req, res) => {
       } else if (data === "menu:list") {
         await answerCallbackQuery(callbackQuery.id);
         await setPendingEdit(userId, null);
+        pendingEditSurfacesBounded.delete(userId);
+        clearUserPendingState(userId);
+        if (inlineMsgId) clearMenuTimer(`inline_${inlineMsgId}`);
         const dashData = await getRemindersDashboardData(
           userId,
           userTz,
@@ -1997,24 +2069,7 @@ app.post("/webhook", async (req, res) => {
         if (callbackSurface) {
           await editRichCallbackSurface(dashData.richMessage);
         } else if (inlineMsgId) {
-          const reminderRows = dashData.richMessage.blocks.filter(
-            b => b.type === "buttons" && b.buttons?.some(btn => btn.callback_data?.startsWith("view:"))
-          );
-          const summaryText = reminderRows.length === 1
-            ? "1 active reminder"
-            : `${reminderRows.length} active reminders`;
-          const collapsedRich = buildRichMessage([
-            richHeading("📋 Active Reminders", 2),
-            richDetails(summaryText, [
-              ...reminderRows,
-              richDivider(),
-              richButtons([
-                richButton("➕ New Reminder", "wizard_new", "success"),
-                richButton("✖️ Close", "surface_close", "danger"),
-              ]),
-            ], false),
-          ]);
-          await editInlineRichMessage(inlineMsgId, collapsedRich);
+          await editInlineRichMessage(inlineMsgId, dashData.richMessage);
         } else {
           await sendOrUpdateDashboard(userId, dashData.text, null, null, dashData.richMessage);
         }
@@ -2027,69 +2082,32 @@ app.post("/webhook", async (req, res) => {
           richHeading(`📅 ${cal.monthName}`, 1),
           richParagraph("Tap a day to see reminders:"),
           richDivider(),
-        ]), cal.keyboard);
+          ...cal.richBlocks,
+        ]));
       } else if (data.startsWith("del:")) {
         const reminderId = parseReminderId(data, "del:");
         if (!reminderId) return res.sendStatus(200);
-        await answerCallbackQuery(
-          callbackQuery.id,
-          "🗑️ Delete this reminder?",
-          false,
-        );
+        const key = `del_confirm:${userId}:${reminderId}`;
 
-        const dashData = await getRemindersDashboardData(
-          userId,
-          userTz,
-          userFirstName,
-        );
-        if (
-          dashData &&
-          dashData.keyboard &&
-          dashData.keyboard.inline_keyboard
-        ) {
-          dashData.keyboard.inline_keyboard =
-            dashData.keyboard.inline_keyboard.map((row) => {
-              return row.map((btn) => {
-                if (btn.callback_data === `del:${reminderId}`) {
-                  return {
-                    text: "⚠️ Confirm?",
-                    callback_data: `confirm_del:${reminderId}`,
-                  };
-                }
-                return btn;
-              });
-            });
-        }
+        if (pendingDeletes.has(key)) {
+          pendingDeletes.delete(key);
+          await pool.query(
+            "DELETE FROM reminders WHERE id = $1 AND user_id = $2",
+            [reminderId, userId],
+          );
+          await answerCallbackQuery(callbackQuery.id, "🗑️ Reminder deleted!", false);
 
-        if (callbackSurface) {
-          await editCallbackSurface(dashData.text, dashData.keyboard);
-        } else if (callbackQuery.inline_message_id) {
-          await editInlineMessage(callbackQuery.inline_message_id, dashData.text, dashData.keyboard);
-        }
-        return res.sendStatus(200);
-      } else if (data.startsWith("confirm_del:")) {
-        const reminderId = parseReminderId(data, "confirm_del:");
-        if (!reminderId) return res.sendStatus(200);
-        await pool.query(
-          "DELETE FROM reminders WHERE id = $1 AND user_id = $2",
-          [reminderId, userId],
-        );
-        await answerCallbackQuery(
-          callbackQuery.id,
-          "🗑️ Reminder deleted!",
-          false,
-        );
-
-        const dashData = await getRemindersDashboardData(
-          userId,
-          userTz,
-          userFirstName,
-        );
-        if (callbackSurface) {
-          await editRichCallbackSurface(dashData.richMessage);
-        } else if (callbackQuery.inline_message_id) {
-          const iMsgId = callbackQuery.inline_message_id;
-          await editInlineMessage(iMsgId, dashData.text, dashData.keyboard);
+          const dashData = await getRemindersDashboardData(userId, userTz, userFirstName);
+          if (callbackSurface) {
+            await editRichCallbackSurface(dashData.richMessage);
+          } else if (callbackQuery.inline_message_id) {
+            clearMenuTimer(`inline_${callbackQuery.inline_message_id}`);
+            await editInlineRichMessage(callbackQuery.inline_message_id, dashData.richMessage);
+          }
+        } else {
+          pendingDeletes.add(key);
+          setTimeout(() => pendingDeletes.delete(key), 10000);
+          await answerCallbackQuery(callbackQuery.id, "⚠️ Tap Delete again within 10s to confirm", false);
         }
         return res.sendStatus(200);
       } else if (data.startsWith("view:")) {
@@ -2126,6 +2144,10 @@ app.post("/webhook", async (req, res) => {
             ]),
             richDivider(),
             richButtons([
+              richButton("✏️ Edit", `edit:${reminderId}`, "primary"),
+              richButton("❌ Delete", `del:${reminderId}`, "danger"),
+            ]),
+            richButtons([
               richButton("🔙 Back", "menu:list", "link"),
             ]),
           ];
@@ -2137,11 +2159,14 @@ app.post("/webhook", async (req, res) => {
               `🔔 **Reminder Details**\n📝 ${escapeMarkdownV2(r.text)}\n🕒 ${formattedTime}${extrasStr}`,
               {
                 inline_keyboard: [
+                  [{ text: "✏️ Edit", callback_data: `edit:${reminderId}` }, { text: "❌ Delete", callback_data: `del:${reminderId}` }],
                   [{ text: "🔙 Back", callback_data: "menu:list" }],
                 ],
               },
             );
-            resetMenuTimer(`inline_${callbackQuery.inline_message_id}`, async () => {
+            const inlineTimerKey = `inline_${callbackQuery.inline_message_id}`;
+            clearMenuTimer(inlineTimerKey);
+            resetMenuTimer(inlineTimerKey, async () => {
               try {
                 await editInlineMessage(
                   callbackQuery.inline_message_id,
@@ -2178,7 +2203,6 @@ app.post("/webhook", async (req, res) => {
           );
           if (result.rows.length > 0) {
             const r = result.rows[0];
-            console.log("[EDIT] DM path - calling editRichCallbackSurface");
             await editRichCallbackSurface(
               buildEditMenuRich(reminderId, r.recurring, r.total_occurrences, r.early_offset),
             );
@@ -2548,8 +2572,8 @@ app.post("/webhook", async (req, res) => {
           results.push({
             type: "article",
             id: "noop_text",
-            title: "⚠️ No text needed",
-            description: "Select from the options below.",
+            title: "⚠️ Don't type — just tap below",
+            description: "👇🏼 Swipe up for more options 👇🏼",
             input_message_content: {
               message_text: "📝 **No text needed\\!** Just pick an option below\\.",
               parse_mode: "MarkdownV2",
@@ -2559,9 +2583,29 @@ app.post("/webhook", async (req, res) => {
 
         results.push({
           type: "article",
+          id: "create_wizard_dm",
+          title: "🪄 Create Reminder",
+          description: "Tap to start the reminder wizard",
+          thumbnail_url:
+            "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1fa84.png",
+          thumb_width: 72,
+          thumb_height: 72,
+          input_message_content: {
+            message_text:
+              "📝 **Opening reminder wizard\\.\\.\\.**",
+            parse_mode: "MarkdownV2",
+          },
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "⏳ Loading...", callback_data: "noop" }],
+            ],
+          },
+        });
+        results.push({
+          type: "article",
           id: "show_reminders_dm",
-          title: "View Active Reminders (DM)",
-          description: "Tap to view and manage your active reminders.",
+          title: "📋 View Reminders (DM)",
+          description: "👇🏼 Manage in your DM",
           thumbnail_url:
             "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4e9.png",
           thumb_width: 72,
@@ -2580,32 +2624,14 @@ app.post("/webhook", async (req, res) => {
         results.push({
           type: "article",
           id: "show_reminders_inline_v6",
-          title: "View Active Reminders (Inline)",
-          description: "Shows reminders in chat as collapsible list.",
+          title: "📋 View Reminders Inline",
+          description: "👇🏼 Show list in this chat",
           thumbnail_url:
             "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f5e8.png",
-          input_message_content: {
-            message_text: "📋 **Fetching active reminders\\.\\.\\.**",
-            parse_mode: "MarkdownV2",
-          },
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "⏳ Loading...", callback_data: "noop" }],
-            ],
-          },
-        });
-        results.push({
-          type: "article",
-          id: "create_wizard_dm",
-          title: "🪄 Create Reminder",
-          description: "Opens the reminder wizard.",
-          thumbnail_url:
-            "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1fa84.png",
           thumb_width: 72,
           thumb_height: 72,
           input_message_content: {
-            message_text:
-              "📝 **Opening reminder wizard\\.\\.\\.**",
+            message_text: "📋 **Fetching active reminders\\.\\.\\.**",
             parse_mode: "MarkdownV2",
           },
           reply_markup: {
@@ -2657,24 +2683,7 @@ app.post("/webhook", async (req, res) => {
         );
 
         if (iMsgId) {
-          const reminderRows = dashData.richMessage.blocks.filter(
-            b => b.type === "buttons" && b.buttons?.some(btn => btn.callback_data?.startsWith("view:"))
-          );
-          const summaryText = reminderRows.length === 1
-            ? "1 active reminder"
-            : `${reminderRows.length} active reminders`;
-          const collapsedRich = buildRichMessage([
-            richHeading("📋 Active Reminders", 2),
-            richDetails(summaryText, [
-              ...reminderRows,
-              richDivider(),
-              richButtons([
-                richButton("➕ New Reminder", "wizard_new", "success"),
-                richButton("✖️ Close", "surface_close", "danger"),
-              ]),
-            ], false),
-          ]);
-          await editInlineRichMessage(iMsgId, collapsedRich);
+          await editInlineRichMessage(iMsgId, dashData.richMessage);
         } else {
           await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard, null, dashData.richMessage);
         }

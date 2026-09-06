@@ -18,6 +18,7 @@
     "telegraf": "^4.16.3"
   },
   "devDependencies": {
-    "husky": "^9.1.7"
+    "husky": "^9.1.7",
+    "prettier": "^3.9.6"
   }
 }

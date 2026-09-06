@@ -324,8 +324,6 @@ async function editRichEphemeralMessage(
 
 // ── Inline message edit (no chat_id needed) ────────────────────────────────
 
-// ── Inline message edit (no chat_id needed) ────────────────────────────────
-
 async function editInlineRichMessage(inlineMessageId, richMessage, replyMarkup = null) {
   const payload = {
     inline_message_id: inlineMessageId,
