@@ -66,6 +66,7 @@ function boundedMap(ttlMs = CACHE_TTL_MS, maxSize = MAX_CACHE_SIZE) {
 const wizardStateBounded = boundedMap(10 * 60 * 1000, 1000);
 const pendingEditSurfacesBounded = boundedMap(5 * 60 * 1000, 1000);
 const inlineQueryCacheBounded = boundedMap(10 * 60 * 1000, 5000);
+const inlineOwnerMap = boundedMap(30 * 60 * 1000, 5000);
 
 async function editWizardStep(state, text, inlineKeyboard = null) {
   if (state.iMsgId) {
@@ -1405,15 +1406,15 @@ app.post("/webhook", async (req, res) => {
           if (surface) await removeUserInput(message, userId);
         }
         return res.sendStatus(200);
-      } else if (text.toLowerCase() === "/remind") {
-        console.log("[WIZARD] /remind triggered for user:", userId);
+      } else if (text.toLowerCase() === "create") {
+        console.log("[WIZARD] Wizard triggered for user:", userId);
         wizardStateBounded.delete(userId);
         const openingRich = buildRichMessage([
-          richHeading("📝 What's the reminder title?", 1),
-          richParagraph("Type the title for your reminder (e.g., buy milk, team meeting, pay bills):"),
+          richHeading("🪄 Initiating reminder protocol...", 1),
+          richParagraph("What should I remind you about?"),
           richDivider(),
           richButtons([
-            richButton("❌ Cancel", "wizard_cancel", "danger"),
+            richButton("❌ Abort", "wizard_cancel", "danger"),
           ]),
         ]);
         const surface = await beginRichSurface(message, userId, openingRich);
@@ -1431,7 +1432,7 @@ app.post("/webhook", async (req, res) => {
           richHeading("🤖 Bot Commands & Usage", 1),
           richDivider(),
           richParagraph("/start — Welcome message + timezone selection"),
-          richParagraph("/remind — Create a reminder step-by-step"),
+          richParagraph("create / create reminder — Create a reminder step-by-step"),
           richParagraph("/reminders — Show your active reminders"),
           richParagraph("/calendar — View reminders in calendar"),
           richDivider(),
@@ -1550,6 +1551,15 @@ app.post("/webhook", async (req, res) => {
         editRichSurface(callbackSurface, richMessage, markup);
 
       const inlineMsgId = callbackQuery.inline_message_id;
+
+      if (inlineMsgId) {
+        const owner = inlineOwnerMap.get(inlineMsgId);
+        if (owner && owner !== userId) {
+          await answerCallbackQuery(callbackQuery.id, "⚠️ This button belongs to another user.", true);
+          return res.sendStatus(200);
+        }
+      }
+
       console.log("[CALLBACK] data:", data, "inlineMsgId:", inlineMsgId, "hasMessage:", !!callbackQuery.message);
       if (messageId && chatId) {
         resetMenuTimer(`dm_dashboard_${userId}`, async () => {
@@ -2488,131 +2498,76 @@ app.post("/webhook", async (req, res) => {
         const queryText = inlineQuery.query.trim();
         let results = [];
 
-        if (queryText.toLowerCase() === "view" || queryText === "") {
+        if (queryText) {
           results.push({
             type: "article",
-            id: "show_reminders_dm",
-            title: "👀 View Active Reminders (DM)",
-            description: "Tap to view and manage your active reminders.",
-            thumbnail_url:
-              "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/2709.png",
-            thumb_width: 72,
-            thumb_height: 72,
+            id: "noop_text",
+            title: "⚠️ No text needed",
+            description: "Select from the options below.",
             input_message_content: {
-              message_text:
-                "💻 **\\[INIT\\_DM\\] Establishing encrypted tunnel\\.\\.\\.**",
+              message_text: "📝 **No text needed\\!** Just pick an option below\\.",
               parse_mode: "MarkdownV2",
             },
-            reply_markup: {
-              inline_keyboard: [
-                [{ text: "📡 Injecting payload...", callback_data: "noop" }],
-              ],
-            },
           });
-          results.push({
-            type: "article",
-            id: "show_reminders_inline_v6",
-            title: "👀 View Reminders (Inline)",
-            description: "Shows reminders in chat as collapsible list.",
-            thumbnail_url:
-              "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f3.png",
-            input_message_content: {
-              message_text: "📋 **Fetching active reminders\\.\\.\\.**",
-              parse_mode: "MarkdownV2",
-            },
-            reply_markup: {
-              inline_keyboard: [
-                [{ text: "⏳ Loading...", callback_data: "noop" }],
-              ],
-            },
-          });
-          results.push({
-            type: "article",
-            id: "show_reminders_share",
-            title: "📢 Share Reminders (Public)",
-            description: "Posts reminders publicly in chat for everyone.",
-            thumbnail_url:
-              "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f3.png",
-            input_message_content: {
-              message_text: "📋 **Fetching active reminders\\.\\.\\.**",
-              parse_mode: "MarkdownV2",
-            },
-            reply_markup: {
-              inline_keyboard: [
-                [{ text: "⏳ Loading...", callback_data: "noop" }],
-              ],
-            },
-          });
-          results.push({
-            type: "article",
-            id: "create_wizard_dm",
-            title: "🪄 Create Reminder",
-            description: "Opens the reminder wizard.",
-            thumbnail_url:
-              "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1fa84.png",
-            thumb_width: 72,
-            thumb_height: 72,
-            input_message_content: {
-              message_text:
-                "📝 **Opening reminder wizard\\.\\.\\.**",
-              parse_mode: "MarkdownV2",
-            },
-            reply_markup: {
-              inline_keyboard: [
-                [{ text: "⏳ Loading...", callback_data: "noop" }],
-              ],
-            },
-          });
-        } else {
-          const parsed = parseFlexibleDate(queryText, userTz);
-          if (parsed) {
-            if (typeof chatId !== "undefined" && typeof msgId !== "undefined") {
-              await deleteTelegramMessage(chatId, msgId);
-            }
-            const dt = DateTime.fromJSDate(parsed.date).setZone(
-              "America/Chicago",
-            );
-            const reminderText =
-              parsed.text || parsed.reminderText || queryText;
-            results.push({
-              type: "article",
-              id: (() => {
-                const genId = `create_inline_${crypto.createHash("sha256").update(queryText).digest("hex").slice(0, 24)}`;
-                inlineQueryCacheBounded.set(genId, queryText);
-                setTimeout(
-                  () => inlineQueryCacheBounded.delete(genId),
-                  10 * 60 * 1000,
-                );
-                return genId;
-              })(),
-              title: `🔔 Set Reminder: "${reminderText}"`,
-              thumbnail_url:
-                "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f0.png",
-              description: `Scheduled for: ${dt.toFormat("EEEE, MMM d, yyyy 'at' h:mm a")}`,
-              input_message_content: {
-                message_text: `⏳ **Creating reminder\\.\\.\\.**`,
-                parse_mode: "MarkdownV2",
-              },
-              reply_markup: {
-                inline_keyboard: [
-                  [{ text: "⏳ Processing...", callback_data: "noop" }],
-                ],
-              },
-            });
-          } else {
-            results.push({
-              type: "article",
-              id: `invalid_${Buffer.from(queryText).toString("base64url").substring(0, 100)}`,
-              title: "⚠️ Min 1 min ahead",
-              description: "Time must be >= 1 min.",
-              input_message_content: {
-                message_text:
-                  "❌ **Reminders must be set for at least 1 minute from now\\.**",
-                parse_mode: "MarkdownV2",
-              },
-            });
-          }
         }
+
+        results.push({
+          type: "article",
+          id: "show_reminders_dm",
+          title: "View Active Reminders (DM)",
+          description: "Tap to view and manage your active reminders.",
+          thumbnail_url:
+            "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4e9.png",
+          thumb_width: 72,
+          thumb_height: 72,
+          input_message_content: {
+            message_text:
+              "💻 **\\[INIT\\_DM\\] Establishing encrypted tunnel\\.\\.\\.**",
+            parse_mode: "MarkdownV2",
+          },
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "📡 Injecting payload...", callback_data: "noop" }],
+            ],
+          },
+        });
+        results.push({
+          type: "article",
+          id: "show_reminders_inline_v6",
+          title: "View Active Reminders (Inline)",
+          description: "Shows reminders in chat as collapsible list.",
+          thumbnail_url:
+            "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f5e8.png",
+          input_message_content: {
+            message_text: "📋 **Fetching active reminders\\.\\.\\.**",
+            parse_mode: "MarkdownV2",
+          },
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "⏳ Loading...", callback_data: "noop" }],
+            ],
+          },
+        });
+        results.push({
+          type: "article",
+          id: "create_wizard_dm",
+          title: "🪄 Create Reminder",
+          description: "Opens the reminder wizard.",
+          thumbnail_url:
+            "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1fa84.png",
+          thumb_width: 72,
+          thumb_height: 72,
+          input_message_content: {
+            message_text:
+              "📝 **Opening reminder wizard\\.\\.\\.**",
+            parse_mode: "MarkdownV2",
+          },
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "⏳ Loading...", callback_data: "noop" }],
+            ],
+          },
+        });
 
         console.log("[INLINE] Sending", results.length, "results");
         await answerInlineQuery(inlineQuery.id, results);
@@ -2625,60 +2580,11 @@ app.post("/webhook", async (req, res) => {
       const selectedResultId = chosenResult.result_id || "";
       const iMsgId = chosenResult.inline_message_id || null;
 
-      if (selectedResultId.startsWith("create_inline_")) {
-        let rawQuery = chosenResult.query || "";
-        if (!rawQuery) {
-          const cachedQuery = inlineQueryCacheBounded.get(selectedResultId);
-          if (cachedQuery) {
-            rawQuery = cachedQuery;
-          }
-        }
+      if (iMsgId && userId) {
+        inlineOwnerMap.set(iMsgId, userId);
+      }
 
-        const userTz = (await getUserTimezone(userId)) || "America/Chicago";
-        const parsed = parseFlexibleDate(rawQuery, userTz);
-
-        if (!parsed) {
-          if (iMsgId) {
-            await editInlineMessage(iMsgId, "❌ **I could not parse that reminder time. Please try again.**");
-          }
-        } else {
-          const insertRes = await pool.query(
-            "INSERT INTO reminders (user_id, text, remind_at, recurring) VALUES ($1, $2, $3, $4) RETURNING id",
-            [userId, parsed.reminderText, parsed.date, null],
-          );
-
-          if (parsed.wantRepeatMenu) {
-            await sendOrUpdateDashboard(
-              userId,
-              `📝 Editing Reminder: "**${escapeMarkdownV2(parsed.reminderText)}**"\n━━━━━━━━━━━━━━━━━━\nSelect options below:`,
-              getEditMenuKeyboard(insertRes.rows[0].id, null, null),
-            );
-          }
-
-          const localDt = DateTime.fromJSDate(parsed.date).setZone(
-            "America/Chicago",
-          );
-          const formattedTime = localDt.toFormat(
-            "EEE, LLL d, yyyy 'at' h:mm a",
-          );
-
-          if (iMsgId) {
-            const editOk = await editInlineMessage(iMsgId, `✅ **Reminder set!**\n📝 *${escapeMarkdownV2(parsed.reminderText)}*\n⏰ ${formattedTime}`);
-
-            if (!editOk) {
-              console.error("Failed to update inline confirmation");
-            } else {
-              setTimeout(async () => {
-                try {
-                  await editInlineMessage(iMsgId, `✅ **Reminder Created for ${userFirstName || "you"}!**`);
-                } catch (err) {
-                  console.error("Failed to collapse inline creation message:", err);
-                }
-              }, 30000);
-            }
-          }
-        }
-      } else if (selectedResultId === "show_reminders_dm") {
+      if (selectedResultId === "show_reminders_dm") {
         const userTz = (await getUserTimezone(userId)) || "America/Chicago";
         const dashData = await getRemindersDashboardData(
           userId,
