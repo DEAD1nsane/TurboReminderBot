@@ -1705,13 +1705,14 @@ app.post("/webhook", async (req, res) => {
                 richButton("5m", "wizard_early:5", "primary"),
                 richButton("15m", "wizard_early:15", "primary"),
                 richButton("30m", "wizard_early:30", "primary"),
-              richButton("60m", "wizard_early:60", "primary"),
-            ]),
-            richButtons([
-              richButton("None", "wizard_early:0", "link"),
-              richButton("❌ Cancel", "wizard_cancel", "danger"),
-            ]),
-          ]));
+                richButton("60m", "wizard_early:60", "primary"),
+              ]),
+              richButtons([
+                richButton("None", "wizard_early:0", "link"),
+                richButton("❌ Cancel", "wizard_cancel", "danger"),
+              ]),
+            ]));
+          }
         }
       } else if (data.startsWith("wizard_early:")) {
         await answerCallbackQuery(callbackQuery.id);
