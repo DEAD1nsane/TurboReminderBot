@@ -1871,41 +1871,65 @@ app.post("/webhook", async (req, res) => {
           );
           wizardStateBounded.delete(userId);
           const timeStr = state.time.dt.toFormat("EEE, MMM d, yyyy 'at' h:mm a");
-          await editRichSurface(state.surface, buildRichMessage([
-            richHeading("✅ Reminder Created!", 6),
-            richTable([
-              [{ text: "📌 Title" }, { text: state.title }],
-              [{ text: "⏰ Time" }, { text: timeStr }],
-              [{ text: "🔄 Repeat" }, { text: state.repeatText || "None" }],
-              [{ text: "⏳ Early Warning" }, { text: state.earlyWarning ? `${state.earlyWarning}m before` : "None" }],
-            ]),
-            richDivider(),
-            richButtons([
-              richButton("📋 View Reminders", "menu:list", "primary"),
-              richButton("➕ New Reminder", "wizard_new", "primary"),
-            ]),
-            richButtons([
-              richButton("✖️ Close", "surface_close", "danger"),
-            ]),
-          ]));
+          const confirmText = `✅ **Reminder Created!**\n\n📌 **Title:** ${state.title}\n⏰ **Time:** ${timeStr}\n🔄 **Repeat:** ${state.repeatText || "None"}\n⏳ **Early Warning:** ${state.earlyWarning ? `${state.earlyWarning}m before` : "None"}`;
+          const confirmKb = {
+            inline_keyboard: [
+              [{ text: "📋 View Reminders", callback_data: "menu:list" }, { text: "➕ New Reminder", callback_data: "wizard_new" }],
+              [{ text: "✖️ Close", callback_data: "surface_close" }],
+            ],
+          };
+          if (state.surface) {
+            await editRichSurface(state.surface, buildRichMessage([
+              richHeading("✅ Reminder Created!", 6),
+              richTable([
+                [{ text: "📌 Title" }, { text: state.title }],
+                [{ text: "⏰ Time" }, { text: timeStr }],
+                [{ text: "🔄 Repeat" }, { text: state.repeatText || "None" }],
+                [{ text: "⏳ Early Warning" }, { text: state.earlyWarning ? `${state.earlyWarning}m before` : "None" }],
+              ]),
+              richDivider(),
+              richButtons([
+                richButton("📋 View Reminders", "menu:list", "primary"),
+                richButton("➕ New Reminder", "wizard_new", "primary"),
+              ]),
+              richButtons([
+                richButton("✖️ Close", "surface_close", "danger"),
+              ]),
+            ]));
+          } else if (state.iMsgId) {
+            await editInlineMessage(state.iMsgId, confirmText, confirmKb);
+          }
         }
       } else if (data === "wizard_cancel") {
         const state = wizardStateBounded.get(userId);
         wizardStateBounded.delete(userId);
         clearUserPendingState(userId);
         await answerCallbackQuery(callbackQuery.id, "Wizard cancelled.", false);
-        await editRichSurface(
-          state?.surface || callbackSurface,
-          buildRichMessage([
-            richHeading("✅ Reminder cancelled", 6),
-            richParagraph("No reminder was created."),
-            richDivider(),
-            richButtons([
-              richButton("➕ Create Reminder", "wizard_new", "primary"),
-              richButton("✖️ Close", "surface_close", "danger"),
+        const cancelKb = {
+          inline_keyboard: [
+            [{ text: "➕ Create Reminder", callback_data: "wizard_new" }, { text: "✖️ Close", callback_data: "surface_close" }],
+          ],
+        };
+        if (state?.surface || callbackSurface) {
+          await editRichSurface(
+            state?.surface || callbackSurface,
+            buildRichMessage([
+              richHeading("✅ Reminder cancelled", 6),
+              richParagraph("No reminder was created."),
+              richDivider(),
+              richButtons([
+                richButton("➕ Create Reminder", "wizard_new", "primary"),
+                richButton("✖️ Close", "surface_close", "danger"),
+              ]),
             ]),
-          ]),
-        );
+          );
+        } else if (state?.iMsgId) {
+          await editInlineMessage(
+            state.iMsgId,
+            "✅ **Reminder cancelled**\nNo reminder was created.",
+            cancelKb,
+          );
+        }
       } else if (data === "tz_detect") {
         await answerCallbackQuery(callbackQuery.id, "📍 Share your location to auto-detect timezone", false);
         await editRichCallbackSurface(buildRichMessage([

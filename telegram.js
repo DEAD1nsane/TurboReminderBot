@@ -337,8 +337,8 @@ async function editInlineRichMessage(inlineMessageId, richMessage, replyMarkup =
 async function editInlineMessage(inlineMessageId, text, replyMarkup = null) {
   const payload = {
     inline_message_id: inlineMessageId,
-    text,
-    parse_mode: "MarkdownV2",
+    text: formatTelegramHtml(text),
+    parse_mode: "HTML",
   };
   if (replyMarkup != null) payload.reply_markup = replyMarkup;
   const result = await callTelegram("editMessageText", payload, "edit inline message");
