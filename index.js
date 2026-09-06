@@ -100,14 +100,14 @@ setInterval(() => {
   }
 }, 10000);
 
-function resetMenuTimer(key, action) {
+function resetMenuTimer(key, action, duration = 30000) {
   if (activityTimers.has(key)) clearTimeout(activityTimers.get(key));
   activityTimers.set(
     key,
     setTimeout(() => {
       activityTimers.delete(key);
       action();
-    }, 30000),
+    }, duration),
   );
 }
 
@@ -1737,7 +1737,7 @@ app.post("/webhook", async (req, res) => {
           await editInlineRichMessage(
             callbackQuery.inline_message_id,
             buildRichMessage([
-              richHeading("✅ Closed", 1),
+              richHeading("✅ Closed", 6),
             ]),
           );
         }
@@ -1872,7 +1872,7 @@ app.post("/webhook", async (req, res) => {
           wizardStateBounded.delete(userId);
           const timeStr = state.time.dt.toFormat("EEE, MMM d, yyyy 'at' h:mm a");
           await editRichSurface(state.surface, buildRichMessage([
-            richHeading("✅ Reminder Created!", 1),
+            richHeading("✅ Reminder Created!", 6),
             richTable([
               [{ text: "📌 Title" }, { text: state.title }],
               [{ text: "⏰ Time" }, { text: timeStr }],
@@ -1897,7 +1897,7 @@ app.post("/webhook", async (req, res) => {
         await editRichSurface(
           state?.surface || callbackSurface,
           buildRichMessage([
-            richHeading("✅ Wizard cancelled", 2),
+            richHeading("✅ Reminder cancelled", 6),
             richParagraph("No reminder was created."),
             richDivider(),
             richButtons([
@@ -2071,12 +2071,17 @@ app.post("/webhook", async (req, res) => {
         const now = DateTime.now().setZone(userTz || "America/Chicago");
         const remindersOnDay = await getRemindersForMonth(userId, now.year, now.month);
         const cal = buildCalendar(now.year, now.month, remindersOnDay);
-        await editRichCallbackSurface(buildRichMessage([
+        const calRich = buildRichMessage([
           richHeading(`📅 ${cal.monthName}`, 1),
           richParagraph("Tap a day to see reminders:"),
           richDivider(),
           ...cal.richBlocks,
-        ]));
+        ]);
+        if (callbackSurface) {
+          await editRichCallbackSurface(calRich);
+        } else if (callbackQuery.inline_message_id) {
+          await editInlineRichMessage(callbackQuery.inline_message_id, calRich);
+        }
       } else if (data.startsWith("del:")) {
         const reminderId = parseReminderId(data, "del:");
         if (!reminderId) return res.sendStatus(200);
@@ -2146,24 +2151,16 @@ app.post("/webhook", async (req, res) => {
           ];
 
           if (callbackQuery.inline_message_id) {
-            const extrasStr = extras.length > 0 ? `\n\n━━━━━━━━━━━━━━━━━━\n${extras.join("\n")}` : "";
-            await editInlineMessage(
-              callbackQuery.inline_message_id,
-              `🔔 **Reminder Details**\n📝 ${escapeMarkdownV2(r.text)}\n🕒 ${formattedTime}${extrasStr}`,
-              {
-                inline_keyboard: [
-                  [{ text: "✏️ Edit", callback_data: `edit:${reminderId}` }, { text: "❌ Delete", callback_data: `del:${reminderId}` }],
-                  [{ text: "🔙 Back", callback_data: "menu:list" }],
-                ],
-              },
-            );
+            await editInlineRichMessage(callbackQuery.inline_message_id, buildRichMessage(richBlocks));
             const inlineTimerKey = `inline_${callbackQuery.inline_message_id}`;
             clearMenuTimer(inlineTimerKey);
             resetMenuTimer(inlineTimerKey, async () => {
               try {
-                await editInlineMessage(
+                await editInlineRichMessage(
                   callbackQuery.inline_message_id,
-                  "✅ Closed.",
+                  buildRichMessage([
+                    richHeading("✅ Closed", 6),
+                  ]),
                 );
               } catch (err) {
                 console.error("Failed to collapse inline details:", err);
@@ -2661,7 +2658,23 @@ app.post("/webhook", async (req, res) => {
         if (iMsgId) {
           setTimeout(async () => {
             try {
-              await editInlineMessage(iMsgId, `✅ **Reminders sent to your DM\\!**`);
+              await editInlineRichMessage(
+                iMsgId,
+                buildRichMessage([
+                  richHeading("✅ Reminders sent to your DM!", 6),
+                ]),
+              );
+              const inlineTimerKey = `inline_${iMsgId}`;
+              clearMenuTimer(inlineTimerKey);
+              resetMenuTimer(inlineTimerKey, async () => {
+                try {
+                  await editInlineRichMessage(iMsgId, buildRichMessage([
+                    richHeading("✅ Closed", 6),
+                  ]));
+                } catch (err) {
+                  console.error("Failed to auto-collapse DM message:", err);
+                }
+              }, 10000);
             } catch (err) {
               console.error("Failed to collapse inline DM message:", err);
             }
@@ -2677,6 +2690,17 @@ app.post("/webhook", async (req, res) => {
 
         if (iMsgId) {
           await editInlineRichMessage(iMsgId, dashData.richMessage);
+          const inlineTimerKey = `inline_${iMsgId}`;
+          clearMenuTimer(inlineTimerKey);
+          resetMenuTimer(inlineTimerKey, async () => {
+            try {
+              await editInlineRichMessage(iMsgId, buildRichMessage([
+                richHeading("✅ Closed", 6),
+              ]));
+            } catch (err) {
+              console.error("Failed to auto-collapse inline list:", err);
+            }
+          });
         } else {
           await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard, null, dashData.richMessage);
         }
