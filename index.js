@@ -524,7 +524,7 @@ setInterval(async () => {
         await sendRichMessage(
           r.chat_id || r.user_id,
           buildRichMessage([
-            richHeading(`⚡ ${r.text}`, 1),
+            richHeading(`⚡ | ${r.text}`, 1),
             richParagraph(`Starts in ${r.early_offset}m (${formattedTime})`),
           ]),
         );
@@ -536,7 +536,7 @@ setInterval(async () => {
         await sendRichMessage(
           r.chat_id || r.user_id,
           buildRichMessage([
-            richHeading(`🔔 ${r.text}`, 1),
+            richHeading(`🔔 | ${r.text}`, 1),
             richParagraph(formattedTime),
           ]),
         );
