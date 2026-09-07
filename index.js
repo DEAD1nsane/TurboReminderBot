@@ -71,13 +71,13 @@ const inlineQueryCacheBounded = boundedMap(10 * 60 * 1000, 5000);
 const inlineOwnerMap = boundedMap(30 * 60 * 1000, 5000);
 
 async function editWizardStep(state, text, inlineKeyboard = null) {
-  if (state.iMsgId) {
-    await editInlineMessage(state.iMsgId, text, inlineKeyboard);
-  } else if (state.surface) {
+  if (state.surface) {
     await editRichSurface(state.surface, buildRichMessage([
       richHeading(text.replace(/\*\*/g, "").split("\n")[0], 1),
       ...text.split("\n").slice(1).map(l => richParagraph(l)),
-    ]));
+    ]), inlineKeyboard);
+  } else if (state.iMsgId) {
+    await editInlineMessage(state.iMsgId, text, inlineKeyboard);
   }
 }
 
@@ -1073,6 +1073,30 @@ app.post("/webhook", async (req, res) => {
         if (state.surface?.chatId !== chatId && !state.iMsgId) {
           return res.sendStatus(200);
         }
+
+        if (state.iMsgId && !state.surface) {
+          const sent = await sendRichMessage(userId, buildRichMessage([
+            richHeading("📝 Wizard active in DM", 6),
+          ]));
+          if (sent) {
+            state.surface = surfaceFromTelegramMessage(sent, userId);
+            if (state.surface) state.surface.richContent = true;
+            wizardStateBounded.set(userId, state);
+          }
+        }
+
+        if (state.surface && state.surface.chatId !== userId && !state.surface.ephemeral) {
+          const sent = await sendRichMessage(userId, buildRichMessage([
+            richHeading("📝 Wizard moved to DM", 6),
+          ]));
+          if (sent) {
+            state.surface = surfaceFromTelegramMessage(sent, userId);
+            if (state.surface) state.surface.richContent = true;
+            delete state.iMsgId;
+            wizardStateBounded.set(userId, state);
+          }
+        }
+
         await removeUserInput(message, userId);
         if (state.step === 1) {
           state.title = text;
@@ -1541,7 +1565,16 @@ app.post("/webhook", async (req, res) => {
             richButton("❌ Abort", "wizard_cancel", "danger"),
           ]),
         ]);
-        const surface = await beginRichSurface(message, userId, openingRich);
+        let surface;
+        if (isGroupChat(message.chat)) {
+          const sent = await sendRichMessage(userId, openingRich);
+          if (sent) {
+            surface = surfaceFromTelegramMessage(sent, userId);
+            if (surface) surface.richContent = true;
+          }
+        } else {
+          surface = await beginRichSurface(message, userId, openingRich);
+        }
 
         if (!surface) return res.sendStatus(200);
         wizardStateBounded.set(userId, {
@@ -1731,7 +1764,25 @@ app.post("/webhook", async (req, res) => {
       if (data === "wizard_new") {
         await answerCallbackQuery(callbackQuery.id, "Opening reminder wizard in your DMs...", false);
         let surface = callbackSurface;
-        if (!surface && inlineMsgId) {
+        const isInGroup = callbackQuery.message && isGroupChat(callbackQuery.message.chat);
+
+        if (isInGroup) {
+          const sent = await sendRichMessage(
+            userId,
+            buildRichMessage([
+              richHeading("📝 What's the reminder title?", 1),
+              richParagraph("Type the title for your reminder (e.g., buy milk, team meeting, pay bills):"),
+              richDivider(),
+              richButtons([
+                richButton("❌ Cancel", "wizard_cancel", "danger"),
+              ]),
+            ]),
+          );
+          if (sent) {
+            surface = surfaceFromTelegramMessage(sent, userId);
+            if (surface) surface.richContent = true;
+          }
+        } else if (!surface && inlineMsgId) {
           const sent = await sendRichMessage(
             userId,
             buildRichMessage([
@@ -1898,8 +1949,7 @@ app.post("/webhook", async (req, res) => {
           state.step = 5;
           wizardStateBounded.set(userId, state);
           const timeStr = state.time.dt.toFormat("EEE, MMM d, yyyy 'at' h:mm a");
-
-          await editRichSurface(state.surface, buildRichMessage([
+          const reviewRich = buildRichMessage([
             richHeading("📝 Review Your Reminder", 1),
             richTable([
               [{ text: "📌 Title" }, { text: state.title }],
@@ -1912,7 +1962,13 @@ app.post("/webhook", async (req, res) => {
               richButton("✅ Create", "wizard_confirm", "success"),
               richButton("❌ Cancel", "wizard_cancel", "danger"),
             ]),
-          ]));
+          ]);
+
+          if (state.surface) {
+            await editRichSurface(state.surface, reviewRich);
+          } else if (state.iMsgId) {
+            await editInlineRichMessage(state.iMsgId, reviewRich);
+          }
         }
       } else if (data === "wizard_confirm") {
         await answerCallbackQuery(callbackQuery.id);
@@ -1974,32 +2030,26 @@ app.post("/webhook", async (req, res) => {
         wizardStateBounded.delete(userId);
         clearUserPendingState(userId);
         await answerCallbackQuery(callbackQuery.id, "Wizard cancelled.", false);
-        if (state?.surface || callbackSurface) {
-          await editRichSurface(
-            state?.surface || callbackSurface,
-            buildRichMessage([
-              richHeading("✅ Reminder cancelled", 6),
-              richParagraph("No reminder was created."),
-              richDivider(),
-              richButtons([
-                richButton("➕ Create Reminder", "wizard_new", "primary"),
-                richButton("✖️ Close", "surface_close", "danger"),
-              ]),
-            ]),
-          );
+        const cancelledRich = buildRichMessage([
+          richHeading("✅ Reminder cancelled", 6),
+          richParagraph("No reminder was created."),
+          richDivider(),
+          richButtons([
+            richButton("📋 Back to List", "menu:list", "primary"),
+            richButton("➕ Create Reminder", "wizard_new", "primary"),
+          ]),
+          richButtons([
+            richButton("✖️ Close", "surface_close", "danger"),
+          ]),
+        ]);
+        if (state?.surface) {
+          await editRichSurface(state.surface, cancelledRich);
         } else if (state?.iMsgId) {
-          await editInlineRichMessage(
-            state.iMsgId,
-            buildRichMessage([
-              richHeading("✅ Reminder cancelled", 6),
-              richParagraph("No reminder was created."),
-              richDivider(),
-              richButtons([
-                richButton("➕ Create Reminder", "wizard_new", "primary"),
-                richButton("✖️ Close", "surface_close", "danger"),
-              ]),
-            ]),
-          );
+          await editInlineRichMessage(state.iMsgId, cancelledRich);
+        } else if (callbackSurface) {
+          await editRichCallbackSurface(cancelledRich);
+        } else if (inlineMsgId) {
+          await editInlineRichMessage(inlineMsgId, cancelledRich);
         }
       } else if (data === "tz_detect") {
         await answerCallbackQuery(callbackQuery.id, "📍 Share your location to auto-detect timezone", false);
@@ -2031,12 +2081,17 @@ app.post("/webhook", async (req, res) => {
         const calMonth = parseInt(parts[2], 10);
         const remindersOnDay = await getRemindersForMonth(userId, calYear, calMonth);
         const cal = buildCalendar(calYear, calMonth, remindersOnDay);
-        await editRichCallbackSurface(buildRichMessage([
+        const calRich = buildRichMessage([
           richHeading(`📅 ${cal.monthName}`, 1),
           richParagraph("Tap a day to see reminders:"),
           richDivider(),
           ...cal.richBlocks,
-        ]));
+        ]);
+        if (callbackSurface) {
+          await editRichCallbackSurface(calRich);
+        } else if (callbackQuery.inline_message_id) {
+          await editInlineRichMessage(callbackQuery.inline_message_id, calRich);
+        }
       } else if (data.startsWith("calday:")) {
         await answerCallbackQuery(callbackQuery.id);
         const dateKey = data.replace("calday:", "");
@@ -2054,7 +2109,7 @@ app.post("/webhook", async (req, res) => {
         );
         const dateLabel = DateTime.local(calYear, calMonth, calDay).toFormat("EEEE, MMM d");
         if (res.rows.length === 0) {
-          await editRichCallbackSurface(buildRichMessage([
+          const dayRich = buildRichMessage([
             richHeading(`📅 ${dateLabel}`, 1),
             richParagraph("No reminders scheduled for this day."),
             richDivider(),
@@ -2062,7 +2117,12 @@ app.post("/webhook", async (req, res) => {
               richButton("➕ Add Reminder", `caladd:${dateKey}`, "success"),
               richButton("⬅️ Back to Calendar", `calback:${calYear}:${calMonth}`, "link"),
             ]),
-          ]));
+          ]);
+          if (callbackSurface) {
+            await editRichCallbackSurface(dayRich);
+          } else if (callbackQuery.inline_message_id) {
+            await editInlineRichMessage(callbackQuery.inline_message_id, dayRich);
+          }
         } else {
           const blocks = [
             richHeading(`📅 ${dateLabel}`, 1),
@@ -2080,7 +2140,12 @@ app.post("/webhook", async (req, res) => {
             richButton("➕ Add Reminder", `caladd:${dateKey}`, "success"),
             richButton("⬅️ Back to Calendar", `calback:${calYear}:${calMonth}`, "link"),
           ]));
-          await editRichCallbackSurface(buildRichMessage(blocks));
+          const dayRich = buildRichMessage(blocks);
+          if (callbackSurface) {
+            await editRichCallbackSurface(dayRich);
+          } else if (callbackQuery.inline_message_id) {
+            await editInlineRichMessage(callbackQuery.inline_message_id, dayRich);
+          }
         }
       } else if (data.startsWith("calback:")) {
         await answerCallbackQuery(callbackQuery.id);
@@ -2089,12 +2154,17 @@ app.post("/webhook", async (req, res) => {
         const calMonth = parseInt(parts[2], 10);
         const remindersOnDay = await getRemindersForMonth(userId, calYear, calMonth);
         const cal = buildCalendar(calYear, calMonth, remindersOnDay);
-        await editRichCallbackSurface(buildRichMessage([
+        const calRich = buildRichMessage([
           richHeading(`📅 ${cal.monthName}`, 1),
           richParagraph("Tap a day to see reminders:"),
           richDivider(),
           ...cal.richBlocks,
-        ]));
+        ]);
+        if (callbackSurface) {
+          await editRichCallbackSurface(calRich);
+        } else if (callbackQuery.inline_message_id) {
+          await editInlineRichMessage(callbackQuery.inline_message_id, calRich);
+        }
       } else if (data.startsWith("caladd:")) {
         await answerCallbackQuery(callbackQuery.id);
         const dateKey = data.replace("caladd:", "");
@@ -2111,14 +2181,19 @@ app.post("/webhook", async (req, res) => {
           originalChatId: isGroupChat(callbackQuery.message?.chat) ? userId : chatId,
           prefillDate: calDt,
         });
-        await editRichCallbackSurface(buildRichMessage([
+        const calAddRich = buildRichMessage([
           richHeading("📝 What's the reminder title?", 1),
           richParagraph(`Adding a reminder for ${dateLabel}`),
           richDivider(),
           richButtons([
             richButton("❌ Cancel", `calday:${dateKey}`, "danger"),
           ]),
-        ]));
+        ]);
+        if (callbackSurface) {
+          await editRichCallbackSurface(calAddRich);
+        } else if (callbackQuery.inline_message_id) {
+          await editInlineRichMessage(callbackQuery.inline_message_id, calAddRich);
+        }
       } else if (data.startsWith("settz:")) {
         const tz = data.replace("settz:", "");
         if (!DateTime.now().setZone(tz).isValid) {
@@ -2330,7 +2405,9 @@ app.post("/webhook", async (req, res) => {
               );
             }
 
-            await editInlineMessage(iMsgId, "📝 *Edit menu sent to your DM!*");
+            await editInlineRichMessage(iMsgId, buildRichMessage([
+              richHeading("📝 Edit menu sent to your DM!", 6),
+            ]));
           } else {
             pendingInlineEdits.add(key);
             setTimeout(() => pendingInlineEdits.delete(key), 10000);
@@ -2340,14 +2417,16 @@ app.post("/webhook", async (req, res) => {
               false,
             );
 
-            await editInlineMessage(
+            await editInlineRichMessage(
               iMsgId,
-              "⚠️ **Tap Edit again within 10s** to send options to your DM",
-              {
-                inline_keyboard: [
-                  [{ text: "✏️ Edit", callback_data: `edit:${reminderId}` }],
-                ],
-              },
+              buildRichMessage([
+                richHeading("⚠️ Tap Edit again within 10s", 2),
+                richParagraph("to send options to your DM"),
+                richDivider(),
+                richButtons([
+                  richButton("✏️ Edit", `edit:${reminderId}`, "primary"),
+                ]),
+              ]),
             );
           }
           return res.sendStatus(200);
@@ -2808,7 +2887,7 @@ app.post("/webhook", async (req, res) => {
         );
 
         if (iMsgId) {
-          await editInlineMessage(iMsgId, dashData.text, dashData.keyboard);
+          await editInlineRichMessage(iMsgId, dashData.richMessage);
         }
       } else if (selectedResultId === "create_wizard_dm") {
         if (iMsgId) {
