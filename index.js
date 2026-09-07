@@ -1127,8 +1127,9 @@ app.post("/webhook", async (req, res) => {
                   richButton("❌ Cancel", "wizard_cancel", "danger"),
                 ]),
               ]));
-            } else {
-              state.step = 2;
+            }
+          } else {
+            state.step = 2;
             wizardStateBounded.set(userId, state);
             if (state.iMsgId) {
               await editInlineRichMessage(
