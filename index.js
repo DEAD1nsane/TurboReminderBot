@@ -2764,11 +2764,6 @@ app.post("/webhook", async (req, res) => {
               ],
             },
           },
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "⏳ Loading...", callback_data: "noop" }],
-            ],
-          },
         });
         results.push({
           type: "article",
@@ -2786,11 +2781,6 @@ app.post("/webhook", async (req, res) => {
               ],
             },
           },
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "📡 Injecting payload...", callback_data: "noop" }],
-            ],
-          },
         });
         results.push({
           type: "article",
@@ -2807,11 +2797,6 @@ app.post("/webhook", async (req, res) => {
                 { type: "heading", text: "📋 Fetching active reminders...", size: 6 },
               ],
             },
-          },
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "⏳ Loading...", callback_data: "noop" }],
-            ],
           },
         });
 
