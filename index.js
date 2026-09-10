@@ -2802,11 +2802,7 @@ app.post("/webhook", async (req, res) => {
           thumb_width: 72,
           thumb_height: 72,
           input_message_content: {
-            rich_message: {
-              blocks: [
-                { type: "heading", text: "📋 Fetching active reminders...", size: 5 },
-              ],
-            },
+            message_text: "📋 Fetching active reminders...",
           },
           reply_markup: {
             inline_keyboard: [
