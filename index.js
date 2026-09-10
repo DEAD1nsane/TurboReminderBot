@@ -1785,6 +1785,19 @@ app.post("/webhook", async (req, res) => {
           await setActiveMenuMsgId(userId, null);
         });
       }
+      if (inlineMsgId) {
+        const inlineTimerKey = `inline_${inlineMsgId}`;
+        clearMenuTimer(inlineTimerKey);
+        resetMenuTimer(inlineTimerKey, async () => {
+          try {
+            await editInlineRichMessage(inlineMsgId, buildRichMessage([
+              richHeading("✅ Closed", 6),
+            ]));
+          } catch (err) {
+            console.error("Failed to auto-collapse inline message:", err);
+          }
+        });
+      }
 
       let userTz = (await getUserTimezone(userId)) || "America/Chicago";
 
