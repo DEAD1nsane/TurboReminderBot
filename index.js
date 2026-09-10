@@ -2802,7 +2802,11 @@ app.post("/webhook", async (req, res) => {
           thumb_width: 72,
           thumb_height: 72,
           input_message_content: {
-            message_text: "📋 Fetching active reminders...",
+            rich_message: {
+              blocks: [
+                { type: "heading", text: "📋 Fetching active reminders...", size: 5 },
+              ],
+            },
           },
           reply_markup: {
             inline_keyboard: [
@@ -2821,8 +2825,6 @@ app.post("/webhook", async (req, res) => {
     if (chosenResult) {
       const selectedResultId = chosenResult.result_id || "";
       const iMsgId = chosenResult.inline_message_id || null;
-
-      console.log("[CHOSEN] result:", selectedResultId, "iMsgId:", iMsgId, "raw inline_message_id:", chosenResult.inline_message_id);
 
       if (iMsgId && userId) {
         inlineOwnerMap.set(iMsgId, userId);
@@ -2884,7 +2886,6 @@ app.post("/webhook", async (req, res) => {
             }
           });
         } else {
-          console.log("[INLINE_V6] iMsgId is null, falling back to DM");
           await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard, null, dashData.richMessage);
         }
       } else if (selectedResultId === "show_reminders_share") {
