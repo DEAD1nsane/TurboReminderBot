@@ -2741,7 +2741,7 @@ app.post("/webhook", async (req, res) => {
             input_message_content: {
               rich_message: {
                 blocks: [
-                  { type: "heading", text: "📝 No text needed! Just tap an option below.", size: 6 },
+                  { type: "heading", text: "📝 No text needed! Just tap an option below.", size: 5 },
                 ],
               },
             },
@@ -2760,9 +2760,14 @@ app.post("/webhook", async (req, res) => {
           input_message_content: {
             rich_message: {
               blocks: [
-                { type: "heading", text: "📝 Creating your reminder...", size: 6 },
+                { type: "heading", text: "📝 Creating your reminder...", size: 5 },
               ],
             },
+          },
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🔄 Loading...", callback_data: "noop" }],
+            ],
           },
         });
         results.push({
@@ -2777,9 +2782,14 @@ app.post("/webhook", async (req, res) => {
           input_message_content: {
             rich_message: {
               blocks: [
-                { type: "heading", text: "💻 Establishing DM connection...", size: 6 },
+                { type: "heading", text: "💻 Establishing DM connection...", size: 5 },
               ],
             },
+          },
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🔄 Loading...", callback_data: "noop" }],
+            ],
           },
         });
         results.push({
@@ -2794,9 +2804,14 @@ app.post("/webhook", async (req, res) => {
           input_message_content: {
             rich_message: {
               blocks: [
-                { type: "heading", text: "📋 Fetching active reminders...", size: 6 },
+                { type: "heading", text: "📋 Fetching active reminders...", size: 5 },
               ],
             },
+          },
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🔄 Loading...", callback_data: "noop" }],
+            ],
           },
         });
 
