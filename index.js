@@ -2391,11 +2391,7 @@ app.post("/webhook", async (req, res) => {
         if (!reminderId) return res.sendStatus(200);
         await setPendingEdit(userId, null);
         pendingEditSurfacesBounded.delete(userId);
-        await answerCallbackQuery(
-          callbackQuery.id,
-          "✏️ Edit this reminder?",
-          false,
-        );
+        wizardStateBounded.delete(userId);
         const iMsgId = callbackQuery.inline_message_id;
         console.log("[EDIT] reminderId:", reminderId, "iMsgId:", iMsgId, "callbackSurface:", !!callbackSurface, "hasMessage:", !!callbackQuery.message);
 
@@ -2455,11 +2451,6 @@ app.post("/webhook", async (req, res) => {
           } else {
             pendingInlineEdits.add(key);
             setTimeout(() => pendingInlineEdits.delete(key), 10000);
-            await answerCallbackQuery(
-              callbackQuery.id,
-              "⚠️ Tap Edit again within 10s to send options to your DM",
-              false,
-            );
 
             await editInlineRichMessage(
               iMsgId,
