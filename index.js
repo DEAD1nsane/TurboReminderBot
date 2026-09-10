@@ -1436,14 +1436,16 @@ app.post("/webhook", async (req, res) => {
             );
           } else {
             if (pendingSurface) {
-              await editSurface(
+              await editRichSurface(
                 pendingSurface,
-                "⚠️ Could not parse the new time\\. Please try again or tap Cancel\\.",
-                {
-                  inline_keyboard: [
-                    [{ text: "⬅️ Cancel", callback_data: `edit:${reminderId}` }],
-                  ],
-                },
+                buildRichMessage([
+                  richHeading("⚠️ Could not parse time", 5),
+                  richParagraph("Please try again or tap Cancel."),
+                  richDivider(),
+                  richButtons([
+                    richButton("⬅️ Cancel", `edit:${reminderId}`, "danger"),
+                  ]),
+                ]),
               );
             } else {
               await sendTelegramMessage(
@@ -1466,19 +1468,16 @@ app.post("/webhook", async (req, res) => {
             );
           } else {
             if (pendingSurface) {
-              await editSurface(
+              await editRichSurface(
                 pendingSurface,
-                "⚠️ Invalid number\\. Please enter a positive whole number\\.",
-                {
-                  inline_keyboard: [
-                    [
-                      {
-                        text: "⬅️ Cancel",
-                        callback_data: `nummenu:${reminderId}:${unit}`,
-                      },
-                    ],
-                  ],
-                },
+                buildRichMessage([
+                  richHeading("⚠️ Invalid number", 5),
+                  richParagraph("Please enter a positive whole number."),
+                  richDivider(),
+                  richButtons([
+                    richButton("⬅️ Cancel", `nummenu:${reminderId}:${unit}`, "danger"),
+                  ]),
+                ]),
               );
             }
             return res.sendStatus(200);
@@ -1492,14 +1491,16 @@ app.post("/webhook", async (req, res) => {
             );
           } else {
             if (pendingSurface) {
-              await editSurface(
+              await editRichSurface(
                 pendingSurface,
-                "⚠️ Enter a whole number of minutes, or 0 to turn the warning off\\.",
-                {
-                  inline_keyboard: [
-                    [{ text: "⬅️ Cancel", callback_data: `edit:${reminderId}` }],
-                  ],
-                },
+                buildRichMessage([
+                  richHeading("⚠️ Invalid number", 5),
+                  richParagraph("Enter a whole number of minutes, or 0 to turn the warning off."),
+                  richDivider(),
+                  richButtons([
+                    richButton("⬅️ Cancel", `edit:${reminderId}`, "danger"),
+                  ]),
+                ]),
               );
             }
             return res.sendStatus(200);
@@ -1651,10 +1652,31 @@ app.post("/webhook", async (req, res) => {
           const dashData = await getRemindersDashboardData(userId, detectedTz, userFirstName);
           await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard, null, dashData.richMessage);
         } else {
-          await sendTelegramMessage(
+          await sendRichMessage(
             userId,
-            "⚠️ Could not detect timezone from that location. Please select manually:",
-            getTimezonePickerKeyboard()
+            buildRichMessage([
+              richHeading("⚠️ Could not detect timezone", 5),
+              richParagraph("Please select your timezone manually:"),
+              richDivider(),
+              richButtons([
+                richButton("📍 Auto-detect", "tz_detect", "link"),
+              ]),
+              richButtons([
+                richButton("🇺🇸 Eastern", "settz:America/New_York", "link"),
+                richButton("🇺🇸 Central", "settz:America/Chicago", "link"),
+              ]),
+              richButtons([
+                richButton("🇺🇸 Mountain", "settz:America/Denver", "link"),
+                richButton("🇺🇸 Pacific", "settz:America/Los_Angeles", "link"),
+              ]),
+              richButtons([
+                richButton("🇬🇧 London", "settz:Europe/London", "link"),
+                richButton("🇪🇺 Europe", "settz:Europe/Paris", "link"),
+              ]),
+              richButtons([
+                richButton("🌐 UTC", "settz:UTC", "link"),
+              ]),
+            ]),
           );
         }
         await removeUserInput(message, userId);
@@ -1668,15 +1690,24 @@ app.post("/webhook", async (req, res) => {
         if (typeof chatId !== "undefined" && typeof msgId !== "undefined") {
           await deleteTelegramMessage(chatId, msgId);
         }
-        await beginPrivateSurface(
+        await beginRichSurface(
           message,
           userId,
-          "⚠️ Could not understand that as a reminder\\. Try something like:\\n• tomorrow 5pm buy milk\\n• in 2 hours call mom\\n• Aug 12 8am meeting\\n• daily 9am take vitamins",
-          {
-            inline_keyboard: [
-              [{ text: "❌ Close", callback_data: "surface_close" }],
-            ],
-          },
+          buildRichMessage([
+            richHeading("⚠️ Could not understand that", 5),
+            richParagraph("Try something like:"),
+            richList([
+              richListItem("tomorrow 5pm buy milk"),
+              richListItem("in 2 hours call mom"),
+              richListItem("Aug 12 8am meeting"),
+              richListItem("daily 9am take vitamins"),
+            ]),
+            richDivider(),
+            richButtons([
+              richButton("❌ Close", "surface_close", "danger"),
+            ]),
+          ]),
+          null,
         );
         await removeUserInput(message, userId);
         return res.sendStatus(200);

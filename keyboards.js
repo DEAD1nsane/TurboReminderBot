@@ -61,7 +61,7 @@ function buildCalendar(year, month, remindersOnDay = {}) {
     for (let day = 1; day <= daysInMonth; day++) {
         const dateKey = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const hasReminders = remindersOnDay[day];
-        const label = hasReminders ? `📅${day}` : `${day}`;
+        const label = hasReminders ? `📍${day}` : `${day}`;
         row.push({ text: label, callback_data: `calday:${dateKey}` });
         if (row.length === 7) {
             rows.push(row);
