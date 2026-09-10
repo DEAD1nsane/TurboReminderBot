@@ -2739,8 +2739,11 @@ app.post("/webhook", async (req, res) => {
             title: "⚠️ Don't type — just tap below",
             description: "↕️ Swipe to see options",
             input_message_content: {
-              message_text: "📝 **No text needed\\!** Just pick an option below\\.",
-              parse_mode: "MarkdownV2",
+              rich_message: {
+                blocks: [
+                  { type: "heading", text: "📝 No text needed! Just tap an option below.", size: 6 },
+                ],
+              },
             },
           });
         }
@@ -2755,9 +2758,11 @@ app.post("/webhook", async (req, res) => {
           thumb_width: 72,
           thumb_height: 72,
           input_message_content: {
-            message_text:
-              "📝 **Creating your reminder\\.\\.\\.**",
-            parse_mode: "MarkdownV2",
+            rich_message: {
+              blocks: [
+                { type: "heading", text: "📝 Creating your reminder...", size: 6 },
+              ],
+            },
           },
           reply_markup: {
             inline_keyboard: [
@@ -2775,9 +2780,11 @@ app.post("/webhook", async (req, res) => {
           thumb_width: 72,
           thumb_height: 72,
           input_message_content: {
-            message_text:
-              "💻 **\\[INIT\\_DM\\] Establishing encrypted tunnel\\.\\.\\.**",
-            parse_mode: "MarkdownV2",
+            rich_message: {
+              blocks: [
+                { type: "heading", text: "💻 Establishing DM connection...", size: 6 },
+              ],
+            },
           },
           reply_markup: {
             inline_keyboard: [
@@ -2795,8 +2802,11 @@ app.post("/webhook", async (req, res) => {
           thumb_width: 72,
           thumb_height: 72,
           input_message_content: {
-            message_text: "📋 **Fetching active reminders\\.\\.\\.**",
-            parse_mode: "MarkdownV2",
+            rich_message: {
+              blocks: [
+                { type: "heading", text: "📋 Fetching active reminders...", size: 6 },
+              ],
+            },
           },
           reply_markup: {
             inline_keyboard: [
