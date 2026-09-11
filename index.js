@@ -558,7 +558,9 @@ setInterval(async () => {
           r.chat_id || r.user_id,
           buildRichMessage([
             richHeading(`⚡ | ${r.text} in ${r.early_offset}m`, 6),
-            richParagraph(`<b><sup>${formattedTime}</sup></b>`),
+            richParagraph([
+              { type: "bold", text: [{ type: "superscript", text: formattedTime }] },
+            ]),
           ]),
         );
         await pool.query(
@@ -570,7 +572,9 @@ setInterval(async () => {
           r.chat_id || r.user_id,
           buildRichMessage([
             richHeading(`🔔 | ${r.text}`, 6),
-            richParagraph(`<b><sup>${formattedTime}</sup></b>`),
+            richParagraph([
+              { type: "bold", text: [{ type: "superscript", text: formattedTime }] },
+            ]),
           ]),
         );
 
