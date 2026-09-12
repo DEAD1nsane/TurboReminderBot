@@ -2214,25 +2214,51 @@ app.post("/webhook", async (req, res) => {
         const calDt = DateTime.local(calYear, calMonth, calDay);
         if (!calDt.isValid) return res.sendStatus(200);
         const dateLabel = calDt.toFormat("EEEE, MMM d");
-        wizardStateBounded.set(userId, {
-          step: 1,
-          surface: callbackSurface,
-          iMsgId: callbackQuery.inline_message_id || null,
-          originalChatId: isGroupChat(callbackQuery.message?.chat) ? userId : chatId,
-          prefillDate: calDt,
-        });
-        const calAddRich = buildRichMessage([
-          richHeading("📝 What's the reminder title?", 1),
-          richParagraph(`Adding a reminder for ${dateLabel}`),
-          richDivider(),
-          richButtons([
-            richButton("❌ Cancel", `calday:${dateKey}`, "danger"),
-          ]),
-        ]);
+
         if (callbackSurface) {
-          await editRichCallbackSurface(calAddRich);
+          wizardStateBounded.set(userId, {
+            step: 1,
+            surface: callbackSurface,
+            iMsgId: null,
+            originalChatId: isGroupChat(callbackQuery.message?.chat) ? userId : chatId,
+            prefillDate: calDt,
+          });
+          await editRichCallbackSurface(buildRichMessage([
+            richHeading("📝 What's the reminder title?", 1),
+            richParagraph(`Adding a reminder for ${dateLabel}`),
+            richDivider(),
+            richButtons([
+              richButton("❌ Cancel", `calday:${dateKey}`, "danger"),
+            ]),
+          ]));
         } else if (callbackQuery.inline_message_id) {
-          await editInlineRichMessage(callbackQuery.inline_message_id, calAddRich);
+          const sent = await sendRichMessage(
+            userId,
+            buildRichMessage([
+              richHeading("📝 What's the reminder title?", 1),
+              richParagraph(`Adding a reminder for ${dateLabel}`),
+              richDivider(),
+              richButtons([
+                richButton("❌ Cancel", `calday:${dateKey}`, "danger"),
+              ]),
+            ]),
+          );
+          const surface = sent ? surfaceFromTelegramMessage(sent, userId) : null;
+          if (surface) surface.richContent = true;
+          wizardStateBounded.set(userId, {
+            step: 1,
+            surface: surface || null,
+            iMsgId: callbackQuery.inline_message_id,
+            originalChatId: null,
+            prefillDate: calDt,
+          });
+          await editInlineRichMessage(
+            callbackQuery.inline_message_id,
+            buildRichMessage([
+              richHeading("✅ Wizard opened in your DM!", 6),
+              richParagraph(`Adding a reminder for ${dateLabel} — type the title in your DMs.`),
+            ]),
+          );
         }
       } else if (data.startsWith("settz:")) {
         const tz = data.replace("settz:", "");
@@ -2928,13 +2954,8 @@ app.post("/webhook", async (req, res) => {
         }
       } else if (selectedResultId === "create_wizard_dm") {
         if (iMsgId) {
-          wizardStateBounded.set(userId, {
-            step: 1,
-            iMsgId: iMsgId,
-            originalChatId: null,
-          });
-          await editInlineRichMessage(
-            iMsgId,
+          const sent = await sendRichMessage(
+            userId,
             buildRichMessage([
               richHeading("📝 What's the reminder title?", 1),
               richParagraph("Type the title for your reminder (e.g., buy milk, team meeting, pay bills):"),
@@ -2942,6 +2963,21 @@ app.post("/webhook", async (req, res) => {
               richButtons([
                 richButton("❌ Cancel", "wizard_cancel", "danger"),
               ]),
+            ]),
+          );
+          const surface = sent ? surfaceFromTelegramMessage(sent, userId) : null;
+          if (surface) surface.richContent = true;
+          wizardStateBounded.set(userId, {
+            step: 1,
+            surface: surface || null,
+            iMsgId: iMsgId,
+            originalChatId: null,
+          });
+          await editInlineRichMessage(
+            iMsgId,
+            buildRichMessage([
+              richHeading("✅ Wizard opened in your DM!", 6),
+              richParagraph("Type your reminder title there."),
             ]),
           );
         }
