@@ -2778,11 +2778,7 @@ app.post("/webhook", async (req, res) => {
             title: "⚠️ Don't type — just tap below",
             description: "↕️ Swipe to see options",
             input_message_content: {
-              rich_message: {
-                blocks: [
-                  { type: "heading", text: "📝 No text needed! Just tap an option below.", size: 5 },
-                ],
-              },
+              message_text: "📝 No text needed! Just tap an option below.",
             },
           });
         }
