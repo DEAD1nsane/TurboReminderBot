@@ -1078,17 +1078,6 @@ app.post("/webhook", async (req, res) => {
           return res.sendStatus(200);
         }
 
-        if (state.iMsgId && !state.surface) {
-          const sent = await sendRichMessage(userId, buildRichMessage([
-            richHeading("📝 Wizard active in DM", 6),
-          ]));
-          if (sent) {
-            state.surface = surfaceFromTelegramMessage(sent, userId);
-            if (state.surface) state.surface.richContent = true;
-            wizardStateBounded.set(userId, state);
-          }
-        }
-
         if (state.surface && state.surface.chatId !== userId && !state.surface.ephemeral) {
           const sent = await sendRichMessage(userId, buildRichMessage([
             richHeading("📝 Wizard moved to DM", 6),
