@@ -2797,11 +2797,7 @@ app.post("/webhook", async (req, res) => {
           thumb_width: 72,
           thumb_height: 72,
           input_message_content: {
-            rich_message: {
-              blocks: [
-                { type: "heading", text: "📝 Creating your reminder...", size: 5 },
-              ],
-            },
+            message_text: "📝 Creating your reminder...",
           },
           reply_markup: {
             inline_keyboard: [
