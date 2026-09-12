@@ -2026,42 +2026,43 @@ app.post("/webhook", async (req, res) => {
           );
           wizardStateBounded.delete(userId);
           const timeStr = state.time.dt.toFormat("EEE, MMM d, yyyy 'at' h:mm a");
+          const createdRich = buildRichMessage([
+            richHeading("✅ Reminder Created!", 6),
+            richTable([
+              [{ text: "📌 Title" }, { text: state.title }],
+              [{ text: "⏰ Time" }, { text: timeStr }],
+              [{ text: "🔄 Repeat" }, { text: state.repeatText || "None" }],
+              [{ text: "⏳ Early Warning" }, { text: state.earlyWarning ? `${state.earlyWarning}m before` : "None" }],
+            ]),
+            richDivider(),
+            richButtons([
+              richButton("📋 View Reminders", "menu:list", "primary"),
+              richButton("➕ New Reminder", "wizard_new", "primary"),
+            ]),
+            richButtons([
+              richButton("✖️ Close", "surface_close", "danger"),
+            ]),
+          ]);
           if (state.surface) {
-            await editRichSurface(state.surface, buildRichMessage([
-              richHeading("✅ Reminder Created!", 6),
-              richTable([
-                [{ text: "📌 Title" }, { text: state.title }],
-                [{ text: "⏰ Time" }, { text: timeStr }],
-                [{ text: "🔄 Repeat" }, { text: state.repeatText || "None" }],
-                [{ text: "⏳ Early Warning" }, { text: state.earlyWarning ? `${state.earlyWarning}m before` : "None" }],
-              ]),
-              richDivider(),
-              richButtons([
-                richButton("📋 View Reminders", "menu:list", "primary"),
-                richButton("➕ New Reminder", "wizard_new", "primary"),
-              ]),
-              richButtons([
-                richButton("✖️ Close", "surface_close", "danger"),
-              ]),
-            ]));
-          } else if (state.iMsgId) {
-            await editInlineRichMessage(state.iMsgId, buildRichMessage([
-              richHeading("✅ Reminder Created!", 6),
-              richTable([
-                [{ text: "📌 Title" }, { text: state.title }],
-                [{ text: "⏰ Time" }, { text: timeStr }],
-                [{ text: "🔄 Repeat" }, { text: state.repeatText || "None" }],
-                [{ text: "⏳ Early Warning" }, { text: state.earlyWarning ? `${state.earlyWarning}m before` : "None" }],
-              ]),
-              richDivider(),
-              richButtons([
-                richButton("📋 View Reminders", "menu:list", "primary"),
-                richButton("➕ New Reminder", "wizard_new", "primary"),
-              ]),
-              richButtons([
-                richButton("✖️ Close", "surface_close", "danger"),
-              ]),
-            ]));
+            await editRichSurface(state.surface, createdRich);
+          }
+          if (state.iMsgId) {
+            try {
+              await editInlineRichMessage(state.iMsgId, createdRich);
+              const inlineTimerKey = `inline_${state.iMsgId}`;
+              clearMenuTimer(inlineTimerKey);
+              resetMenuTimer(inlineTimerKey, async () => {
+                try {
+                  await editInlineRichMessage(state.iMsgId, buildRichMessage([
+                    richHeading("✅ Closed", 6),
+                  ]));
+                } catch (err) {
+                  console.error("Failed to collapse inline wizard result:", err);
+                }
+              });
+            } catch (err) {
+              console.error("Failed to update inline wizard result:", err);
+            }
           }
         }
       } else if (data === "wizard_cancel") {
