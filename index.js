@@ -2777,6 +2777,10 @@ app.post("/webhook", async (req, res) => {
             id: "noop_text",
             title: "⚠️ Don't type — just tap below",
             description: "↕️ Swipe to see options",
+            thumbnail_url:
+              "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f6ab.png",
+            thumb_width: 72,
+            thumb_height: 72,
             input_message_content: {
               message_text: "📝 No text needed! Just tap an option below.",
             },
@@ -2813,7 +2817,7 @@ app.post("/webhook", async (req, res) => {
           input_message_content: {
             rich_message: {
               blocks: [
-                { type: "heading", text: "💻 Establishing DM connection...", size: 5 },
+                { type: "heading", text: "💻 Establishing DM connection...", size: 6 },
               ],
             },
           },
@@ -2835,7 +2839,7 @@ app.post("/webhook", async (req, res) => {
           input_message_content: {
             rich_message: {
               blocks: [
-                { type: "heading", text: "📋 Fetching active reminders...", size: 5 },
+                { type: "heading", text: "📋 Fetching active reminders...", size: 6 },
               ],
             },
           },
