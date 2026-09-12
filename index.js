@@ -1074,6 +1074,7 @@ app.post("/webhook", async (req, res) => {
 
       if (wizardStateBounded.has(userId)) {
         const state = wizardStateBounded.get(userId);
+        console.log("[WIZARD] state:", JSON.stringify({step: state.step, iMsgId: state.iMsgId, hasSurface: !!state.surface}));
         if (state.surface?.chatId !== chatId && !state.iMsgId) {
           return res.sendStatus(200);
         }
@@ -1849,6 +1850,7 @@ app.post("/webhook", async (req, res) => {
           wizardStateBounded.set(userId, {
             step: 1,
             surface,
+            iMsgId: callbackQuery.inline_message_id || null,
             originalChatId: isGroupChat(callbackQuery.message?.chat)
               ? userId
               : chatId,
@@ -2215,6 +2217,7 @@ app.post("/webhook", async (req, res) => {
         wizardStateBounded.set(userId, {
           step: 1,
           surface: callbackSurface,
+          iMsgId: callbackQuery.inline_message_id || null,
           originalChatId: isGroupChat(callbackQuery.message?.chat) ? userId : chatId,
           prefillDate: calDt,
         });
