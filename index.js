@@ -2811,11 +2811,7 @@ app.post("/webhook", async (req, res) => {
           thumb_width: 72,
           thumb_height: 72,
           input_message_content: {
-            rich_message: {
-              blocks: [
-                { type: "heading", text: "💻 Establishing DM connection...", size: 5 },
-              ],
-            },
+            message_text: "💻 Establishing DM connection...",
           },
           reply_markup: {
             inline_keyboard: [
