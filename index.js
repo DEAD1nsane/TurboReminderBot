@@ -2758,6 +2758,28 @@ app.post("/webhook", async (req, res) => {
             ],
           },
         });
+        results.push({
+          type: "article",
+          id: "show_calendar_inline",
+          title: "📅 View Calendar (Inline)",
+          description: "Show calendar view here",
+          thumbnail_url:
+            "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4c5.png",
+          thumb_width: 72,
+          thumb_height: 72,
+          input_message_content: {
+            rich_message: {
+              blocks: [
+                { type: "heading", text: "📅 Loading calendar...", size: 6 },
+              ],
+            },
+          },
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🔄 Loading...", callback_data: "noop" }],
+            ],
+          },
+        });
 
         console.log("[INLINE] Sending", results.length, "results");
         await answerInlineQuery(inlineQuery.id, results);
@@ -2842,6 +2864,32 @@ app.post("/webhook", async (req, res) => {
 
         if (iMsgId) {
           await editInlineRichMessage(iMsgId, dashData.richMessage);
+        }
+      } else if (selectedResultId === "show_calendar_inline") {
+        const userTz = (await getUserTimezone(userId)) || "America/Chicago";
+        const now = DateTime.now().setZone(userTz);
+        const remindersOnDay = await getRemindersForMonth(userId, now.year, now.month);
+        const cal = buildCalendar(now.year, now.month, remindersOnDay);
+        const calRich = buildRichMessage([
+          richHeading(`📅 ${cal.monthName}`, 1),
+          richParagraph("Tap a day to see reminders:"),
+          richDivider(),
+          ...cal.richBlocks,
+        ]);
+
+        if (iMsgId) {
+          await editInlineRichMessage(iMsgId, calRich);
+          const inlineTimerKey = `inline_${iMsgId}`;
+          clearMenuTimer(inlineTimerKey);
+          resetMenuTimer(inlineTimerKey, async () => {
+            try {
+              await editInlineRichMessage(iMsgId, buildRichMessage([
+                richHeading("✅ Closed", 6),
+              ]));
+            } catch (err) {
+              console.error("Failed to auto-collapse inline calendar:", err);
+            }
+          });
         }
       } else if (selectedResultId === "create_wizard_dm") {
         if (iMsgId) {
