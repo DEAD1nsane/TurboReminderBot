@@ -39,8 +39,17 @@ function buildCalendar(year, month, remindersOnDay = {}) {
 
     rows.push([
         { text: `◀️ ${DateTime.local(prevYear, prevMonth, 1).toFormat('MMM')}`, callback_data: `calprev:${prevYear}:${prevMonth}` },
-        { text: `📅 ${monthName}`, callback_data: 'noop' },
         { text: `${DateTime.local(nextYear, nextMonth, 1).toFormat('MMM')} ▶️`, callback_data: `calnext:${nextYear}:${nextMonth}` },
+    ]);
+
+    rows.push([
+        { text: 'M', callback_data: 'noop' },
+        { text: 'T', callback_data: 'noop' },
+        { text: 'W', callback_data: 'noop' },
+        { text: 'T', callback_data: 'noop' },
+        { text: 'F', callback_data: 'noop' },
+        { text: 'S', callback_data: 'noop' },
+        { text: 'S', callback_data: 'noop' },
     ]);
 
     let row = [];
@@ -76,8 +85,8 @@ function buildCalendar(year, month, remindersOnDay = {}) {
         richBlocks: (() => {
             const blocks = [];
             blocks.push({ type: "buttons", buttons: rows[0].map(b => ({ text: b.text, callback_data: b.callback_data })), align: "center" });
-            blocks.push({ type: "paragraph", text: "`M   T   W   T   F   S   S`" });
-            for (let i = 1; i < rows.length - 1; i++) {
+            blocks.push({ type: "buttons", buttons: rows[1].map(b => ({ text: b.text, callback_data: b.callback_data })), align: "center" });
+            for (let i = 2; i < rows.length - 1; i++) {
                 blocks.push({ type: "buttons", buttons: rows[i].map(b => ({ text: b.text, callback_data: b.callback_data })), align: "center" });
             }
             blocks.push({ type: "divider" });
