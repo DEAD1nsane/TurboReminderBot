@@ -2901,6 +2901,17 @@ app.post("/webhook", async (req, res) => {
 
         if (iMsgId) {
           await editInlineRichMessage(iMsgId, calRich);
+          const inlineTimerKey = `inline_${iMsgId}`;
+          clearMenuTimer(inlineTimerKey);
+          resetMenuTimer(inlineTimerKey, async () => {
+            try {
+              await editInlineRichMessage(iMsgId, buildRichMessage([
+                richHeading("✅ Closed", 6),
+              ]));
+            } catch (err) {
+              console.error("Failed to auto-collapse inline calendar:", err);
+            }
+          });
         }
       } else if (selectedResultId === "create_wizard_dm") {
         if (iMsgId) {
