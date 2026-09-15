@@ -1536,7 +1536,19 @@ app.post("/webhook", async (req, res) => {
           ...cal.richBlocks,
         ]);
         const surface = await beginRichSurface(message, userId, calRich);
-        if (surface) await removeUserInput(message, userId);
+        if (surface) {
+          await removeUserInput(message, userId);
+          const timerKey = `dm_dashboard_${userId}`;
+          clearMenuTimer(timerKey);
+          resetMenuTimer(timerKey, async () => {
+            try {
+              await deleteTelegramMessage(message.chat.id, surface.messageId);
+              await setActiveMenuMsgId(userId, null);
+            } catch (err) {
+              console.error("Failed to auto-delete DM calendar:", err);
+            }
+          });
+        }
         return res.sendStatus(200);
       }
 
@@ -1683,8 +1695,12 @@ app.post("/webhook", async (req, res) => {
         const timerKey = `dm_dashboard_${userId}`;
         clearMenuTimer(timerKey);
         resetMenuTimer(timerKey, async () => {
-          await deleteTelegramMessage(chatId, messageId);
-          await setActiveMenuMsgId(userId, null);
+          try {
+            await deleteTelegramMessage(chatId, messageId);
+            await setActiveMenuMsgId(userId, null);
+          } catch (err) {
+            console.error("Failed to auto-delete DM message:", err);
+          }
         });
       }
       if (inlineMsgId) {
