@@ -38,9 +38,9 @@ function buildCalendar(year, month, remindersOnDay = {}) {
     const rows = [];
 
     rows.push([
-        { text: `◀️ ${DateTime.local(prevYear, prevMonth, 1).toFormat('MMM')}`, callback_data: `calprev:${prevYear}:${prevMonth}` },
-        { text: `📅 ${firstDay.toFormat('MMM')}`, callback_data: 'noop' },
-        { text: `${DateTime.local(nextYear, nextMonth, 1).toFormat('MMM')} ▶️`, callback_data: `calnext:${nextYear}:${nextMonth}` },
+        { text: `◀️ ${DateTime.local(prevYear, prevMonth, 1).toFormat('MMMM')}`, callback_data: `calprev:${prevYear}:${prevMonth}` },
+        { text: '🗓️ Today', callback_data: `calprev:${year}:${month}` },
+        { text: `${DateTime.local(nextYear, nextMonth, 1).toFormat('MMMM')} ▶️`, callback_data: `calnext:${nextYear}:${nextMonth}` },
     ]);
 
     rows.push([
