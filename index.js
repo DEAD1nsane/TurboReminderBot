@@ -1434,7 +1434,19 @@ app.post("/webhook", async (req, res) => {
         if (existingTz) {
           const dashData = await getRemindersDashboardData(userId, existingTz);
           const surface = await beginRichSurface(message, userId, dashData.richMessage);
-          if (surface) await removeUserInput(message, userId);
+          if (surface) {
+            await removeUserInput(message, userId);
+            const timerKey = `dm_dashboard_${userId}`;
+            clearMenuTimer(timerKey);
+            resetMenuTimer(timerKey, async () => {
+              try {
+                await deleteTelegramMessage(message.chat.id, surface.messageId);
+                await setActiveMenuMsgId(userId, null);
+              } catch (err) {
+                console.error("Failed to auto-delete DM reminders:", err);
+              }
+            });
+          }
         } else {
           const tzRich = buildRichMessage([
             richHeading("👋 Welcome!", 1),
