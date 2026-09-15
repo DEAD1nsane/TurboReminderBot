@@ -44,13 +44,13 @@ function buildCalendar(year, month, remindersOnDay = {}) {
     ]);
 
     rows.push([
-        { text: 'Mo', callback_data: 'noop' },
-        { text: 'Tu', callback_data: 'noop' },
-        { text: 'We', callback_data: 'noop' },
-        { text: 'Th', callback_data: 'noop' },
-        { text: 'Fr', callback_data: 'noop' },
-        { text: 'Sa', callback_data: 'noop' },
-        { text: 'Su', callback_data: 'noop' },
+        { text: 'M', callback_data: 'noop' },
+        { text: 'T', callback_data: 'noop' },
+        { text: 'W', callback_data: 'noop' },
+        { text: 'T', callback_data: 'noop' },
+        { text: 'F', callback_data: 'noop' },
+        { text: 'S', callback_data: 'noop' },
+        { text: 'S', callback_data: 'noop' },
     ]);
 
     let row = [];
