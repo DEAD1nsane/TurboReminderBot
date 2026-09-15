@@ -1017,12 +1017,15 @@ async function sendOrUpdateDashboard(
     clearMenuTimer(timerKey);
     resetMenuTimer(timerKey, async () => {
       try {
+        console.log(`[TIMER] DM dashboard timer fired for user ${userId}, msg ${targetMsgId}`);
         await deleteTelegramMessage(userId, targetMsgId);
         await setActiveMenuMsgId(userId, null);
+        console.log(`[TIMER] DM dashboard message deleted: ${targetMsgId}`);
       } catch (err) {
         console.error("Failed to auto-collapse DM dashboard:", err);
       }
     });
+    console.log(`[TIMER] DM dashboard timer set for user ${userId}, msg ${targetMsgId}`);
   }
 }
 
@@ -1696,12 +1699,15 @@ app.post("/webhook", async (req, res) => {
         clearMenuTimer(timerKey);
         resetMenuTimer(timerKey, async () => {
           try {
+            console.log(`[TIMER] Callback DM timer fired for user ${userId}, msg ${messageId}`);
             await deleteTelegramMessage(chatId, messageId);
             await setActiveMenuMsgId(userId, null);
+            console.log(`[TIMER] Callback DM message deleted: ${messageId}`);
           } catch (err) {
             console.error("Failed to auto-delete DM message:", err);
           }
         });
+        console.log(`[TIMER] Callback DM timer set for user ${userId}, msg ${messageId}`);
       }
       if (inlineMsgId) {
         const inlineTimerKey = `inline_${inlineMsgId}`;
