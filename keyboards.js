@@ -63,7 +63,10 @@ function buildCalendar(year, month, remindersOnDay = {}) {
         const dateKey = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const hasReminders = remindersOnDay[day];
         const label = hasReminders ? `🕳️${day}` : `${day}`;
-        row.push({ text: label, callback_data: `calday:${dateKey}` });
+        const isToday = year === now.year && month === now.month && day === now.day;
+        const btn = { text: label, callback_data: `calday:${dateKey}` };
+        if (isToday) btn.style = 'primary';
+        row.push(btn);
         if (row.length === 7) {
             rows.push(row);
             row = [];
