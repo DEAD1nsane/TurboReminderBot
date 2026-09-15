@@ -557,7 +557,7 @@ setInterval(async () => {
         await sendRichMessage(
           r.chat_id || r.user_id,
           buildRichMessage([
-            richHeading(`⚡ | ${r.text} in ${r.early_offset}m`, 6),
+            richHeading(`⚡ | ${r.text} in ${r.early_offset}m`, 5),
             richParagraph([
               { type: "bold", text: [{ type: "superscript", text: formattedTime }] },
             ]),
@@ -571,7 +571,7 @@ setInterval(async () => {
         await sendRichMessage(
           r.chat_id || r.user_id,
           buildRichMessage([
-            richHeading(`🔔 | ${r.text}`, 6),
+            richHeading(`🔔 | ${r.text}`, 5),
             richParagraph([
               { type: "bold", text: [{ type: "superscript", text: formattedTime }] },
             ]),
@@ -2879,17 +2879,6 @@ app.post("/webhook", async (req, res) => {
 
         if (iMsgId) {
           await editInlineRichMessage(iMsgId, calRich);
-          const inlineTimerKey = `inline_${iMsgId}`;
-          clearMenuTimer(inlineTimerKey);
-          resetMenuTimer(inlineTimerKey, async () => {
-            try {
-              await editInlineRichMessage(iMsgId, buildRichMessage([
-                richHeading("✅ Closed", 6),
-              ]));
-            } catch (err) {
-              console.error("Failed to auto-collapse inline calendar:", err);
-            }
-          });
         }
       } else if (selectedResultId === "create_wizard_dm") {
         if (iMsgId) {
