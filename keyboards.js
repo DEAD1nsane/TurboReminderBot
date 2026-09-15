@@ -89,10 +89,10 @@ function buildCalendar(year, month, remindersOnDay = {}) {
         monthName,
         richBlocks: (() => {
             const blocks = [];
-            blocks.push({ type: "buttons", buttons: rows[0].map(b => ({ text: b.text, callback_data: b.callback_data })), align: "center" });
-            blocks.push({ type: "buttons", buttons: rows[1].map(b => ({ text: b.text, callback_data: b.callback_data })), align: "center" });
+            blocks.push({ type: "buttons", buttons: rows[0].map(b => ({ text: b.text, callback_data: b.callback_data, ...(b.style && { style: b.style }) })), align: "center" });
+            blocks.push({ type: "buttons", buttons: rows[1].map(b => ({ text: b.text, callback_data: b.callback_data, ...(b.style && { style: b.style }) })), align: "center" });
             for (let i = 2; i < rows.length - 1; i++) {
-                blocks.push({ type: "buttons", buttons: rows[i].map(b => ({ text: b.text, callback_data: b.callback_data })), align: "center" });
+                blocks.push({ type: "buttons", buttons: rows[i].map(b => ({ text: b.text, callback_data: b.callback_data, ...(b.style && { style: b.style }) })), align: "center" });
             }
             blocks.push({ type: "divider" });
             blocks.push({ type: "buttons", buttons: rows[rows.length - 1].map(b => ({ text: b.text, callback_data: b.callback_data })), align: "center" });

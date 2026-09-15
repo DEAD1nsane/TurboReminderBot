@@ -1687,7 +1687,7 @@ app.post("/webhook", async (req, res) => {
           await setActiveMenuMsgId(userId, null);
         });
       }
-      if (inlineMsgId && !data.startsWith("calprev:") && !data.startsWith("calnext:") && !data.startsWith("calday:") && !data.startsWith("calback:") && !data.startsWith("caladd:")) {
+      if (inlineMsgId) {
         const inlineTimerKey = `inline_${inlineMsgId}`;
         clearMenuTimer(inlineTimerKey);
         resetMenuTimer(inlineTimerKey, async () => {
