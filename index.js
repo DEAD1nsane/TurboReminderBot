@@ -69,6 +69,23 @@ const wizardStateBounded = boundedMap(10 * 60 * 1000, 1000);
 const pendingEditSurfacesBounded = boundedMap(5 * 60 * 1000, 1000);
 const inlineQueryCacheBounded = boundedMap(10 * 60 * 1000, 5000);
 const inlineOwnerMap = boundedMap(30 * 60 * 1000, 5000);
+const wizardTimers = new Map();
+
+function resetWizardTimer(userId, state) {
+  if (wizardTimers.has(userId)) clearTimeout(wizardTimers.get(userId));
+  const timer = setTimeout(async () => {
+    wizardTimers.delete(userId);
+    wizardStateBounded.delete(userId);
+    if (state.surface) {
+      await deleteTelegramMessage(state.surface.chatId, state.surface.messageId).catch(() => {});
+    } else if (state.iMsgId) {
+      await editInlineRichMessage(state.iMsgId, buildRichMessage([
+        richParagraph([{ type: "bold", text: [{ type: "subscript", text: "⏰ Wizard expired — no activity" }] }]),
+      ])).catch(() => {});
+    }
+  }, 30 * 1000);
+  wizardTimers.set(userId, timer);
+}
 
 async function editWizardStep(state, text, inlineKeyboard = null) {
   if (state.surface) {
@@ -1116,6 +1133,7 @@ app.post("/webhook", async (req, res) => {
         }
 
         await removeUserInput(message, userId);
+        resetWizardTimer(userId, state);
         if (state.step === 1) {
           state.title = text;
           if (state.prefillDate) {
@@ -1496,6 +1514,7 @@ app.post("/webhook", async (req, res) => {
       } else if (text.toLowerCase() === "create") {
         console.log("[WIZARD] Wizard triggered for user:", userId);
         wizardStateBounded.delete(userId);
+        wizardTimers.delete(userId);
         const openingRich = buildRichMessage([
           richHeading("🪄 Initiating reminder protocol...", 1),
           richParagraph("What should I remind you about?"),
@@ -1516,11 +1535,9 @@ app.post("/webhook", async (req, res) => {
         }
 
         if (!surface) return res.sendStatus(200);
-        wizardStateBounded.set(userId, {
-          step: 1,
-          surface,
-          originalChatId: isGroupChat(message.chat) ? userId : chatId,
-        });
+        const wizState = { step: 1, surface, originalChatId: isGroupChat(message.chat) ? userId : chatId };
+        wizardStateBounded.set(userId, wizState);
+        resetWizardTimer(userId, wizState);
         await removeUserInput(message, userId);
         return res.sendStatus(200);
       } else if (text.toLowerCase() === "/help") {
@@ -1541,6 +1558,7 @@ app.post("/webhook", async (req, res) => {
         const state = wizardStateBounded.get(userId);
         const pendingSurface = pendingEditSurfacesBounded.get(userId);
         wizardStateBounded.delete(userId);
+        wizardTimers.delete(userId);
         pendingEditSurfacesBounded.delete(userId);
         await setPendingEdit(userId, null);
         clearUserPendingState(userId);
@@ -1810,18 +1828,14 @@ app.post("/webhook", async (req, res) => {
           ]));
         }
         if (surface) {
-          wizardStateBounded.set(userId, {
-            step: 1,
-            surface,
-            iMsgId: callbackQuery.inline_message_id || null,
-            originalChatId: isGroupChat(callbackQuery.message?.chat)
-              ? userId
-              : chatId,
-          });
+          const wizState = { step: 1, surface, iMsgId: callbackQuery.inline_message_id || null, originalChatId: isGroupChat(callbackQuery.message?.chat) ? userId : chatId };
+          wizardStateBounded.set(userId, wizState);
+          resetWizardTimer(userId, wizState);
         }
       } else if (data === "surface_close") {
         await answerCallbackQuery(callbackQuery.id);
         wizardStateBounded.delete(userId);
+        wizardTimers.delete(userId);
         pendingEditSurfacesBounded.delete(userId);
         await setPendingEdit(userId, null);
         clearUserPendingState(userId);
@@ -1878,6 +1892,7 @@ app.post("/webhook", async (req, res) => {
           }
           state.step = 3.5;
           wizardStateBounded.set(userId, state);
+          resetWizardTimer(userId, state);
           return res.sendStatus(200);
         }
         const state = wizardStateBounded.get(userId);
@@ -1890,6 +1905,7 @@ app.post("/webhook", async (req, res) => {
               : repeatType.charAt(0).toUpperCase() + repeatType.slice(1);
           state.step = 4;
           wizardStateBounded.set(userId, state);
+          resetWizardTimer(userId, state);
           if (state.surface) {
             await editRichSurface(state.surface, buildRichMessage([
               richHeading("⏳ How many minutes early should the warning be?", 1),
@@ -1932,6 +1948,7 @@ app.post("/webhook", async (req, res) => {
           state.earlyWarning = mins === 0 ? null : mins;
           state.step = 5;
           wizardStateBounded.set(userId, state);
+          resetWizardTimer(userId, state);
           const timeStr = state.time.dt.toFormat("EEE, MMM d, yyyy 'at' h:mm a");
           const reviewRich = buildRichMessage([
             richHeading("📝 Review Your Reminder", 1),
@@ -1970,6 +1987,7 @@ app.post("/webhook", async (req, res) => {
             ],
           );
           wizardStateBounded.delete(userId);
+        wizardTimers.delete(userId);
           const timeStr = state.time.dt.toFormat("EEE, MMM d, yyyy 'at' h:mm a");
           const createdRich = buildRichMessage([
             richHeading("✅ Reminder Created!", 6),
@@ -2013,6 +2031,7 @@ app.post("/webhook", async (req, res) => {
       } else if (data === "wizard_cancel") {
         const state = wizardStateBounded.get(userId);
         wizardStateBounded.delete(userId);
+        wizardTimers.delete(userId);
         clearUserPendingState(userId);
         await answerCallbackQuery(callbackQuery.id, "Wizard cancelled.", false);
         const cancelledRich = buildRichMessage([
@@ -2178,13 +2197,9 @@ app.post("/webhook", async (req, res) => {
         const dateLabel = calDt.toFormat("EEEE, MMM d");
 
         if (callbackSurface) {
-          wizardStateBounded.set(userId, {
-            step: 1,
-            surface: callbackSurface,
-            iMsgId: null,
-            originalChatId: isGroupChat(callbackQuery.message?.chat) ? userId : chatId,
-            prefillDate: calDt,
-          });
+          const wizState = { step: 1, surface: callbackSurface, iMsgId: null, originalChatId: isGroupChat(callbackQuery.message?.chat) ? userId : chatId, prefillDate: calDt };
+          wizardStateBounded.set(userId, wizState);
+          resetWizardTimer(userId, wizState);
           await editRichCallbackSurface(buildRichMessage([
             richHeading("📝 What's the reminder title?", 1),
             richParagraph(`Adding a reminder for ${dateLabel}`),
@@ -2207,13 +2222,9 @@ app.post("/webhook", async (req, res) => {
           );
           const surface = sent ? surfaceFromTelegramMessage(sent, userId) : null;
           if (surface) surface.richContent = true;
-          wizardStateBounded.set(userId, {
-            step: 1,
-            surface: surface || null,
-            iMsgId: callbackQuery.inline_message_id,
-            originalChatId: null,
-            prefillDate: calDt,
-          });
+          const wizState = { step: 1, surface: surface || null, iMsgId: callbackQuery.inline_message_id, originalChatId: null, prefillDate: calDt };
+          wizardStateBounded.set(userId, wizState);
+          resetWizardTimer(userId, wizState);
           await editInlineRichMessage(
             callbackQuery.inline_message_id,
             buildRichMessage([
@@ -2376,6 +2387,7 @@ app.post("/webhook", async (req, res) => {
         await setPendingEdit(userId, null);
         pendingEditSurfacesBounded.delete(userId);
         wizardStateBounded.delete(userId);
+        wizardTimers.delete(userId);
         const iMsgId = callbackQuery.inline_message_id;
         console.log("[EDIT] reminderId:", reminderId, "iMsgId:", iMsgId, "callbackSurface:", !!callbackSurface, "hasMessage:", !!callbackQuery.message);
 
@@ -2981,12 +2993,9 @@ app.post("/webhook", async (req, res) => {
           );
           const surface = sent ? surfaceFromTelegramMessage(sent, userId) : null;
           if (surface) surface.richContent = true;
-          wizardStateBounded.set(userId, {
-            step: 1,
-            surface: surface || null,
-            iMsgId: iMsgId,
-            originalChatId: null,
-          });
+          const wizState = { step: 1, surface: surface || null, iMsgId: iMsgId, originalChatId: null };
+          wizardStateBounded.set(userId, wizState);
+          resetWizardTimer(userId, wizState);
           await editInlineRichMessage(
             iMsgId,
             buildRichMessage([
