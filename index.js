@@ -942,7 +942,7 @@ async function getRemindersDashboardData(userId, userTz, passedName = null) {
         const isTomorrow = rDt.hasSame(now.plus({ days: 1 }), "day");
         const header = isToday ? "📅 Today" : isTomorrow ? "📅 Tomorrow" : `📅 ${dateLabel}`;
         reminderButtons.push(richHeading(header, 4));
-        reminderButtons.push(richDivider());
+        reminderButtons.push(richParagraph("---"));
         lastDateLabel = dateLabel;
       }
       let statusIcon = r.recurring ? (r.total_occurrences ? " | 🔢" : " | 🔄") : "";
