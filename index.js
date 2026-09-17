@@ -941,7 +941,7 @@ async function getRemindersDashboardData(userId, userTz, passedName = null) {
         const isToday = rDt.hasSame(now, "day");
         const isTomorrow = rDt.hasSame(now.plus({ days: 1 }), "day");
         const header = isToday ? "📅 Today" : isTomorrow ? "📅 Tomorrow" : `📅 ${dateLabel}`;
-        reminderButtons.push(richHeading(header, 4));
+        reminderButtons.push({ type: "heading", text: header, size: 5, align: "center" });
         reminderButtons.push(richDivider());
         lastDateLabel = dateLabel;
       }
