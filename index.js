@@ -941,7 +941,8 @@ async function getRemindersDashboardData(userId, userTz, passedName = null) {
         const isToday = rDt.hasSame(now, "day");
         const isTomorrow = rDt.hasSame(now.plus({ days: 1 }), "day");
         const header = isToday ? "📅 Today" : isTomorrow ? "📅 Tomorrow" : `📅 ${dateLabel}`;
-        reminderButtons.push(richHeading(header, 2));
+        reminderButtons.push(richHeading(header, 4));
+        reminderButtons.push(richDivider());
         lastDateLabel = dateLabel;
       }
       let statusIcon = r.recurring ? (r.total_occurrences ? " | 🔢" : " | 🔄") : "";
