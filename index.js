@@ -2100,14 +2100,14 @@ app.post("/webhook", async (req, res) => {
         if (res.rows.length === 0) {
           const dayRich = buildRichMessage([
             richHeading(`📅 ${dateLabel}`, 1),
+            richButtons([
+              richButton(`◀️ ${prevDay.toFormat("MMM d")}`, `calday:${prevDayKey}`, "link"),
+              richButton(`${nextDay.toFormat("MMM d")} ▶️`, `calday:${nextDayKey}`, "link"),
+            ]),
             richParagraph("No reminders scheduled for this day."),
             richDivider(),
             richButtons([
               richButton("➕ Add Reminder", `caladd:${dateKey}`, "success"),
-            ]),
-            richButtons([
-              richButton(`◀️ ${prevDay.toFormat("MMM d")}`, `calday:${prevDayKey}`, "link"),
-              richButton(`${nextDay.toFormat("MMM d")} ▶️`, `calday:${nextDayKey}`, "link"),
             ]),
             richButtons([
               richButton("⬅️ Back to Calendar", `calback:${calYear}:${calMonth}`, "link"),
@@ -2121,6 +2121,10 @@ app.post("/webhook", async (req, res) => {
         } else {
           const blocks = [
             richHeading(`📅 ${dateLabel}`, 1),
+            richButtons([
+              richButton(`◀️ ${prevDay.toFormat("MMM d")}`, `calday:${prevDayKey}`, "link"),
+              richButton(`${nextDay.toFormat("MMM d")} ▶️`, `calday:${nextDayKey}`, "link"),
+            ]),
             richParagraph(`${res.rows.length} reminder(s):`),
             richDivider(),
           ];
@@ -2133,10 +2137,6 @@ app.post("/webhook", async (req, res) => {
           blocks.push(richDivider());
           blocks.push(richButtons([
             richButton("➕ Add Reminder", `caladd:${dateKey}`, "success"),
-          ]));
-          blocks.push(richButtons([
-            richButton(`◀️ ${prevDay.toFormat("MMM d")}`, `calday:${prevDayKey}`, "link"),
-            richButton(`${nextDay.toFormat("MMM d")} ▶️`, `calday:${nextDayKey}`, "link"),
           ]));
           blocks.push(richButtons([
             richButton("⬅️ Back to Calendar", `calback:${calYear}:${calMonth}`, "link"),
