@@ -1740,7 +1740,7 @@ app.post("/webhook", async (req, res) => {
         resetMenuTimer(inlineTimerKey, async () => {
           try {
             await editInlineRichMessage(inlineMsgId, buildRichMessage([
-              richParagraph([{ type: "bold", text: "✅ Closed" }]),
+              richParagraph({ type: "subscript", text: { type: "bold", text: "✅ Closed" } }),
             ]));
           } catch (err) {
             console.error("Failed to auto-collapse inline message:", err);
@@ -1832,7 +1832,7 @@ app.post("/webhook", async (req, res) => {
           await editInlineRichMessage(
             callbackQuery.inline_message_id,
             buildRichMessage([
-              richParagraph([{ type: "bold", text: "✅ Closed" }]),
+              richParagraph({ type: "subscript", text: { type: "bold", text: "✅ Closed" } }),
             ]),
           );
         }
@@ -1991,7 +1991,7 @@ app.post("/webhook", async (req, res) => {
               resetMenuTimer(inlineTimerKey, async () => {
                 try {
                   await editInlineRichMessage(state.iMsgId, buildRichMessage([
-                    richParagraph([{ type: "bold", text: "✅ Closed" }]),
+                    richParagraph({ type: "subscript", text: { type: "bold", text: "✅ Closed" } }),
                   ]));
                 } catch (err) {
                   console.error("Failed to collapse inline wizard result:", err);
@@ -2349,7 +2349,7 @@ app.post("/webhook", async (req, res) => {
                 await editInlineRichMessage(
                   callbackQuery.inline_message_id,
                   buildRichMessage([
-                    richParagraph([{ type: "bold", text: "✅ Closed" }]),
+                    richParagraph({ type: "subscript", text: { type: "bold", text: "✅ Closed" } }),
                   ]),
                 );
               } catch (err) {
@@ -2789,7 +2789,7 @@ app.post("/webhook", async (req, res) => {
           input_message_content: {
             rich_message: {
               blocks: [
-                { type: "paragraph", text: [{ type: "bold", text: "💻 Establishing DM connection..." }] },
+                { type: "paragraph", text: { type: "subscript", text: { type: "bold", text: "💻 Establishing DM connection..." } } },
               ],
             },
           },
@@ -2811,7 +2811,7 @@ app.post("/webhook", async (req, res) => {
           input_message_content: {
             rich_message: {
               blocks: [
-                { type: "paragraph", text: [{ type: "bold", text: "📋 Fetching active reminders..." }] },
+                { type: "paragraph", text: { type: "subscript", text: { type: "bold", text: "📋 Fetching active reminders..." } } },
               ],
             },
           },
@@ -2833,7 +2833,7 @@ app.post("/webhook", async (req, res) => {
           input_message_content: {
             rich_message: {
               blocks: [
-                { type: "paragraph", text: [{ type: "bold", text: "📅 Loading calendar..." }] },
+                { type: "paragraph", text: { type: "subscript", text: { type: "bold", text: "📅 Loading calendar..." } } },
               ],
             },
           },
@@ -2882,7 +2882,7 @@ app.post("/webhook", async (req, res) => {
               resetMenuTimer(inlineTimerKey, async () => {
                 try {
                   await editInlineRichMessage(iMsgId, buildRichMessage([
-                    richParagraph([{ type: "bold", text: "✅ Closed" }]),
+                    richParagraph({ type: "subscript", text: { type: "bold", text: "✅ Closed" } }),
                   ]));
                 } catch (err) {
                   console.error("Failed to auto-collapse DM message:", err);
@@ -2908,7 +2908,7 @@ app.post("/webhook", async (req, res) => {
           resetMenuTimer(inlineTimerKey, async () => {
             try {
               await editInlineRichMessage(iMsgId, buildRichMessage([
-                richParagraph([{ type: "bold", text: "✅ Closed" }]),
+                richParagraph({ type: "subscript", text: { type: "bold", text: "✅ Closed" } }),
               ]));
             } catch (err) {
               console.error("Failed to auto-collapse inline list:", err);
@@ -2947,7 +2947,7 @@ app.post("/webhook", async (req, res) => {
           resetMenuTimer(inlineTimerKey, async () => {
             try {
               await editInlineRichMessage(iMsgId, buildRichMessage([
-                richParagraph([{ type: "bold", text: "✅ Closed" }]),
+                richParagraph({ type: "subscript", text: { type: "bold", text: "✅ Closed" } }),
               ]));
             } catch (err) {
               console.error("Failed to auto-collapse inline calendar:", err);
