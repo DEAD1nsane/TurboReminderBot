@@ -931,12 +931,24 @@ async function getRemindersDashboardData(userId, userTz, passedName = null) {
       };
     }
 
-    const reminderButtons = res.rows.map((r) => {
+    const reminderButtons = [];
+    let lastDateLabel = null;
+    for (const r of res.rows) {
+      const rDt = DateTime.fromJSDate(new Date(r.remind_at)).setZone(userTz || "America/Chicago");
+      const dateLabel = rDt.toFormat("EEEE, MMM d");
+      if (dateLabel !== lastDateLabel) {
+        const now = DateTime.now().setZone(userTz || "America/Chicago");
+        const isToday = rDt.hasSame(now, "day");
+        const isTomorrow = rDt.hasSame(now.plus({ days: 1 }), "day");
+        const header = isToday ? "📅 Today" : isTomorrow ? "📅 Tomorrow" : `📅 ${dateLabel}`;
+        reminderButtons.push(richHeading(header, 2));
+        lastDateLabel = dateLabel;
+      }
       let statusIcon = r.recurring ? (r.total_occurrences ? " | 🔢" : " | 🔄") : "";
-      return richButtons([
+      reminderButtons.push(richButtons([
         richButton(`${r.text}${statusIcon}`, `view:${r.id}`, "link"),
-      ]);
-    });
+      ]));
+    }
 
     const richMessage = buildRichMessage([
       richHeading(`📋 ${titleName} Active Reminders`, 1),
