@@ -941,7 +941,7 @@ async function getRemindersDashboardData(userId, userTz, passedName = null) {
         const isToday = rDt.hasSame(now, "day");
         const isTomorrow = rDt.hasSame(now.plus({ days: 1 }), "day");
         const header = isToday ? "📅 Today" : isTomorrow ? "📅 Tomorrow" : `📅 ${dateLabel}`;
-        reminderButtons.push({ type: "paragraph", text: `**${header}**`, align: "center" });
+        reminderButtons.push(richHeading(header, 6));
         reminderButtons.push(richDivider());
         lastDateLabel = dateLabel;
       }
@@ -2789,7 +2789,7 @@ app.post("/webhook", async (req, res) => {
           input_message_content: {
             rich_message: {
               blocks: [
-                { type: "heading", text: "💻 Establishing DM connection...", size: 6 },
+                { type: "paragraph", text: "**💻 Establishing DM connection...**" },
               ],
             },
           },
@@ -2811,7 +2811,7 @@ app.post("/webhook", async (req, res) => {
           input_message_content: {
             rich_message: {
               blocks: [
-                { type: "heading", text: "📋 Fetching active reminders...", size: 6 },
+                { type: "paragraph", text: "**📋 Fetching active reminders...**" },
               ],
             },
           },
@@ -2833,7 +2833,7 @@ app.post("/webhook", async (req, res) => {
           input_message_content: {
             rich_message: {
               blocks: [
-                { type: "heading", text: "📅 Loading calendar...", size: 6 },
+                { type: "paragraph", text: "**📅 Loading calendar...**" },
               ],
             },
           },
