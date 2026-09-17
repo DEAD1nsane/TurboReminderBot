@@ -157,6 +157,14 @@ function richDivider() {
   return { type: "divider" };
 }
 
+function centerText(text, totalWidth = 32) {
+  const invisibleSpace = "⠀";
+  const textLen = text.length;
+  if (textLen >= totalWidth) return text;
+  const leftPadding = Math.floor((totalWidth - textLen) / 2);
+  return invisibleSpace.repeat(leftPadding) + text;
+}
+
 function richButtons(buttons, align = "center") {
   return { type: "buttons", buttons, align };
 }
@@ -941,7 +949,7 @@ async function getRemindersDashboardData(userId, userTz, passedName = null) {
         const isToday = rDt.hasSame(now, "day");
         const isTomorrow = rDt.hasSame(now.plus({ days: 1 }), "day");
         const header = isToday ? "📅 Today" : isTomorrow ? "📅 Tomorrow" : `📅 ${dateLabel}`;
-        reminderButtons.push({ type: "table", cells: [[{ text: header, align: "center", is_header: true }]], is_bordered: false });
+        reminderButtons.push(richHeading(centerText(header), 6));
         reminderButtons.push(richDivider());
         lastDateLabel = dateLabel;
       }
