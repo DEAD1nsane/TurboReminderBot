@@ -1105,7 +1105,7 @@ app.post("/webhook", async (req, res) => {
 
         if (state.surface && state.surface.chatId !== userId && !state.surface.ephemeral) {
           const sent = await sendRichMessage(userId, buildRichMessage([
-            richHeading("📝 Wizard moved to DM", 6),
+            richParagraph([{ type: "bold", text: [{ type: "subscript", text: "📝 Wizard moved to DM" }] }]),
           ]));
           if (sent) {
             state.surface = surfaceFromTelegramMessage(sent, userId);
@@ -2217,8 +2217,8 @@ app.post("/webhook", async (req, res) => {
           await editInlineRichMessage(
             callbackQuery.inline_message_id,
             buildRichMessage([
-              richHeading("✅ Wizard opened in your DM!", 6),
-              richParagraph(`Adding a reminder for ${dateLabel} — type the title in your DMs.`),
+              richParagraph([{ type: "bold", text: [{ type: "subscript", text: "✅ Wizard opened in your DM!" }] }]),
+              richParagraph([{ type: "bold", text: [{ type: "subscript", text: `Adding a reminder for ${dateLabel} — type the title in your DMs.` }] }]),
             ]),
           );
         }
@@ -2777,7 +2777,11 @@ app.post("/webhook", async (req, res) => {
           thumb_width: 72,
           thumb_height: 72,
           input_message_content: {
-            message_text: "📝 Creating your reminder...",
+            rich_message: {
+              blocks: [
+                { type: "paragraph", text: [{ type: "bold", text: [{ type: "subscript", text: "📝 Creating your reminder..." }] }] },
+              ],
+            },
           },
           reply_markup: {
             inline_keyboard: [
@@ -2986,8 +2990,8 @@ app.post("/webhook", async (req, res) => {
           await editInlineRichMessage(
             iMsgId,
             buildRichMessage([
-              richHeading("✅ Wizard opened in your DM!", 6),
-              richParagraph("Type your reminder title there."),
+              richParagraph([{ type: "bold", text: [{ type: "subscript", text: "✅ Wizard opened in your DM!" }] }]),
+              richParagraph([{ type: "bold", text: [{ type: "subscript", text: "Type your reminder title there." }] }]),
             ]),
           );
         }
