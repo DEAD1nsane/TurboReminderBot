@@ -2125,7 +2125,7 @@ app.post("/webhook", async (req, res) => {
               richButton(`◀️ ${prevDay.toFormat("MMM d")}`, `calday:${prevDayKey}`, "link"),
               richButton(`${nextDay.toFormat("MMM d")} ▶️`, `calday:${nextDayKey}`, "link"),
             ]),
-            { type: "table", cells: [[{ text: `${res.rows.length} reminder(s):`, align: "center" }]], is_bordered: false },
+            richHeading(`${res.rows.length} reminder(s):`, 1),
             richDivider(),
           ];
           for (const r of res.rows) {
