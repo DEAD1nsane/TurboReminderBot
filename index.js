@@ -2261,7 +2261,19 @@ app.post("/webhook", async (req, res) => {
         await setPendingEdit(userId, null);
         pendingEditSurfacesBounded.delete(userId);
         clearUserPendingState(userId);
-        if (inlineMsgId) clearMenuTimer(`inline_${inlineMsgId}`);
+        if (inlineMsgId) {
+          const inlineTimerKey = `inline_${inlineMsgId}`;
+          clearMenuTimer(inlineTimerKey);
+          resetMenuTimer(inlineTimerKey, async () => {
+            try {
+              await editInlineRichMessage(inlineMsgId, buildRichMessage([
+                richParagraph([{ type: "bold", text: [{ type: "subscript", text: "✅ Closed" }] }]),
+              ]));
+            } catch (err) {
+              console.error("Failed to auto-collapse inline list:", err);
+            }
+          });
+        }
         const dashData = await getRemindersDashboardData(
           userId,
           userTz,
@@ -2289,7 +2301,18 @@ app.post("/webhook", async (req, res) => {
         if (callbackSurface) {
           await editRichCallbackSurface(calRich);
         } else if (callbackQuery.inline_message_id) {
+          const inlineTimerKey = `inline_${callbackQuery.inline_message_id}`;
+          clearMenuTimer(inlineTimerKey);
           await editInlineRichMessage(callbackQuery.inline_message_id, calRich);
+          resetMenuTimer(inlineTimerKey, async () => {
+            try {
+              await editInlineRichMessage(callbackQuery.inline_message_id, buildRichMessage([
+                richParagraph([{ type: "bold", text: [{ type: "subscript", text: "✅ Closed" }] }]),
+              ]));
+            } catch (err) {
+              console.error("Failed to auto-collapse inline calendar:", err);
+            }
+          });
         }
       } else if (data.startsWith("del:")) {
         const reminderId = parseReminderId(data, "del:");
@@ -2308,8 +2331,18 @@ app.post("/webhook", async (req, res) => {
           if (callbackSurface) {
             await editRichCallbackSurface(dashData.richMessage);
           } else if (callbackQuery.inline_message_id) {
-            clearMenuTimer(`inline_${callbackQuery.inline_message_id}`);
+            const inlineTimerKey = `inline_${callbackQuery.inline_message_id}`;
+            clearMenuTimer(inlineTimerKey);
             await editInlineRichMessage(callbackQuery.inline_message_id, dashData.richMessage);
+            resetMenuTimer(inlineTimerKey, async () => {
+              try {
+                await editInlineRichMessage(callbackQuery.inline_message_id, buildRichMessage([
+                  richParagraph([{ type: "bold", text: [{ type: "subscript", text: "✅ Closed" }] }]),
+                ]));
+              } catch (err) {
+                console.error("Failed to auto-collapse inline list after delete:", err);
+              }
+            });
           }
         } else {
           pendingDeletes.add(key);
