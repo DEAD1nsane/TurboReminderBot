@@ -257,6 +257,110 @@ function buildEditMenuRich(reminderId, recurring, totalOccurrences, earlyOffset)
   ]);
 }
 
+function formatRepeatCount(totalOccurrences) {
+  if (!totalOccurrences) return "Forever";
+  return `${totalOccurrences} time${totalOccurrences === 1 ? "" : "s"}`;
+}
+
+function parseRepeatCount(value) {
+  const count = Number(value);
+  return Number.isSafeInteger(count) && count > 0 && count <= 2147483647
+    ? count
+    : null;
+}
+
+function buildWizardRepeatCountRich() {
+  const limits = [null, 2, 3, 5, 10, 15, 20, 30, 50, 100];
+  const limitRows = [];
+  for (let i = 0; i < limits.length; i += 3) {
+    limitRows.push(
+      richButtons(
+        limits.slice(i, i + 3).map((count) =>
+          richButton(
+            count === null ? "Forever (default)" : `${count}x`,
+            count === null ? "wizard_count:forever" : `wizard_count:${count}`,
+            "link",
+          ),
+        ),
+      ),
+    );
+  }
+  return buildRichMessage([
+    richHeading("🔁 How many times should it repeat?", 1),
+    richParagraph("Choose a repeat limit, or enter your own."),
+    richDivider(),
+    ...limitRows,
+    richDivider(),
+    richButtons([
+      richButton("✍️ Custom Count...", "wizard_count:custom", "link"),
+    ]),
+    richButtons([
+      richButton("❌ Cancel", "wizard_cancel", "danger"),
+    ]),
+  ]);
+}
+
+function buildWizardRepeatCountInputRich() {
+  return buildRichMessage([
+    richHeading("✍️ Enter a custom repeat count", 1),
+    richParagraph("Type a whole number between 1 and 2,147,483,647."),
+    richDivider(),
+    richButtons([
+      richButton("❌ Cancel", "wizard_cancel", "danger"),
+    ]),
+  ]);
+}
+
+function buildWizardEarlyWarningRich() {
+  return buildRichMessage([
+    richHeading("⏳ How many minutes early should the warning be?", 1),
+    richParagraph("Example: 15, 30, 60 (or 0 for no warning)"),
+    richDivider(),
+    richButtons([
+      richButton("5m", "wizard_early:5", "primary"),
+      richButton("15m", "wizard_early:15", "primary"),
+      richButton("30m", "wizard_early:30", "primary"),
+      richButton("60m", "wizard_early:60", "primary"),
+    ]),
+    richButtons([
+      richButton("None", "wizard_early:0", "link"),
+      richButton("❌ Cancel", "wizard_cancel", "danger"),
+    ]),
+  ]);
+}
+
+function buildWizardReviewRows(state) {
+  const timeStr = state.time.dt.toFormat("EEE, MMM d, yyyy 'at' h:mm a");
+  const rows = [
+    [{ text: "📌 Title" }, { text: state.title }],
+    [{ text: "⏰ Time" }, { text: timeStr }],
+    [{ text: "🔄 Repeat" }, { text: state.repeatText || "None" }],
+  ];
+  if (state.repeat) {
+    rows.push([
+      { text: "🔢 Times" },
+      { text: formatRepeatCount(state.totalOccurrences) },
+    ]);
+  }
+  rows.push([
+    { text: "⏳ Early Warning" },
+    { text: state.earlyWarning ? `${state.earlyWarning}m before` : "None" },
+  ]);
+  return rows;
+}
+
+function buildWizardReviewRich(state) {
+  return buildRichMessage([
+    richHeading("📝 Review Your Reminder", 1),
+    richTable(buildWizardReviewRows(state)),
+    richDivider(),
+    richButtons([
+      richButton("✅ Create", "wizard_confirm", "success"),
+      richButton("❌ Cancel", "wizard_cancel", "danger"),
+    ]),
+  ]);
+}
+
 const isGroupChat = (chat) =>
   chat?.type === "group" || chat?.type === "supergroup";
 
@@ -339,6 +443,12 @@ async function editRichSurface(surface, richMessage, markup = null) {
     richMessage,
     markup,
   );
+}
+
+async function editWizardRich(state, richMessage) {
+  if (state.surface) return editRichSurface(state.surface, richMessage);
+  if (state.iMsgId) return editInlineRichMessage(state.iMsgId, richMessage);
+  return false;
 }
 
 async function removeUserInput(message, userId) {
@@ -539,6 +649,8 @@ async function initDb() {
             early_offset INT DEFAULT NULL,
             early_alert_sent BOOLEAN DEFAULT FALSE
             );
+            ALTER TABLE reminders ADD COLUMN IF NOT EXISTS total_occurrences INT DEFAULT NULL;
+            ALTER TABLE reminders ADD COLUMN IF NOT EXISTS current_occurrence INT DEFAULT 0;
             ALTER TABLE reminders ADD COLUMN IF NOT EXISTS early_offset INT DEFAULT NULL;
             ALTER TABLE reminders ADD COLUMN IF NOT EXISTS early_alert_sent BOOLEAN DEFAULT FALSE;
         `);
@@ -1259,25 +1371,28 @@ app.post("/webhook", async (req, res) => {
           }
           state.repeat = `${unit}:${num}`;
           state.repeatText = `Every ${num} ${unitLabel}`;
-          state.step = 4;
+          state.totalOccurrences = null;
+          state.step = 3.75;
           wizardStateBounded.set(userId, state);
-          if (state.surface) {
-            await editRichSurface(state.surface, buildRichMessage([
-              richHeading("⏳ How many minutes early should the warning be?", 1),
-              richParagraph("Example: 15, 30, 60 (or 0 for no warning)"),
+          await editWizardRich(state, buildWizardRepeatCountRich());
+          return res.sendStatus(200);
+        } else if (state.step === 3.75) {
+          const count = parseRepeatCount(text);
+          if (count === null) {
+            await editWizardRich(state, buildRichMessage([
+              richHeading("⚠️ Invalid repeat count", 2),
+              richParagraph("Enter a whole number between 1 and 2,147,483,647."),
               richDivider(),
               richButtons([
-                richButton("5m", "wizard_early:5", "primary"),
-                richButton("15m", "wizard_early:15", "primary"),
-                richButton("30m", "wizard_early:30", "primary"),
-                richButton("60m", "wizard_early:60", "primary"),
-              ]),
-              richButtons([
-                richButton("None", "wizard_early:0", "link"),
                 richButton("❌ Cancel", "wizard_cancel", "danger"),
               ]),
             ]));
+            return res.sendStatus(200);
           }
+          state.totalOccurrences = count;
+          state.step = 4;
+          wizardStateBounded.set(userId, state);
+          await editWizardRich(state, buildWizardEarlyWarningRich());
           return res.sendStatus(200);
         } else if (state.step === 4) {
           const mins = parseInt(text, 10);
@@ -1297,39 +1412,7 @@ app.post("/webhook", async (req, res) => {
           state.earlyWarning = mins === 0 ? null : mins;
           state.step = 5;
           wizardStateBounded.set(userId, state);
-          const timeStr = state.time.dt.toFormat("EEE, MMM d, yyyy 'at' h:mm a");
-
-          if (state.surface) {
-            await editRichSurface(state.surface, buildRichMessage([
-              richHeading("📝 Review Your Reminder", 1),
-              richTable([
-                [{ text: "📌 Title" }, { text: state.title }],
-                [{ text: "⏰ Time" }, { text: timeStr }],
-                [{ text: "🔄 Repeat" }, { text: state.repeatText || "None" }],
-                [{ text: "⏳ Early Warning" }, { text: state.earlyWarning ? `${state.earlyWarning}m before` : "None" }],
-              ]),
-              richDivider(),
-              richButtons([
-                richButton("✅ Create", "wizard_confirm", "success"),
-                richButton("❌ Cancel", "wizard_cancel", "danger"),
-              ]),
-            ]));
-          } else {
-            await editRichSurface(state.surface, buildRichMessage([
-              richHeading("📝 Review Your Reminder", 1),
-              richTable([
-                [{ text: "📌 Title" }, { text: state.title }],
-                [{ text: "⏰ Time" }, { text: timeStr }],
-                [{ text: "🔄 Repeat" }, { text: state.repeatText || "None" }],
-                [{ text: "⏳ Early Warning" }, { text: state.earlyWarning ? `${state.earlyWarning}m before` : "None" }],
-              ]),
-              richDivider(),
-              richButtons([
-                richButton("✅ Create", "wizard_confirm", "success"),
-                richButton("❌ Cancel", "wizard_cancel", "danger"),
-              ]),
-            ]));
-          }
+          await editWizardRich(state, buildWizardReviewRich(state));
           return res.sendStatus(200);
         }
       }
@@ -1903,43 +1986,45 @@ app.post("/webhook", async (req, res) => {
             repeatType === "none"
               ? "None"
               : repeatType.charAt(0).toUpperCase() + repeatType.slice(1);
-          state.step = 4;
-          wizardStateBounded.set(userId, state);
-          resetWizardTimer(userId, state);
-          if (state.surface) {
-            await editRichSurface(state.surface, buildRichMessage([
-              richHeading("⏳ How many minutes early should the warning be?", 1),
-              richParagraph("Example: 15, 30, 60 (or 0 for no warning)"),
-              richDivider(),
-              richButtons([
-                richButton("5m", "wizard_early:5", "primary"),
-                richButton("15m", "wizard_early:15", "primary"),
-                richButton("30m", "wizard_early:30", "primary"),
-                richButton("60m", "wizard_early:60", "primary"),
-              ]),
-              richButtons([
-                richButton("None", "wizard_early:0", "link"),
-                richButton("❌ Cancel", "wizard_cancel", "danger"),
-              ]),
-            ]));
+          state.totalOccurrences = null;
+          if (state.repeat) {
+            state.step = 3.75;
+            wizardStateBounded.set(userId, state);
+            resetWizardTimer(userId, state);
+            await editWizardRich(state, buildWizardRepeatCountRich());
           } else {
-            await editRichSurface(state.surface, buildRichMessage([
-              richHeading("⏳ How many minutes early should the warning be?", 1),
-              richParagraph("Example: 15, 30, 60 (or 0 for no warning)"),
-              richDivider(),
-              richButtons([
-                richButton("5m", "wizard_early:5", "primary"),
-                richButton("15m", "wizard_early:15", "primary"),
-                richButton("30m", "wizard_early:30", "primary"),
-                richButton("60m", "wizard_early:60", "primary"),
-              ]),
-              richButtons([
-                richButton("None", "wizard_early:0", "link"),
-                richButton("❌ Cancel", "wizard_cancel", "danger"),
-              ]),
-            ]));
+            state.step = 4;
+            wizardStateBounded.set(userId, state);
+            resetWizardTimer(userId, state);
+            await editWizardRich(state, buildWizardEarlyWarningRich());
           }
         }
+      } else if (data.startsWith("wizard_count:")) {
+        const value = data.slice("wizard_count:".length);
+        const state = wizardStateBounded.get(userId);
+        if (!state || !state.repeat) return res.sendStatus(200);
+
+        if (value === "custom") {
+          state.step = 3.75;
+          wizardStateBounded.set(userId, state);
+          resetWizardTimer(userId, state);
+          await answerCallbackQuery(callbackQuery.id);
+          await editWizardRich(state, buildWizardRepeatCountInputRich());
+          return res.sendStatus(200);
+        }
+
+        const count = value === "forever" ? null : parseRepeatCount(value);
+        if (value !== "forever" && count === null) {
+          await answerCallbackQuery(callbackQuery.id, "Invalid repeat count.", true);
+          return res.sendStatus(200);
+        }
+        state.totalOccurrences = count;
+        state.step = 4;
+        wizardStateBounded.set(userId, state);
+        resetWizardTimer(userId, state);
+        await answerCallbackQuery(callbackQuery.id);
+        await editWizardRich(state, buildWizardEarlyWarningRich());
+        return res.sendStatus(200);
       } else if (data.startsWith("wizard_early:")) {
         await answerCallbackQuery(callbackQuery.id);
         const mins = parseInt(data.split(":")[1], 10);
@@ -1949,54 +2034,29 @@ app.post("/webhook", async (req, res) => {
           state.step = 5;
           wizardStateBounded.set(userId, state);
           resetWizardTimer(userId, state);
-          const timeStr = state.time.dt.toFormat("EEE, MMM d, yyyy 'at' h:mm a");
-          const reviewRich = buildRichMessage([
-            richHeading("📝 Review Your Reminder", 1),
-            richTable([
-              [{ text: "📌 Title" }, { text: state.title }],
-              [{ text: "⏰ Time" }, { text: timeStr }],
-              [{ text: "🔄 Repeat" }, { text: state.repeatText || "None" }],
-              [{ text: "⏳ Early Warning" }, { text: state.earlyWarning ? `${state.earlyWarning}m before` : "None" }],
-            ]),
-            richDivider(),
-            richButtons([
-              richButton("✅ Create", "wizard_confirm", "success"),
-              richButton("❌ Cancel", "wizard_cancel", "danger"),
-            ]),
-          ]);
-
-          if (state.surface) {
-            await editRichSurface(state.surface, reviewRich);
-          } else if (state.iMsgId) {
-            await editInlineRichMessage(state.iMsgId, reviewRich);
-          }
+          await editWizardRich(state, buildWizardReviewRich(state));
         }
       } else if (data === "wizard_confirm") {
         await answerCallbackQuery(callbackQuery.id);
         const state = wizardStateBounded.get(userId);
         if (state) {
           await pool.query(
-            "INSERT INTO reminders (user_id, chat_id, text, remind_at, recurring, early_offset) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+            "INSERT INTO reminders (user_id, chat_id, text, remind_at, recurring, total_occurrences, early_offset) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
             [
               userId,
               state.originalChatId,
               state.title,
               state.time.date,
               state.repeat,
+              state.repeat ? (state.totalOccurrences ?? null) : null,
               state.earlyWarning,
             ],
           );
           wizardStateBounded.delete(userId);
-        wizardTimers.delete(userId);
-          const timeStr = state.time.dt.toFormat("EEE, MMM d, yyyy 'at' h:mm a");
+          wizardTimers.delete(userId);
           const createdRich = buildRichMessage([
             richHeading("✅ Reminder Created!", 6),
-            richTable([
-              [{ text: "📌 Title" }, { text: state.title }],
-              [{ text: "⏰ Time" }, { text: timeStr }],
-              [{ text: "🔄 Repeat" }, { text: state.repeatText || "None" }],
-              [{ text: "⏳ Early Warning" }, { text: state.earlyWarning ? `${state.earlyWarning}m before` : "None" }],
-            ]),
+            richTable(buildWizardReviewRows(state)),
             richDivider(),
             richButtons([
               richButton("📋 View Reminders", "menu:list", "primary"),
