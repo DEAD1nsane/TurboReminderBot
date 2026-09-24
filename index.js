@@ -71,13 +71,100 @@ const inlineQueryCacheBounded = boundedMap(10 * 60 * 1000, 5000);
 const inlineOwnerMap = boundedMap(30 * 60 * 1000, 5000);
 const wizardTimers = new Map();
 
-function resetWizardTimer(userId, state) {
+function messageIdsEqual(left, right) {
+  return left != null && right != null && String(left) === String(right);
+}
+
+function clearWizardTimer(userId) {
   if (wizardTimers.has(userId)) clearTimeout(wizardTimers.get(userId));
+  wizardTimers.delete(userId);
+}
+
+function clearDmPromptTimer(userId) {
+  clearMenuTimer(`dm_dashboard_${userId}`);
+}
+
+function resetDmPromptTimer(userId, surface) {
+  if (
+    !surface ||
+    surface.ephemeral ||
+    surface.chatId !== userId ||
+    !surface.messageId
+  ) {
+    return;
+  }
+
+  const timerKey = `dm_dashboard_${userId}`;
+  const targetMsgId = surface.messageId;
+  clearMenuTimer(timerKey);
+  resetMenuTimer(timerKey, async (isCurrentTimer) => {
+    try {
+      const [activeMsgId, pendingEdit] = await Promise.all([
+        getActiveMenuMsgId(userId),
+        getPendingEdit(userId),
+      ]);
+      if (!isCurrentTimer()) return;
+      if (activeMsgId && !messageIdsEqual(activeMsgId, targetMsgId)) return;
+      if (pendingEdit) await clearPendingEdit(userId, pendingEdit);
+      if (!isCurrentTimer()) return;
+      pendingEditSurfacesBounded.delete(userId);
+      await expireDmMessage(
+        userId,
+        surface.chatId,
+        targetMsgId,
+        isCurrentTimer,
+      );
+    } catch (err) {
+      console.error("Failed to auto-delete DM edit prompt:", err);
+    }
+  });
+}
+
+async function expireDmMessage(userId, chatId, messageId, isCurrentTimer) {
+  if (!isCurrentTimer()) return;
+  const activeMsgId = await getActiveMenuMsgId(userId);
+  if (!isCurrentTimer()) return;
+  if (activeMsgId && !messageIdsEqual(activeMsgId, messageId)) return;
+  await deleteTelegramMessage(chatId, messageId);
+  if (!isCurrentTimer()) return;
+  await clearActiveMenuMsgId(userId, messageId);
+}
+
+async function expireDmSurface(userId, surface, isCurrentTimer) {
+  if (!isCurrentTimer()) return;
+  if (surface.ephemeral) {
+    await deleteEphemeralMessage(
+      surface.chatId,
+      userId,
+      surface.ephemeralMessageId,
+    );
+    return;
+  }
+  await expireDmMessage(
+    userId,
+    surface.chatId,
+    surface.messageId,
+    isCurrentTimer,
+  );
+}
+
+function resetWizardTimer(userId, state) {
+  clearWizardTimer(userId);
+  if (state.surface?.chatId === userId) clearDmPromptTimer(userId);
+
   const timer = setTimeout(async () => {
+    if (wizardTimers.get(userId) !== timer) return;
     wizardTimers.delete(userId);
+    if (wizardStateBounded.get(userId) !== state) return;
     wizardStateBounded.delete(userId);
     if (state.surface) {
-      await deleteTelegramMessage(state.surface.chatId, state.surface.messageId).catch(() => {});
+      try {
+        await expireDmSurface(
+          userId,
+          state.surface,
+          () => !wizardTimers.has(userId),
+        );
+      } catch {}
     } else if (state.iMsgId) {
       await editInlineRichMessage(state.iMsgId, buildRichMessage([
         richParagraph([{ type: "bold", text: [{ type: "subscript", text: "⏰ Wizard expired — no activity" }] }]),
@@ -119,13 +206,17 @@ setInterval(() => {
 
 function resetMenuTimer(key, action, duration = 30000) {
   if (activityTimers.has(key)) clearTimeout(activityTimers.get(key));
-  activityTimers.set(
-    key,
-    setTimeout(() => {
-      activityTimers.delete(key);
-      action();
-    }, duration),
-  );
+  let timer;
+  const isCurrent = () => activityTimers.get(key) === timer;
+  timer = setTimeout(async () => {
+    if (!isCurrent()) return;
+    try {
+      await action(isCurrent);
+    } finally {
+      if (isCurrent()) activityTimers.delete(key);
+    }
+  }, duration);
+  activityTimers.set(key, timer);
 }
 
 function clearMenuTimer(key) {
@@ -142,11 +233,11 @@ function clearUserPendingState(userId) {
   for (const k of Array.from(pendingInlineEdits)) {
     if (k.includes(`:${userId}:`)) pendingInlineEdits.delete(k);
   }
-  for (const k of Array.from(activityTimers.keys())) {
-    if (k.includes(`_${userId}`) || k.includes(`:${userId}:`)) {
-      clearTimeout(activityTimers.get(k));
-      activityTimers.delete(k);
-    }
+  for (const timerKey of [
+    `dm_dashboard_${userId}`,
+    `dm_prompt_${userId}`,
+  ]) {
+    clearMenuTimer(timerKey);
   }
 }
 
@@ -809,6 +900,20 @@ async function setActiveMenuMsgId(userId, msgId, triggerMsgId = null) {
   }
 }
 
+async function clearActiveMenuMsgId(userId, expectedMsgId) {
+  if (!process.env.DATABASE_URL || expectedMsgId == null) return false;
+  try {
+    const result = await pool.query(
+      "UPDATE user_settings SET active_menu_msg_id = NULL, collapse_at = NULL WHERE user_id = $1 AND active_menu_msg_id = $2",
+      [userId, expectedMsgId],
+    );
+    return result.rowCount > 0;
+  } catch (err) {
+    console.error("Error clearing active menu msg id:", err);
+    return false;
+  }
+}
+
 async function getPendingEdit(userId) {
   if (!process.env.DATABASE_URL) return null;
   try {
@@ -834,6 +939,20 @@ async function setPendingEdit(userId, pendingStr) {
     );
   } catch (err) {
     console.error("Error setting pending edit:", err);
+  }
+}
+
+async function clearPendingEdit(userId, expectedPendingEdit) {
+  if (!process.env.DATABASE_URL || !expectedPendingEdit) return false;
+  try {
+    const result = await pool.query(
+      "UPDATE user_settings SET pending_edit = NULL WHERE user_id = $1 AND pending_edit = $2",
+      [userId, expectedPendingEdit],
+    );
+    return result.rowCount > 0;
+  } catch (err) {
+    console.error("Error clearing pending edit:", err);
+    return false;
   }
 }
 
@@ -1147,6 +1266,17 @@ async function sendOrUpdateDashboard(
   let targetMsgId = null;
 
   if (existingMsgId) {
+    const activeWizard = wizardStateBounded.get(userId);
+    const activeEditSurface = pendingEditSurfacesBounded.get(userId);
+    const ownedByWizard = messageIdsEqual(
+      activeWizard?.surface?.messageId,
+      existingMsgId,
+    );
+    const ownedByEdit = messageIdsEqual(
+      activeEditSurface?.messageId,
+      existingMsgId,
+    );
+    if (ownedByWizard || ownedByEdit) return;
     await deleteTelegramMessage(userId, existingMsgId);
   }
 
@@ -1165,11 +1295,14 @@ async function sendOrUpdateDashboard(
   if (targetMsgId) {
     const timerKey = `dm_dashboard_${userId}`;
     clearMenuTimer(timerKey);
-    resetMenuTimer(timerKey, async () => {
+    resetMenuTimer(timerKey, async (isCurrentTimer) => {
       try {
-        console.log(`[TIMER] DM dashboard timer fired for user ${userId}, msg ${targetMsgId}`);
-        await deleteTelegramMessage(userId, targetMsgId);
-        await setActiveMenuMsgId(userId, null);
+        await expireDmMessage(
+          userId,
+          userId,
+          targetMsgId,
+          isCurrentTimer,
+        );
         console.log(`[TIMER] DM dashboard message deleted: ${targetMsgId}`);
       } catch (err) {
         console.error("Failed to auto-collapse DM dashboard:", err);
@@ -1228,6 +1361,7 @@ app.post("/webhook", async (req, res) => {
       if (wizardStateBounded.has(userId)) {
         const state = wizardStateBounded.get(userId);
         console.log("[WIZARD] state:", JSON.stringify({step: state.step, iMsgId: state.iMsgId, hasSurface: !!state.surface}));
+        resetWizardTimer(userId, state);
         if (state.surface?.chatId !== chatId && !state.iMsgId) {
           return res.sendStatus(200);
         }
@@ -1245,7 +1379,6 @@ app.post("/webhook", async (req, res) => {
         }
 
         await removeUserInput(message, userId);
-        resetWizardTimer(userId, state);
         if (state.step === 1) {
           state.title = text;
           if (state.prefillDate) {
@@ -1417,11 +1550,18 @@ app.post("/webhook", async (req, res) => {
         }
       }
 
+      const activeEditSurface = pendingEditSurfacesBounded.get(userId);
+      if (activeEditSurface) {
+        resetDmPromptTimer(userId, activeEditSurface);
+      }
+      if (activeEditSurface && activeEditSurface.chatId !== chatId) {
+        return res.sendStatus(200);
+      }
+
       if (text.length > 500) {
-        const pendingSurface = pendingEditSurfacesBounded.get(userId);
-        if (pendingSurface) {
+        if (activeEditSurface) {
           await editSurface(
-            pendingSurface,
+            activeEditSurface,
             "⚠️ Reminder text is too long\\. Please keep it under 500 characters\\.",
             null,
           );
@@ -1441,12 +1581,9 @@ app.post("/webhook", async (req, res) => {
         const parts = pendingEdit.split(":");
         const field = parts[0];
         const reminderId = parts[1];
+        const pendingSurface = activeEditSurface;
         const userTz = await getUserTimezone(userId);
-        const pendingSurface = pendingEditSurfacesBounded.get(userId);
 
-        if (pendingSurface && pendingSurface.chatId !== chatId) {
-          return res.sendStatus(200);
-        }
         await removeUserInput(message, userId);
 
         if (field === "text") {
@@ -1560,10 +1697,9 @@ app.post("/webhook", async (req, res) => {
             await removeUserInput(message, userId);
             const timerKey = `dm_dashboard_${userId}`;
             clearMenuTimer(timerKey);
-            resetMenuTimer(timerKey, async () => {
+            resetMenuTimer(timerKey, async (isCurrentTimer) => {
               try {
-                await deleteTelegramMessage(message.chat.id, surface.messageId);
-                await setActiveMenuMsgId(userId, null);
+                await expireDmSurface(userId, surface, isCurrentTimer);
               } catch (err) {
                 console.error("Failed to auto-delete DM reminders:", err);
               }
@@ -1597,7 +1733,7 @@ app.post("/webhook", async (req, res) => {
       } else if (text.toLowerCase() === "create") {
         console.log("[WIZARD] Wizard triggered for user:", userId);
         wizardStateBounded.delete(userId);
-        wizardTimers.delete(userId);
+        clearWizardTimer(userId);
         const openingRich = buildRichMessage([
           richHeading("🪄 Initiating reminder protocol...", 1),
           richParagraph("What should I remind you about?"),
@@ -1641,7 +1777,7 @@ app.post("/webhook", async (req, res) => {
         const state = wizardStateBounded.get(userId);
         const pendingSurface = pendingEditSurfacesBounded.get(userId);
         wizardStateBounded.delete(userId);
-        wizardTimers.delete(userId);
+        clearWizardTimer(userId);
         pendingEditSurfacesBounded.delete(userId);
         await setPendingEdit(userId, null);
         clearUserPendingState(userId);
@@ -1677,10 +1813,9 @@ app.post("/webhook", async (req, res) => {
           await removeUserInput(message, userId);
           const timerKey = `dm_dashboard_${userId}`;
           clearMenuTimer(timerKey);
-          resetMenuTimer(timerKey, async () => {
+          resetMenuTimer(timerKey, async (isCurrentTimer) => {
             try {
-              await deleteTelegramMessage(message.chat.id, surface.messageId);
-              await setActiveMenuMsgId(userId, null);
+              await expireDmSurface(userId, surface, isCurrentTimer);
             } catch (err) {
               console.error("Failed to auto-delete DM calendar:", err);
             }
@@ -1831,11 +1966,18 @@ app.post("/webhook", async (req, res) => {
       if (messageId && chatId) {
         const timerKey = `dm_dashboard_${userId}`;
         clearMenuTimer(timerKey);
-        resetMenuTimer(timerKey, async () => {
+        resetMenuTimer(timerKey, async (isCurrentTimer) => {
           try {
-            console.log(`[TIMER] Callback DM timer fired for user ${userId}, msg ${messageId}`);
-            await deleteTelegramMessage(chatId, messageId);
-            await setActiveMenuMsgId(userId, null);
+            const activeWizard = wizardStateBounded.get(userId);
+            if (messageIdsEqual(activeWizard?.surface?.messageId, messageId)) {
+              return;
+            }
+            await expireDmMessage(
+              userId,
+              chatId,
+              messageId,
+              isCurrentTimer,
+            );
             console.log(`[TIMER] Callback DM message deleted: ${messageId}`);
           } catch (err) {
             console.error("Failed to auto-delete DM message:", err);
@@ -1856,6 +1998,9 @@ app.post("/webhook", async (req, res) => {
           }
         });
       }
+
+      const activeWizard = wizardStateBounded.get(userId);
+      if (activeWizard) resetWizardTimer(userId, activeWizard);
 
       let userTz = (await getUserTimezone(userId)) || "America/Chicago";
 
@@ -1918,7 +2063,7 @@ app.post("/webhook", async (req, res) => {
       } else if (data === "surface_close") {
         await answerCallbackQuery(callbackQuery.id);
         wizardStateBounded.delete(userId);
-        wizardTimers.delete(userId);
+        clearWizardTimer(userId);
         pendingEditSurfacesBounded.delete(userId);
         await setPendingEdit(userId, null);
         clearUserPendingState(userId);
@@ -2053,7 +2198,7 @@ app.post("/webhook", async (req, res) => {
             ],
           );
           wizardStateBounded.delete(userId);
-          wizardTimers.delete(userId);
+          clearWizardTimer(userId);
           const createdRich = buildRichMessage([
             richHeading("✅ Reminder Created!", 6),
             richTable(buildWizardReviewRows(state)),
@@ -2091,7 +2236,7 @@ app.post("/webhook", async (req, res) => {
       } else if (data === "wizard_cancel") {
         const state = wizardStateBounded.get(userId);
         wizardStateBounded.delete(userId);
-        wizardTimers.delete(userId);
+        clearWizardTimer(userId);
         clearUserPendingState(userId);
         await answerCallbackQuery(callbackQuery.id, "Wizard cancelled.", false);
         const cancelledRich = buildRichMessage([
@@ -2480,7 +2625,7 @@ app.post("/webhook", async (req, res) => {
         await setPendingEdit(userId, null);
         pendingEditSurfacesBounded.delete(userId);
         wizardStateBounded.delete(userId);
-        wizardTimers.delete(userId);
+        clearWizardTimer(userId);
         const iMsgId = callbackQuery.inline_message_id;
         console.log("[EDIT] reminderId:", reminderId, "iMsgId:", iMsgId, "callbackSurface:", !!callbackSurface, "hasMessage:", !!callbackQuery.message);
 
@@ -2518,7 +2663,7 @@ app.post("/webhook", async (req, res) => {
               const activeMsgId = await getActiveMenuMsgId(userId);
               if (activeMsgId) {
                 await deleteTelegramMessage(userId, activeMsgId);
-                await setActiveMenuMsgId(userId, null);
+                await clearActiveMenuMsgId(userId, activeMsgId);
               }
               await sendOrUpdateDashboard(
                 userId,
@@ -2583,7 +2728,10 @@ app.post("/webhook", async (req, res) => {
       } else if (data.startsWith("prompt_early:")) {
         const reminderId = data.replace("prompt_early:", "");
         await setPendingEdit(userId, `early:${reminderId}`);
-        if (callbackSurface) pendingEditSurfacesBounded.set(userId, callbackSurface);
+        if (callbackSurface) {
+          pendingEditSurfacesBounded.set(userId, callbackSurface);
+          resetDmPromptTimer(userId, callbackSurface);
+        }
         await editRichCallbackSurface(buildRichMessage([
           richHeading("⚡ How many minutes early?", 1),
           richParagraph("Example: 15, 45, 120"),
@@ -2597,7 +2745,10 @@ app.post("/webhook", async (req, res) => {
         const reminderId = parseReminderId(data, "prompt_edit_text:");
         if (!reminderId) return res.sendStatus(200);
         await setPendingEdit(userId, `text:${reminderId}`);
-        if (callbackSurface) pendingEditSurfacesBounded.set(userId, callbackSurface);
+        if (callbackSurface) {
+          pendingEditSurfacesBounded.set(userId, callbackSurface);
+          resetDmPromptTimer(userId, callbackSurface);
+        }
         await editRichCallbackSurface(buildRichMessage([
           richHeading("📝 Type the new note/text", 1),
           richParagraph("Enter the new text for this reminder:"),
@@ -2611,7 +2762,10 @@ app.post("/webhook", async (req, res) => {
         const reminderId = parseReminderId(data, "prompt_edit_time:");
         if (!reminderId) return res.sendStatus(200);
         await setPendingEdit(userId, `time:${reminderId}`);
-        if (callbackSurface) pendingEditSurfacesBounded.set(userId, callbackSurface);
+        if (callbackSurface) {
+          pendingEditSurfacesBounded.set(userId, callbackSurface);
+          resetDmPromptTimer(userId, callbackSurface);
+        }
         await editRichCallbackSurface(buildRichMessage([
           richHeading("🕒 Type the new time/date", 1),
           richParagraph("Example: tomorrow at 8am, 2h, or Aug 12 5pm"),
@@ -2754,7 +2908,10 @@ app.post("/webhook", async (req, res) => {
       } else if (data.startsWith("prompt_rec:")) {
         const [, reminderId, unit] = data.split(":");
         await setPendingEdit(userId, `rec:${reminderId}:${unit}`);
-        if (callbackSurface) pendingEditSurfacesBounded.set(userId, callbackSurface);
+        if (callbackSurface) {
+          pendingEditSurfacesBounded.set(userId, callbackSurface);
+          resetDmPromptTimer(userId, callbackSurface);
+        }
         await editRichCallbackSurface(buildRichMessage([
           richHeading(`⚙️ Enter custom repeat interval in ${unit.toUpperCase()}`, 1),
           richParagraph("Example: 56, 72, 100"),
