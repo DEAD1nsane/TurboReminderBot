@@ -1646,6 +1646,29 @@ app.post("/webhook", async (req, res) => {
             }
             return res.sendStatus(200);
           }
+        } else if (field === "limit") {
+          const count = parseRepeatCount(text);
+          if (count !== null) {
+            await pool.query(
+              "UPDATE reminders SET total_occurrences = $1 WHERE id = $2 AND user_id = $3",
+              [count, reminderId, userId],
+            );
+          } else {
+            if (pendingSurface) {
+              await editRichSurface(
+                pendingSurface,
+                buildRichMessage([
+                  richHeading("⚠️ Invalid repeat count", 5),
+                  richParagraph("Enter a whole number between 1 and 2,147,483,647."),
+                  richDivider(),
+                  richButtons([
+                    richButton("⬅️ Cancel", `limitmenu:${reminderId}`, "danger"),
+                  ]),
+                ]),
+              );
+            }
+            return res.sendStatus(200);
+          }
         } else if (field === "early") {
           const mins = parseInt(text.trim(), 10);
           if (Number.isInteger(mins) && mins >= 0) {
@@ -2921,33 +2944,50 @@ app.post("/webhook", async (req, res) => {
           ]),
         ]));
         await answerCallbackQuery(callbackQuery.id);
+      } else if (data.startsWith("prompt_limit:")) {
+        const reminderId = parseReminderId(data, "prompt_limit:");
+        if (!reminderId) return res.sendStatus(200);
+        await setPendingEdit(userId, `limit:${reminderId}`);
+        if (callbackSurface) {
+          pendingEditSurfacesBounded.set(userId, callbackSurface);
+          resetDmPromptTimer(userId, callbackSurface);
+        }
+        await editRichCallbackSurface(buildRichMessage([
+          richHeading("✍️ Enter a custom repeat count", 1),
+          richParagraph("Type a whole number between 1 and 2,147,483,647."),
+          richDivider(),
+          richButtons([
+            richButton("⬅️ Cancel", `limitmenu:${reminderId}`, "danger"),
+          ]),
+        ]));
+        await answerCallbackQuery(callbackQuery.id);
       } else if (data.startsWith("limitmenu:")) {
-        const reminderId = data.replace("limitmenu:", "");
+        const reminderId = parseReminderId(data, "limitmenu:");
+        if (!reminderId) return res.sendStatus(200);
+        await setPendingEdit(userId, null);
+        pendingEditSurfacesBounded.delete(userId);
         const result = await pool.query(
           "SELECT total_occurrences, early_offset FROM reminders WHERE id = $1 AND user_id = $2",
           [reminderId, userId],
         );
         if (result.rows.length > 0) {
           await answerCallbackQuery(callbackQuery.id);
-          const current = result.rows[0].total_occurrences || 0;
-          const limits = [0, 2, 3, 5, 10, 15, 20, 30, 50, 100];
-          const limitButtons = [];
-          for (let i = 0; i < limits.length; i += 3) {
-            const row = limits.slice(i, i + 3).map(val => {
-              const label = val === 0 ? "Forever" : `${val}x`;
-              return richButton(current === val ? `✅ ${label}` : label, `setlimit:${reminderId}:${val}`, "link");
-            });
-            limitButtons.push(richButtons(row));
+          const limitMenu = getLimitMenuKeyboard(
+            reminderId,
+            result.rows[0].total_occurrences,
+          );
+          if (isRichMessageSupported()) {
+            await editRichCallbackSurface(buildRichMessage([
+              richHeading("🔁 Select How Many Times to Repeat", 1),
+              richDivider(),
+              ...limitMenu.richBlocks,
+            ]));
+          } else {
+            await editCallbackSurface(
+              "🔁 Select How Many Times to Repeat",
+              limitMenu,
+            );
           }
-          await editRichCallbackSurface(buildRichMessage([
-            richHeading("🔁 Select How Many Times to Repeat", 1),
-            richDivider(),
-            ...limitButtons,
-            richDivider(),
-            richButtons([
-              richButton("⬅️ Back to Edit", `edit:${reminderId}`, "link"),
-            ]),
-          ]));
         } else {
           await answerCallbackQuery(callbackQuery.id, "Reminder not found.", true);
         }

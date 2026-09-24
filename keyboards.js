@@ -179,6 +179,7 @@ function getLimitMenuKeyboard(reminderId, totalOccurrences) {
         row.push({ text: current === val ? `✅ ${label}` : label, callback_data: `setlimit:${reminderId}:${val}` });
         if (row.length === 3 || idx === limits.length - 1) { buttons.push(row); row = []; }
     });
+    buttons.push([{ text: '✍️ Custom Count...', callback_data: `prompt_limit:${reminderId}` }]);
     buttons.push([{ text: '⬅️ Back to Edit', callback_data: `edit:${reminderId}` }]);
 
     const richBlocks = [
