@@ -2708,18 +2708,7 @@ app.post("/webhook", async (req, res) => {
           } else {
             pendingInlineEdits.add(key);
             setTimeout(() => pendingInlineEdits.delete(key), 10000);
-
-            await editInlineRichMessage(
-              iMsgId,
-              buildRichMessage([
-                richHeading("⚠️ Tap Edit again within 10s", 2),
-                richParagraph("to send options to your DM"),
-                richDivider(),
-                richButtons([
-                  richButton("✏️ Edit", `edit:${reminderId}`, "primary"),
-                ]),
-              ]),
-            );
+            await answerCallbackQuery(callbackQuery.id, "⚠️ Tap Edit again within 10s to confirm", false);
           }
           return res.sendStatus(200);
         }
