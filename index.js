@@ -251,6 +251,104 @@ function parseReminderId(data, prefix) {
   return id;
 }
 
+// ── Hyperlink preservation ─────────────────────────────────────────────────
+// Telegram sends hyperlinked text as plain display text + entities
+// (type "text_link" with a url field). The old code stored only
+// message.text, silently discarding the URL. These helpers convert
+// text_link entities to [display](url) markdown on input, and convert
+// stored markdown/raw URLs back to RichTextUrl nodes on output so
+// executed reminders render a tappable "open link" option.
+function messageTextWithLinks(message) {
+  const raw = message?.text ?? message?.caption ?? "";
+  const entities = message?.entities ?? message?.caption_entities ?? [];
+  if (!raw || !entities.length) return raw;
+  const links = entities
+    .filter((e) => e && e.type === "text_link" && e.url)
+    .sort((a, b) => a.offset - b.offset);
+  if (!links.length) return raw;
+  let result = "";
+  let cursor = 0;
+  for (const e of links) {
+    const start = e.offset;
+    const end = e.offset + e.length;
+    if (start < cursor || start >= raw.length) continue;
+    const display = raw.substring(start, Math.min(end, raw.length));
+    if (!display) continue;
+    result += raw.substring(cursor, start);
+    const safeDisplay = display.replace(/\]/g, "\\]");
+    result += `[${safeDisplay}](${e.url})`;
+    cursor = Math.min(end, raw.length);
+  }
+  result += raw.substring(cursor);
+  return result;
+}
+
+function stripMarkdownLinks(stored) {
+  return String(stored || "").replace(
+    /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
+    (_, display) => display.replace(/\\\]/g, "]"),
+  );
+}
+
+// Convert stored "[display](url)" markdown + raw https:// URLs into
+// Telegram RichText (string when no links, array of text + url nodes
+// when links exist). RichTextUrl shape: { type: "url", text, url }.
+function richTextFromStored(stored) {
+  const input = String(stored || "");
+  if (!input) return "";
+  const parts = [];
+  const mdRe = /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g;
+  let m;
+  const segments = [];
+  while ((m = mdRe.exec(input)) !== null) {
+    segments.push({
+      start: m.index,
+      end: m.index + m[0].length,
+      display: m[1].replace(/\\\]/g, "]"),
+      url: m[2],
+    });
+  }
+  const rawUrlRe = /https?:\/\/[^\s<>\]\)]+/g;
+  // Build output by walking markdown segments in order, linkifying raw
+  // URLs in the plain gaps between them (skips URLs inside markdown
+  // syntax since those spans are consumed as segments).
+  const pushRawWithUrls = (text) => {
+    let li = 0;
+    rawUrlRe.lastIndex = 0;
+    let rm;
+    while ((rm = rawUrlRe.exec(text)) !== null) {
+      if (rm.index > li) parts.push(text.slice(li, rm.index));
+      parts.push({ type: "url", text: rm[0], url: rm[0] });
+      li = rm.index + rm[0].length;
+    }
+    if (li < text.length) parts.push(text.slice(li));
+  };
+  let cursor = 0;
+  const ordered = [...segments].sort((a, b) => a.start - b.start);
+  for (const s of ordered) {
+    if (s.start > cursor) pushRawWithUrls(input.slice(cursor, s.start));
+    parts.push({ type: "url", text: s.display, url: s.url });
+    cursor = s.end;
+  }
+  if (cursor < input.length) pushRawWithUrls(input.slice(cursor));
+  // No links found → keep plain string for backward compat.
+  if (parts.length === 0) return input;
+  if (parts.length === 1 && typeof parts[0] === "string") return parts[0];
+  return parts;
+}
+
+function richHeadingFromStored(prefix, stored, suffix = "", size = 5) {
+  const nodes = richTextFromStored(stored);
+  if (typeof nodes === "string") {
+    return richHeading(`${prefix}${nodes}${suffix}`, size);
+  }
+  const text = [];
+  if (prefix) text.push(prefix);
+  for (const n of nodes) text.push(n);
+  if (suffix) text.push(suffix);
+  return richHeading(text, size);
+}
+
 // ── Rich Message Block Builders ────────────────────────────────────────────
 
 function richHeading(text, size = 2) {
@@ -423,7 +521,7 @@ function buildWizardEarlyWarningRich() {
 function buildWizardReviewRows(state) {
   const timeStr = state.time.dt.toFormat("EEE, MMM d, yyyy 'at' h:mm a");
   const rows = [
-    [{ text: "📌 Title" }, { text: state.title }],
+    [{ text: "📌 Title" }, { text: richTextFromStored(state.title) }],
     [{ text: "⏰ Time" }, { text: timeStr }],
     [{ text: "🔄 Repeat" }, { text: state.repeatText || "None" }],
   ];
@@ -785,7 +883,7 @@ setInterval(async () => {
         await sendRichMessage(
           r.chat_id || r.user_id,
           buildRichMessage([
-            richHeading(`⚡ | ${r.text} in ${r.early_offset}m`, 5),
+            richHeadingFromStored("⚡ | ", r.text, ` in ${r.early_offset}m`, 5),
             richParagraph([
               { type: "bold", text: [{ type: "superscript", text: formattedTime }] },
             ]),
@@ -799,7 +897,7 @@ setInterval(async () => {
         await sendRichMessage(
           r.chat_id || r.user_id,
           buildRichMessage([
-            richHeading(`🔔 | ${r.text}`, 5),
+            richHeadingFromStored("🔔 | ", r.text, "", 5),
             richParagraph([
               { type: "bold", text: [{ type: "superscript", text: formattedTime }] },
             ]),
@@ -1203,7 +1301,7 @@ async function getRemindersDashboardData(userId, userTz, passedName = null) {
       }
       let statusIcon = r.recurring ? (r.total_occurrences ? " | 🔢" : " | 🔄") : "";
       reminderButtons.push(richButtons([
-        richButton(`${r.text}${statusIcon}`, `view:${r.id}`, "link"),
+        richButton(`${stripMarkdownLinks(r.text)}${statusIcon}`, `view:${r.id}`, "link"),
       ]));
     }
 
@@ -1224,7 +1322,7 @@ async function getRemindersDashboardData(userId, userTz, passedName = null) {
     let buttons = res.rows.map((r) => {
       let statusIcon = r.recurring ? (r.total_occurrences ? " | 🔢" : " | 🔄") : "";
       return [
-        { text: `${r.text}${statusIcon}`, callback_data: `view:${r.id}` },
+        { text: `${stripMarkdownLinks(r.text)}${statusIcon}`, callback_data: `view:${r.id}` },
       ];
     });
     buttons.push([
@@ -1356,7 +1454,11 @@ app.post("/webhook", async (req, res) => {
     if (message && message.text) {
       const chatId = message.chat.id;
       const msgId = message.message_id;
-      const text = message.text.trim();
+      // Preserve hyperlinked display text: message.text holds only the
+      // visible label, the URL lives in entities[]. Convert text_link
+      // entities to [display](url) markdown so the link survives storage
+      // and can be re-rendered as a tappable RichTextUrl on execution.
+      const text = messageTextWithLinks(message).trim();
 
       if (wizardStateBounded.has(userId)) {
         const state = wizardStateBounded.get(userId);
@@ -1558,7 +1660,7 @@ app.post("/webhook", async (req, res) => {
         return res.sendStatus(200);
       }
 
-      if (text.length > 500) {
+      if (stripMarkdownLinks(text).length > 500) {
         if (activeEditSurface) {
           await editSurface(
             activeEditSurface,
@@ -2378,7 +2480,7 @@ app.post("/webhook", async (req, res) => {
           for (const r of res.rows) {
             const time = DateTime.fromJSDate(new Date(r.remind_at)).setZone(userTz || "America/Chicago").toFormat("h:mm a");
             blocks.push(richButtons([
-              richButton(`${time} - ${r.text}`, `view:${r.id}`, "link"),
+              richButton(`${time} - ${stripMarkdownLinks(r.text)}`, `view:${r.id}`, "link"),
             ]));
           }
           blocks.push(richDivider());
@@ -2605,7 +2707,7 @@ app.post("/webhook", async (req, res) => {
           const richBlocks = [
             richHeading("🔔 Reminder Details", 1),
             richTable([
-              [{ text: "📝 Title" }, { text: r.text }],
+              [{ text: "📝 Title" }, { text: richTextFromStored(r.text) }],
               [{ text: "🕒 Time" }, { text: formattedTime }],
               ...(r.recurring ? [[{ text: "🔄 Repeat" }, { text: formatRepeatText(r.recurring) + (r.total_occurrences ? ` (${r.current_occurrence || 0}/${r.total_occurrences})` : "") }]] : []),
               ...(r.early_offset ? [[{ text: "⏳ Early Warning" }, { text: `${r.early_offset}m` }]] : []),
