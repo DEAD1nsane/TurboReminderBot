@@ -518,22 +518,26 @@ function buildWizardEarlyWarningRich() {
   ]);
 }
 
+function boldRichText(richText) {
+  return { type: "bold", text: richText };
+}
+
 function buildWizardReviewRows(state) {
   const timeStr = state.time.dt.toFormat("EEE, MMM d, yyyy 'at' h:mm a");
   const rows = [
-    [{ text: "📌 Title" }, { text: richTextFromStored(state.title) }],
-    [{ text: "⏰ Time" }, { text: timeStr }],
-    [{ text: "🔄 Repeat" }, { text: state.repeatText || "None" }],
+    [{ text: "📌 Title" }, { text: boldRichText(richTextFromStored(state.title)) }],
+    [{ text: "⏰ Time" }, { text: boldRichText(timeStr) }],
+    [{ text: "🔄 Repeat" }, { text: boldRichText(state.repeatText || "None") }],
   ];
   if (state.repeat) {
     rows.push([
       { text: "🔢 Times" },
-      { text: formatRepeatCount(state.totalOccurrences) },
+      { text: boldRichText(formatRepeatCount(state.totalOccurrences)) },
     ]);
   }
   rows.push([
     { text: "⏳ Early Warning" },
-    { text: state.earlyWarning ? `${state.earlyWarning}m before` : "None" },
+    { text: boldRichText(state.earlyWarning ? `${state.earlyWarning}m before` : "None") },
   ]);
   return rows;
 }
@@ -2707,10 +2711,10 @@ app.post("/webhook", async (req, res) => {
           const richBlocks = [
             richHeading("🔔 Reminder Details", 1),
             richTable([
-              [{ text: "📝 Title" }, { text: richTextFromStored(r.text) }],
-              [{ text: "🕒 Time" }, { text: formattedTime }],
-              ...(r.recurring ? [[{ text: "🔄 Repeat" }, { text: formatRepeatText(r.recurring) + (r.total_occurrences ? ` (${r.current_occurrence || 0}/${r.total_occurrences})` : "") }]] : []),
-              ...(r.early_offset ? [[{ text: "⏳ Early Warning" }, { text: `${r.early_offset}m` }]] : []),
+              [{ text: "📝 Title" }, { text: boldRichText(richTextFromStored(r.text)) }],
+              [{ text: "🕒 Time" }, { text: boldRichText(formattedTime) }],
+              ...(r.recurring ? [[{ text: "🔄 Repeat" }, { text: boldRichText(formatRepeatText(r.recurring) + (r.total_occurrences ? ` (${r.current_occurrence || 0}/${r.total_occurrences})` : "")) }]] : []),
+              ...(r.early_offset ? [[{ text: "⏳ Early Warning" }, { text: boldRichText(`${r.early_offset}m`) }]] : []),
             ]),
             richDivider(),
             richButtons([
