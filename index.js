@@ -38,6 +38,7 @@ const {
 const activityTimers = new Map();
 const pendingDeletes = new Set();
 const pendingInlineEdits = new Set();
+const pendingWizardCreates = new Set();
 
 // ── Bounded caches with TTL ────────────────────────────────────────────────
 const MAX_CACHE_SIZE = 5000;
@@ -232,6 +233,9 @@ function clearUserPendingState(userId) {
   }
   for (const k of Array.from(pendingInlineEdits)) {
     if (k.includes(`:${userId}:`)) pendingInlineEdits.delete(k);
+  }
+  for (const k of Array.from(pendingWizardCreates)) {
+    if (k.includes(`:${userId}`)) pendingWizardCreates.delete(k);
   }
   for (const timerKey of [
     `dm_dashboard_${userId}`,
@@ -2145,6 +2149,16 @@ app.post("/webhook", async (req, res) => {
       }
 
       if (data === "wizard_new") {
+        if (inlineMsgId && !callbackSurface) {
+          const wizKey = `wizard_create:${userId}`;
+          if (!pendingWizardCreates.has(wizKey)) {
+            pendingWizardCreates.add(wizKey);
+            setTimeout(() => pendingWizardCreates.delete(wizKey), 10000);
+            await answerCallbackQuery(callbackQuery.id, "⚠️ Tap Create again within 10s to confirm", false);
+            return res.sendStatus(200);
+          }
+          pendingWizardCreates.delete(wizKey);
+        }
         await answerCallbackQuery(callbackQuery.id, "Opening reminder wizard in your DMs...", false);
         let surface = callbackSurface;
         const isInGroup = callbackQuery.message && isGroupChat(callbackQuery.message.chat);
