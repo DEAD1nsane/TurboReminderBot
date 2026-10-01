@@ -2154,12 +2154,10 @@ app.post("/webhook", async (req, res) => {
           if (!pendingWizardCreates.has(wizKey)) {
             pendingWizardCreates.add(wizKey);
             setTimeout(() => pendingWizardCreates.delete(wizKey), 10000);
-            clearMenuTimer(`inline_${inlineMsgId}`);
             await answerCallbackQuery(callbackQuery.id, "⚠️ Tap Create again within 10s to confirm", false);
             return res.sendStatus(200);
           }
           pendingWizardCreates.delete(wizKey);
-          clearMenuTimer(`inline_${inlineMsgId}`);
         }
         await answerCallbackQuery(callbackQuery.id, "Opening reminder wizard in your DMs...", false);
         let surface = callbackSurface;
