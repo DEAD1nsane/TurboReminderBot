@@ -2154,10 +2154,12 @@ app.post("/webhook", async (req, res) => {
           if (!pendingWizardCreates.has(wizKey)) {
             pendingWizardCreates.add(wizKey);
             setTimeout(() => pendingWizardCreates.delete(wizKey), 10000);
+            clearMenuTimer(`inline_${inlineMsgId}`);
             await answerCallbackQuery(callbackQuery.id, "⚠️ Tap Create again within 10s to confirm", false);
             return res.sendStatus(200);
           }
           pendingWizardCreates.delete(wizKey);
+          clearMenuTimer(`inline_${inlineMsgId}`);
         }
         await answerCallbackQuery(callbackQuery.id, "Opening reminder wizard in your DMs...", false);
         let surface = callbackSurface;
@@ -2209,6 +2211,22 @@ app.post("/webhook", async (req, res) => {
           const wizState = { step: 1, surface: surface || null, iMsgId: callbackQuery.inline_message_id || inlineMsgId || null, originalChatId: isGroupChat(callbackQuery.message?.chat) ? userId : chatId };
           wizardStateBounded.set(userId, wizState);
           resetWizardTimer(userId, wizState, 120 * 1000);
+        }
+        if (inlineMsgId && !callbackSurface) {
+          await editInlineRichMessage(inlineMsgId, buildRichMessage([
+            richParagraph([{ type: "bold", text: [{ type: "subscript", text: "✅ Wizard opened in your DM!" }] }]),
+            richParagraph([{ type: "bold", text: [{ type: "subscript", text: "Type your reminder title there." }] }]),
+          ])).catch(() => {});
+          const inlineTimerKey = `inline_${inlineMsgId}`;
+          resetMenuTimer(inlineTimerKey, async () => {
+            try {
+              await editInlineRichMessage(inlineMsgId, buildRichMessage([
+                richParagraph([{ type: "bold", text: [{ type: "subscript", text: "✅ Closed" }] }]),
+              ]));
+            } catch (err) {
+              console.error("Failed to auto-collapse inline wizard message:", err);
+            }
+          }, 10000);
         }
       } else if (data === "surface_close") {
         await answerCallbackQuery(callbackQuery.id);
