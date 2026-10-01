@@ -425,6 +425,7 @@ function buildEditMenuRich(reminderId, recurring, totalOccurrences, earlyOffset)
       richButton(recurring === "daily:1" ? "✅ Daily" : "Daily", `setrec:${reminderId}:daily:1`, "link"),
       richButton(recurring === "weekly:1" ? "✅ Weekly" : "Weekly", `setrec:${reminderId}:weekly:1`, "link"),
       richButton(recurring === "monthly:1" ? "✅ Monthly" : "Monthly", `setrec:${reminderId}:monthly:1`, "link"),
+      richButton(recurring === "yearly:1" ? "✅ Yearly" : "Yearly", `setrec:${reminderId}:yearly:1`, "link"),
     ]),
     richButtons([
       richButton(`⚙️ Interval (${recType})`, `unitmenu:${reminderId}`, "link"),
@@ -458,6 +459,28 @@ function parseRepeatCount(value) {
     : null;
 }
 
+function buildWizardRepeatRich() {
+  return buildRichMessage([
+    richHeading("🔄 How often should it repeat?", 1),
+    richDivider(),
+    richButtons([
+      richButton("None", "wizard_repeat:none", "primary"),
+      richButton("Daily", "wizard_repeat:daily:1", "primary"),
+      richButton("Weekly", "wizard_repeat:weekly:1", "primary"),
+    ]),
+    richButtons([
+      richButton("Monthly", "wizard_repeat:monthly:1", "primary"),
+      richButton("Yearly", "wizard_repeat:yearly:1", "primary"),
+    ]),
+    richButtons([
+      richButton("Every X Hours/Minutes", "wizard_repeat:smart", "link"),
+    ]),
+    richButtons([
+      richButton("❌ Cancel", "wizard_cancel", "danger"),
+    ]),
+  ]);
+}
+
 function buildWizardRepeatCountRich() {
   const limits = [null, 2, 3, 5, 10, 15, 20, 30, 50, 100];
   const limitRows = [];
@@ -484,6 +507,9 @@ function buildWizardRepeatCountRich() {
       richButton("✍️ Custom Count...", "wizard_count:custom", "link"),
     ]),
     richButtons([
+      richButton("⬅️ Back", "wizard_back:repeat", "link"),
+    ]),
+    richButtons([
       richButton("❌ Cancel", "wizard_cancel", "danger"),
     ]),
   ]);
@@ -494,6 +520,9 @@ function buildWizardRepeatCountInputRich() {
     richHeading("✍️ Enter a custom repeat count", 1),
     richParagraph("Type a whole number between 1 and 2,147,483,647."),
     richDivider(),
+    richButtons([
+      richButton("⬅️ Back", "wizard_back:count", "link"),
+    ]),
     richButtons([
       richButton("❌ Cancel", "wizard_cancel", "danger"),
     ]),
@@ -1069,6 +1098,8 @@ function calculateNextOccurrence(currentDate, recurringStr, timeZone) {
     dt = dt.plus({ weeks: interval });
   else if (type === "monthly" || type === "months")
     dt = dt.plus({ months: interval });
+  else if (type === "yearly" || type === "years")
+    dt = dt.plus({ years: interval });
   else if (type === "hourly" || type === "hours")
     dt = dt.plus({ hours: interval });
   else if (type === "dow") {
@@ -1502,22 +1533,7 @@ app.post("/webhook", async (req, res) => {
             state.step = 3;
             wizardStateBounded.set(userId, state);
             if (state.surface) {
-              await editRichSurface(state.surface, buildRichMessage([
-                richHeading("🔄 How often should it repeat?", 1),
-                richDivider(),
-                richButtons([
-                  richButton("None", "wizard_repeat:none", "primary"),
-                  richButton("Daily", "wizard_repeat:daily:1", "primary"),
-                  richButton("Weekly", "wizard_repeat:weekly:1", "primary"),
-                ]),
-                richButtons([
-                  richButton("Monthly", "wizard_repeat:monthly:1", "primary"),
-                  richButton("Every X Hours/Minutes", "wizard_repeat:smart", "link"),
-                ]),
-                richButtons([
-                  richButton("❌ Cancel", "wizard_cancel", "danger"),
-                ]),
-              ]));
+              await editRichSurface(state.surface, buildWizardRepeatRich());
             }
           } else {
             state.step = 2;
@@ -1554,27 +1570,12 @@ app.post("/webhook", async (req, res) => {
           state.step = 3;
           wizardStateBounded.set(userId, state);
           if (state.surface) {
-            await editRichSurface(state.surface, buildRichMessage([
-              richHeading("🔄 How often should it repeat?", 1),
-              richDivider(),
-              richButtons([
-                richButton("None", "wizard_repeat:none", "primary"),
-                richButton("Daily", "wizard_repeat:daily:1", "primary"),
-                richButton("Weekly", "wizard_repeat:weekly:1", "primary"),
-              ]),
-              richButtons([
-                richButton("Monthly", "wizard_repeat:monthly:1", "primary"),
-                richButton("Every X Hours/Minutes", "wizard_repeat:smart", "link"),
-              ]),
-              richButtons([
-                richButton("❌ Cancel", "wizard_cancel", "danger"),
-              ]),
-            ]));
+            await editRichSurface(state.surface, buildWizardRepeatRich());
           }
           return res.sendStatus(200);
         } else if (state.step === 3.5) {
           const smartMatch = text.toLowerCase().match(
-            /(?:every\s+)?(\d+)\s*(minutes?|mins?|hours?|hrs?|days?|weeks?|months?)/i,
+            /(?:every\s+)?(\d+)\s*(minutes?|mins?|hours?|hrs?|days?|weeks?|months?|years?)/i,
           );
           if (!smartMatch) {
             if (state.surface) {
@@ -1582,6 +1583,9 @@ app.post("/webhook", async (req, res) => {
                 richHeading("⚠️ Couldn't understand that", 2),
                 richParagraph("Try something like:\n• every 56 hours\n• every 2 days\n• every 90 minutes"),
                 richDivider(),
+                richButtons([
+                  richButton("⬅️ Back", "wizard_back:repeat", "link"),
+                ]),
                 richButtons([
                   richButton("❌ Cancel", "wizard_cancel", "danger"),
                 ]),
@@ -1607,6 +1611,9 @@ app.post("/webhook", async (req, res) => {
           } else if (unitRaw.startsWith("month")) {
             unit = "months";
             unitLabel = "Months";
+          } else if (unitRaw.startsWith("year")) {
+            unit = "years";
+            unitLabel = "Years";
           }
           state.repeat = `${unit}:${num}`;
           state.repeatText = `Every ${num} ${unitLabel}`;
@@ -2215,33 +2222,43 @@ app.post("/webhook", async (req, res) => {
             ]),
           );
         }
+      } else if (data.startsWith("wizard_back:")) {
+        await answerCallbackQuery(callbackQuery.id);
+        const state = wizardStateBounded.get(userId);
+        if (!state) return res.sendStatus(200);
+        const target = data.slice("wizard_back:".length);
+        if (target === "count") {
+          state.step = 3.75;
+        } else {
+          state.step = 3;
+          state.repeat = null;
+          state.repeatText = "None";
+          state.totalOccurrences = null;
+        }
+        wizardStateBounded.set(userId, state);
+        resetWizardTimer(userId, state);
+        await editWizardRich(
+          state,
+          target === "count"
+            ? buildWizardRepeatCountRich()
+            : buildWizardRepeatRich(),
+        );
+        return res.sendStatus(200);
       } else if (data.startsWith("wizard_repeat:")) {
         await answerCallbackQuery(callbackQuery.id);
         const parts = data.split(":");
         const repeatType = parts[1];
-        if (repeatType === "custom") {
-          const state = wizardStateBounded.get(userId);
-          if (!state) return res.sendStatus(200);
-          if (state.surface) {
-            await editRichSurface(state.surface, buildRichMessage([
-              richHeading("⚙️ Enter custom repeat interval", 1),
-              richParagraph("Examples:\n• daily:2 (every 2 days)\n• weekly:2 (every 2 weeks)\n• monthly:3 (every 3 months)"),
-              richDivider(),
-              richButtons([
-                richButton("❌ Cancel", "wizard_cancel", "danger"),
-              ]),
-            ]));
-          }
-          return res.sendStatus(200);
-        }
         if (repeatType === "smart") {
           const state = wizardStateBounded.get(userId);
           if (!state) return res.sendStatus(200);
           if (state.surface) {
             await editRichSurface(state.surface, buildRichMessage([
               richHeading("🧠 Enter repeat interval in natural language", 1),
-              richParagraph("Examples:\n• every 56 hours\n• every 2 days\n• every 90 minutes\n• every 3 weeks\n• every 6 months"),
+              richParagraph("Examples:\n• every 56 hours\n• every 2 days\n• every 90 minutes\n• every 3 weeks\n• every 6 months\n• every 2 years"),
               richDivider(),
+              richButtons([
+                richButton("⬅️ Back", "wizard_back:repeat", "link"),
+              ]),
               richButtons([
                 richButton("❌ Cancel", "wizard_cancel", "danger"),
               ]),
@@ -2990,6 +3007,9 @@ app.post("/webhook", async (req, res) => {
           richButtons([
             richButton("🗓️ Weeks", `nummenu:${reminderId}:weeks`, "primary"),
             richButton("📆 Months", `nummenu:${reminderId}:months`, "primary"),
+          ]),
+          richButtons([
+            richButton("🎂 Years", `nummenu:${reminderId}:years`, "primary"),
           ]),
           richDivider(),
           richButtons([

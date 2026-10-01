@@ -6,6 +6,7 @@ function formatRepeatText(rec) {
     if (type === 'daily' || type === 'days') return num === '1' ? 'Daily' : `Every ${num} Days`;
     if (type === 'weekly' || type === 'weeks') return num === '1' ? 'Weekly' : `Every ${num} Weeks`;
     if (type === 'monthly' || type === 'months') return num === '1' ? 'Monthly' : `Every ${num} Months`;
+    if (type === 'yearly' || type === 'years') return num === '1' ? 'Yearly' : `Every ${num} Years`;
     if (type === 'hourly' || type === 'hours') return num === '1' ? 'Hourly' : `Every ${num} Hours`;
     if (type === 'dow') { const map = {1:'Mon', 2:'Tue', 3:'Wed', 4:'Thu', 5:'Fri', 6:'Sat', 7:'Sun'}; return num.split(',').map(n => map[n]).join(', '); }
     return `${type} ${num}`;
@@ -137,14 +138,16 @@ function getUnitMenuKeyboard(reminderId) {
     const rows = [
         [{ text: '⏱️ Hours', callback_data: `nummenu:${reminderId}:hours` }, { text: '📅 Days', callback_data: `nummenu:${reminderId}:days` }],
         [{ text: '🗓️ Weeks', callback_data: `nummenu:${reminderId}:weeks` }, { text: '📆 Months', callback_data: `nummenu:${reminderId}:months` }],
+        [{ text: '🎂 Years', callback_data: `nummenu:${reminderId}:years` }],
         [{ text: '⬅️ Back to Edit', callback_data: `edit:${reminderId}` }]
     ];
 
     const richBlocks = [
         { type: 'buttons', buttons: rows[0].map(b => ({ text: b.text, callback_data: b.callback_data })), align: 'center' },
         { type: 'buttons', buttons: rows[1].map(b => ({ text: b.text, callback_data: b.callback_data })), align: 'center' },
-        { type: 'divider' },
         { type: 'buttons', buttons: rows[2].map(b => ({ text: b.text, callback_data: b.callback_data })), align: 'center' },
+        { type: 'divider' },
+        { type: 'buttons', buttons: rows[3].map(b => ({ text: b.text, callback_data: b.callback_data })), align: 'center' },
     ];
 
     return { inline_keyboard: rows, richBlocks };
