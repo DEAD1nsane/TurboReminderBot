@@ -148,7 +148,7 @@ async function expireDmSurface(userId, surface, isCurrentTimer) {
   );
 }
 
-function resetWizardTimer(userId, state) {
+function resetWizardTimer(userId, state, timeoutMs = 30 * 1000) {
   clearWizardTimer(userId);
   if (state.surface?.chatId === userId) clearDmPromptTimer(userId);
 
@@ -170,7 +170,7 @@ function resetWizardTimer(userId, state) {
         richParagraph([{ type: "bold", text: [{ type: "subscript", text: "⏰ Wizard expired — no activity" }] }]),
       ])).catch(() => {});
     }
-  }, 30 * 1000);
+  }, timeoutMs);
   wizardTimers.set(userId, timer);
 }
 
@@ -2191,10 +2191,10 @@ app.post("/webhook", async (req, res) => {
             ]),
           ]));
         }
-        if (surface) {
-          const wizState = { step: 1, surface, iMsgId: callbackQuery.inline_message_id || null, originalChatId: isGroupChat(callbackQuery.message?.chat) ? userId : chatId };
+        if (surface || inlineMsgId) {
+          const wizState = { step: 1, surface: surface || null, iMsgId: callbackQuery.inline_message_id || inlineMsgId || null, originalChatId: isGroupChat(callbackQuery.message?.chat) ? userId : chatId };
           wizardStateBounded.set(userId, wizState);
-          resetWizardTimer(userId, wizState);
+          resetWizardTimer(userId, wizState, 120 * 1000);
         }
       } else if (data === "surface_close") {
         await answerCallbackQuery(callbackQuery.id);
@@ -2575,7 +2575,7 @@ app.post("/webhook", async (req, res) => {
           if (surface) surface.richContent = true;
           const wizState = { step: 1, surface: surface || null, iMsgId: callbackQuery.inline_message_id, originalChatId: null, prefillDate: calDt };
           wizardStateBounded.set(userId, wizState);
-          resetWizardTimer(userId, wizState);
+          resetWizardTimer(userId, wizState, 120 * 1000);
           await editInlineRichMessage(
             callbackQuery.inline_message_id,
             buildRichMessage([
@@ -3400,7 +3400,7 @@ app.post("/webhook", async (req, res) => {
           if (surface) surface.richContent = true;
           const wizState = { step: 1, surface: surface || null, iMsgId: iMsgId, originalChatId: null };
           wizardStateBounded.set(userId, wizState);
-          resetWizardTimer(userId, wizState);
+          resetWizardTimer(userId, wizState, 120 * 1000);
           await editInlineRichMessage(
             iMsgId,
             buildRichMessage([
