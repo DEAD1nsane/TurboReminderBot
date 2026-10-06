@@ -1,9 +1,9 @@
-const chrono = require("chrono-node");
-const crypto = require("crypto");
+const chrono = require('chrono-node');
+const crypto = require('crypto');
 
-const express = require("express");
-const { Pool } = require("pg");
-const { DateTime } = require("luxon");
+const express = require('express');
+const { Pool } = require('pg');
+const { DateTime } = require('luxon');
 const {
   formatRepeatText,
   getTimezonePickerKeyboard,
@@ -13,7 +13,7 @@ const {
   getLimitMenuKeyboard,
   getDowMenuKeyboard,
   buildCalendar,
-} = require("./keyboards");
+} = require('./keyboards');
 const {
   sendTelegramMessage,
   sendEphemeralMessage,
@@ -33,7 +33,7 @@ const {
   answerInlineQuery,
   checkRichMessageSupport,
   isRichMessageSupported,
-} = require("./telegram");
+} = require('./telegram');
 
 const activityTimers = new Map();
 const pendingDeletes = new Set();
@@ -50,7 +50,10 @@ function boundedMap(ttlMs = CACHE_TTL_MS, maxSize = MAX_CACHE_SIZE) {
     get(key) {
       const entry = map.get(key);
       if (!entry) return undefined;
-      if (Date.now() > entry.expires) { map.delete(key); return undefined; }
+      if (Date.now() > entry.expires) {
+        map.delete(key);
+        return undefined;
+      }
       return entry.value;
     },
     set(key, value) {
@@ -60,9 +63,15 @@ function boundedMap(ttlMs = CACHE_TTL_MS, maxSize = MAX_CACHE_SIZE) {
       }
       map.set(key, { value, expires: Date.now() + ttlMs });
     },
-    delete(key) { map.delete(key); },
-    has(key) { return this.get(key) !== undefined; },
-    get size() { return map.size; },
+    delete(key) {
+      map.delete(key);
+    },
+    has(key) {
+      return this.get(key) !== undefined;
+    },
+    get size() {
+      return map.size;
+    },
   };
 }
 
@@ -113,10 +122,10 @@ function resetDmPromptTimer(userId, surface) {
         userId,
         surface.chatId,
         targetMsgId,
-        isCurrentTimer,
+        isCurrentTimer
       );
     } catch (err) {
-      console.error("Failed to auto-delete DM edit prompt:", err);
+      console.error('Failed to auto-delete DM edit prompt:', err);
     }
   });
 }
@@ -137,7 +146,7 @@ async function expireDmSurface(userId, surface, isCurrentTimer) {
     await deleteEphemeralMessage(
       surface.chatId,
       userId,
-      surface.ephemeralMessageId,
+      surface.ephemeralMessageId
     );
     return;
   }
@@ -145,7 +154,7 @@ async function expireDmSurface(userId, surface, isCurrentTimer) {
     userId,
     surface.chatId,
     surface.messageId,
-    isCurrentTimer,
+    isCurrentTimer
   );
 }
 
@@ -163,13 +172,23 @@ function resetWizardTimer(userId, state, timeoutMs = 30 * 1000) {
         await expireDmSurface(
           userId,
           state.surface,
-          () => !wizardTimers.has(userId),
+          () => !wizardTimers.has(userId)
         );
       } catch {}
     } else if (state.iMsgId) {
-      await editInlineRichMessage(state.iMsgId, buildRichMessage([
-        richParagraph([{ type: "bold", text: [{ type: "subscript", text: "⏰ Wizard expired — no activity" }] }]),
-      ])).catch(() => {});
+      await editInlineRichMessage(
+        state.iMsgId,
+        buildRichMessage([
+          richParagraph([
+            {
+              type: 'bold',
+              text: [
+                { type: 'subscript', text: '⏰ Wizard expired — no activity' },
+              ],
+            },
+          ]),
+        ])
+      ).catch(() => {});
     }
   }, timeoutMs);
   wizardTimers.set(userId, timer);
@@ -177,10 +196,17 @@ function resetWizardTimer(userId, state, timeoutMs = 30 * 1000) {
 
 async function editWizardStep(state, text, inlineKeyboard = null) {
   if (state.surface) {
-    await editRichSurface(state.surface, buildRichMessage([
-      richHeading(text.replace(/\*\*/g, "").split("\n")[0], 1),
-      ...text.split("\n").slice(1).map(l => richParagraph(l)),
-    ]), inlineKeyboard);
+    await editRichSurface(
+      state.surface,
+      buildRichMessage([
+        richHeading(text.replace(/\*\*/g, '').split('\n')[0], 1),
+        ...text
+          .split('\n')
+          .slice(1)
+          .map((l) => richParagraph(l)),
+      ]),
+      inlineKeyboard
+    );
   } else if (state.iMsgId) {
     await editInlineMessage(state.iMsgId, text, inlineKeyboard);
   }
@@ -237,19 +263,16 @@ function clearUserPendingState(userId) {
   for (const k of Array.from(pendingWizardCreates)) {
     if (k.includes(`:${userId}`)) pendingWizardCreates.delete(k);
   }
-  for (const timerKey of [
-    `dm_dashboard_${userId}`,
-    `dm_prompt_${userId}`,
-  ]) {
+  for (const timerKey of [`dm_dashboard_${userId}`, `dm_prompt_${userId}`]) {
     clearMenuTimer(timerKey);
   }
 }
 
 const escapeMarkdownV2 = (str) =>
-  String(str || "").replace(/[_\*\[\]\(\)~`>#\+\-=\|{\}\!\\.]/g, "\\$&");
+  String(str || '').replace(/[_\*\[\]\(\)~`>#\+\-=\|{\}\!\\.]/g, '\\$&');
 
 function parseReminderId(data, prefix) {
-  const raw = data.split(":")[1];
+  const raw = data.split(':')[1];
   const id = parseInt(raw, 10);
   if (isNaN(id) || id <= 0) return null;
   return id;
@@ -263,14 +286,14 @@ function parseReminderId(data, prefix) {
 // stored markdown/raw URLs back to RichTextUrl nodes on output so
 // executed reminders render a tappable "open link" option.
 function messageTextWithLinks(message) {
-  const raw = message?.text ?? message?.caption ?? "";
+  const raw = message?.text ?? message?.caption ?? '';
   const entities = message?.entities ?? message?.caption_entities ?? [];
   if (!raw || !entities.length) return raw;
   const links = entities
-    .filter((e) => e && e.type === "text_link" && e.url)
+    .filter((e) => e && e.type === 'text_link' && e.url)
     .sort((a, b) => a.offset - b.offset);
   if (!links.length) return raw;
-  let result = "";
+  let result = '';
   let cursor = 0;
   for (const e of links) {
     const start = e.offset;
@@ -279,7 +302,7 @@ function messageTextWithLinks(message) {
     const display = raw.substring(start, Math.min(end, raw.length));
     if (!display) continue;
     result += raw.substring(cursor, start);
-    const safeDisplay = display.replace(/\]/g, "\\]");
+    const safeDisplay = display.replace(/\]/g, '\\]');
     result += `[${safeDisplay}](${e.url})`;
     cursor = Math.min(end, raw.length);
   }
@@ -288,9 +311,9 @@ function messageTextWithLinks(message) {
 }
 
 function stripMarkdownLinks(stored) {
-  return String(stored || "").replace(
+  return String(stored || '').replace(
     /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
-    (_, display) => display.replace(/\\\]/g, "]"),
+    (_, display) => display.replace(/\\\]/g, ']')
   );
 }
 
@@ -298,8 +321,8 @@ function stripMarkdownLinks(stored) {
 // Telegram RichText (string when no links, array of text + url nodes
 // when links exist). RichTextUrl shape: { type: "url", text, url }.
 function richTextFromStored(stored) {
-  const input = String(stored || "");
-  if (!input) return "";
+  const input = String(stored || '');
+  if (!input) return '';
   const parts = [];
   const mdRe = /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g;
   let m;
@@ -308,7 +331,7 @@ function richTextFromStored(stored) {
     segments.push({
       start: m.index,
       end: m.index + m[0].length,
-      display: m[1].replace(/\\\]/g, "]"),
+      display: m[1].replace(/\\\]/g, ']'),
       url: m[2],
     });
   }
@@ -322,7 +345,7 @@ function richTextFromStored(stored) {
     let rm;
     while ((rm = rawUrlRe.exec(text)) !== null) {
       if (rm.index > li) parts.push(text.slice(li, rm.index));
-      parts.push({ type: "url", text: rm[0], url: rm[0] });
+      parts.push({ type: 'url', text: rm[0], url: rm[0] });
       li = rm.index + rm[0].length;
     }
     if (li < text.length) parts.push(text.slice(li));
@@ -331,19 +354,19 @@ function richTextFromStored(stored) {
   const ordered = [...segments].sort((a, b) => a.start - b.start);
   for (const s of ordered) {
     if (s.start > cursor) pushRawWithUrls(input.slice(cursor, s.start));
-    parts.push({ type: "url", text: s.display, url: s.url });
+    parts.push({ type: 'url', text: s.display, url: s.url });
     cursor = s.end;
   }
   if (cursor < input.length) pushRawWithUrls(input.slice(cursor));
   // No links found → keep plain string for backward compat.
   if (parts.length === 0) return input;
-  if (parts.length === 1 && typeof parts[0] === "string") return parts[0];
+  if (parts.length === 1 && typeof parts[0] === 'string') return parts[0];
   return parts;
 }
 
-function richHeadingFromStored(prefix, stored, suffix = "", size = 5) {
+function richHeadingFromStored(prefix, stored, suffix = '', size = 5) {
   const nodes = richTextFromStored(stored);
-  if (typeof nodes === "string") {
+  if (typeof nodes === 'string') {
     return richHeading(`${prefix}${nodes}${suffix}`, size);
   }
   const text = [];
@@ -356,27 +379,27 @@ function richHeadingFromStored(prefix, stored, suffix = "", size = 5) {
 // ── Rich Message Block Builders ────────────────────────────────────────────
 
 function richHeading(text, size = 2) {
-  return { type: "heading", text, size };
+  return { type: 'heading', text, size };
 }
 
 function richParagraph(text) {
-  return { type: "paragraph", text };
+  return { type: 'paragraph', text };
 }
 
 function richDivider() {
-  return { type: "divider" };
+  return { type: 'divider' };
 }
 
 function centerText(text, totalWidth = 32) {
-  const invisibleSpace = "⠀";
+  const invisibleSpace = '⠀';
   const textLen = text.length;
   if (textLen >= totalWidth) return text;
   const leftPadding = Math.floor((totalWidth - textLen) / 2);
   return invisibleSpace.repeat(leftPadding) + text;
 }
 
-function richButtons(buttons, align = "center") {
-  return { type: "buttons", buttons, align };
+function richButtons(buttons, align = 'center') {
+  return { type: 'buttons', buttons, align };
 }
 
 function richButton(text, callbackData, style = null) {
@@ -387,7 +410,7 @@ function richButton(text, callbackData, style = null) {
 
 function richTable(cells, opts = {}) {
   return {
-    type: "table",
+    type: 'table',
     cells,
     is_bordered: opts.bordered !== false,
     is_striped: opts.striped !== false,
@@ -396,7 +419,7 @@ function richTable(cells, opts = {}) {
 }
 
 function richList(items, ordered = false) {
-  return { type: "list", items, ordered };
+  return { type: 'list', items, ordered };
 }
 
 function richListItem(text) {
@@ -404,56 +427,97 @@ function richListItem(text) {
 }
 
 function richDetails(summary, blocks, isOpen = false) {
-  return { type: "details", summary, blocks, is_open: isOpen };
+  return { type: 'details', summary, blocks, is_open: isOpen };
 }
 
 function buildRichMessage(blocks) {
   return { blocks };
 }
 
-function buildEditMenuRich(reminderId, recurring, totalOccurrences, earlyOffset) {
+function buildEditMenuRich(
+  reminderId,
+  recurring,
+  totalOccurrences,
+  earlyOffset
+) {
   const recType = formatRepeatText(recurring);
-  const limitLabel = totalOccurrences ? `${totalOccurrences}x` : "Forever";
-  const earlyLabel = earlyOffset ? `${earlyOffset}m` : "Off";
+  const limitLabel = totalOccurrences ? `${totalOccurrences}x` : 'Forever';
+  const earlyLabel = earlyOffset ? `${earlyOffset}m` : 'Off';
 
   return buildRichMessage([
-    richHeading("✏️ Editing Reminder", 1),
-    richParagraph("Select options below:"),
+    richHeading('✏️ Editing Reminder', 1),
+    richParagraph('Select options below:'),
     richDivider(),
     richButtons([
-      richButton("📝 Edit Note", `prompt_edit_text:${reminderId}`, "primary"),
-      richButton("🕒 Edit Time", `prompt_edit_time:${reminderId}`, "primary"),
+      richButton('📝 Edit Note', `prompt_edit_text:${reminderId}`, 'primary'),
+      richButton('🕒 Edit Time', `prompt_edit_time:${reminderId}`, 'primary'),
     ]),
     richButtons([
-      richButton(recurring === null ? "✅ None" : "None", `setrec:${reminderId}:none`, "link"),
-      richButton(recurring === "daily:1" ? "✅ Daily" : "Daily", `setrec:${reminderId}:daily:1`, "link"),
-      richButton(recurring === "weekly:1" ? "✅ Weekly" : "Weekly", `setrec:${reminderId}:weekly:1`, "link"),
-      richButton(recurring === "monthly:1" ? "✅ Monthly" : "Monthly", `setrec:${reminderId}:monthly:1`, "link"),
-      richButton(recurring === "yearly:1" ? "✅ Yearly" : "Yearly", `setrec:${reminderId}:yearly:1`, "link"),
+      richButton(
+        recurring === null ? '✅ None' : 'None',
+        `setrec:${reminderId}:none`,
+        'link'
+      ),
+      richButton(
+        recurring === 'daily:1' ? '✅ Daily' : 'Daily',
+        `setrec:${reminderId}:daily:1`,
+        'link'
+      ),
+      richButton(
+        recurring === 'weekly:1' ? '✅ Weekly' : 'Weekly',
+        `setrec:${reminderId}:weekly:1`,
+        'link'
+      ),
+      richButton(
+        recurring === 'monthly:1' ? '✅ Monthly' : 'Monthly',
+        `setrec:${reminderId}:monthly:1`,
+        'link'
+      ),
+      richButton(
+        recurring === 'yearly:1' ? '✅ Yearly' : 'Yearly',
+        `setrec:${reminderId}:yearly:1`,
+        'link'
+      ),
     ]),
     richButtons([
-      richButton(`⚙️ Interval (${recType})`, `unitmenu:${reminderId}`, "link"),
-      richButton("📅 Pick Days", `dowmenu:${reminderId}`, "link"),
+      richButton(`⚙️ Interval (${recType})`, `unitmenu:${reminderId}`, 'link'),
+      richButton('📅 Pick Days', `dowmenu:${reminderId}`, 'link'),
     ]),
     richButtons([
-      richButton(`🔁 Limit (${limitLabel})`, `limitmenu:${reminderId}`, "link"),
+      richButton(`🔁 Limit (${limitLabel})`, `limitmenu:${reminderId}`, 'link'),
     ]),
     richButtons([
-      richButton(earlyOffset === 5 ? "✅ 5m ⏳" : "5m ⏳", `setearly:${reminderId}:5`, "link"),
-      richButton(earlyOffset === 10 ? "✅ 10m ⏳" : "10m ⏳", `setearly:${reminderId}:10`, "link"),
-      richButton(earlyOffset && earlyOffset !== 5 && earlyOffset !== 10 ? `✅ ${earlyLabel} ⏳` : "Custom ⏳", `prompt_early:${reminderId}`, "link"),
-      richButton(!earlyOffset ? "✅ Off" : "Off ❌", `setearly:${reminderId}:0`, "link"),
+      richButton(
+        earlyOffset === 5 ? '✅ 5m ⏳' : '5m ⏳',
+        `setearly:${reminderId}:5`,
+        'link'
+      ),
+      richButton(
+        earlyOffset === 10 ? '✅ 10m ⏳' : '10m ⏳',
+        `setearly:${reminderId}:10`,
+        'link'
+      ),
+      richButton(
+        earlyOffset && earlyOffset !== 5 && earlyOffset !== 10
+          ? `✅ ${earlyLabel} ⏳`
+          : 'Custom ⏳',
+        `prompt_early:${reminderId}`,
+        'link'
+      ),
+      richButton(
+        !earlyOffset ? '✅ Off' : 'Off ❌',
+        `setearly:${reminderId}:0`,
+        'link'
+      ),
     ]),
     richDivider(),
-    richButtons([
-      richButton("⬅️ Back to Reminders", "menu:list", "link"),
-    ]),
+    richButtons([richButton('⬅️ Back to Reminders', 'menu:list', 'link')]),
   ]);
 }
 
 function formatRepeatCount(totalOccurrences) {
-  if (!totalOccurrences) return "Forever";
-  return `${totalOccurrences} time${totalOccurrences === 1 ? "" : "s"}`;
+  if (!totalOccurrences) return 'Forever';
+  return `${totalOccurrences} time${totalOccurrences === 1 ? '' : 's'}`;
 }
 
 function parseRepeatCount(value) {
@@ -463,132 +527,147 @@ function parseRepeatCount(value) {
     : null;
 }
 
-function buildWizardRepeatRich() {
+function buildWizardRepeatRich(backData = null) {
   return buildRichMessage([
-    richHeading("🔄 How often should it repeat?", 1),
+    richHeading('🔄 How often should it repeat?', 1),
     richDivider(),
     richButtons([
-      richButton("None", "wizard_repeat:none", "primary"),
-      richButton("Daily", "wizard_repeat:daily:1", "primary"),
-      richButton("Weekly", "wizard_repeat:weekly:1", "primary"),
+      richButton('None', 'wizard_repeat:none', 'primary'),
+      richButton('Daily', 'wizard_repeat:daily:1', 'primary'),
+      richButton('Weekly', 'wizard_repeat:weekly:1', 'primary'),
     ]),
     richButtons([
-      richButton("Monthly", "wizard_repeat:monthly:1", "primary"),
-      richButton("Yearly", "wizard_repeat:yearly:1", "primary"),
+      richButton('Monthly', 'wizard_repeat:monthly:1', 'primary'),
+      richButton('Yearly', 'wizard_repeat:yearly:1', 'primary'),
     ]),
     richButtons([
-      richButton("Every X Hours/Minutes", "wizard_repeat:smart", "link"),
+      richButton('Every X Hours/Minutes', 'wizard_repeat:smart', 'link'),
     ]),
-    richButtons([
-      richButton("❌ Cancel", "wizard_cancel", "danger"),
-    ]),
+    ...(backData
+      ? [richButtons([richButton('⬅️ Back to Review', backData, 'link')])]
+      : []),
+    richButtons([richButton('❌ Cancel', 'wizard_cancel', 'danger')]),
   ]);
 }
 
-function buildWizardRepeatCountRich() {
+function buildWizardRepeatCountRich(backData = null) {
   const limits = [null, 2, 3, 5, 10, 15, 20, 30, 50, 100];
   const limitRows = [];
   for (let i = 0; i < limits.length; i += 3) {
     limitRows.push(
       richButtons(
-        limits.slice(i, i + 3).map((count) =>
-          richButton(
-            count === null ? "Forever (default)" : `${count}x`,
-            count === null ? "wizard_count:forever" : `wizard_count:${count}`,
-            "link",
-          ),
-        ),
-      ),
+        limits
+          .slice(i, i + 3)
+          .map((count) =>
+            richButton(
+              count === null ? 'Forever (default)' : `${count}x`,
+              count === null ? 'wizard_count:forever' : `wizard_count:${count}`,
+              'link'
+            )
+          )
+      )
     );
   }
   return buildRichMessage([
-    richHeading("🔁 How many times should it repeat?", 1),
-    richParagraph("Choose a repeat limit, or enter your own."),
+    richHeading('🔁 How many times should it repeat?', 1),
+    richParagraph('Choose a repeat limit, or enter your own.'),
     richDivider(),
     ...limitRows,
     richDivider(),
     richButtons([
-      richButton("✍️ Custom Count...", "wizard_count:custom", "link"),
+      richButton('✍️ Custom Count...', 'wizard_count:custom', 'link'),
     ]),
     richButtons([
-      richButton("⬅️ Back", "wizard_back:repeat", "link"),
+      richButton('⬅️ Back', backData || 'wizard_back:repeat', 'link'),
     ]),
-    richButtons([
-      richButton("❌ Cancel", "wizard_cancel", "danger"),
-    ]),
+    richButtons([richButton('❌ Cancel', 'wizard_cancel', 'danger')]),
   ]);
 }
 
-function buildWizardRepeatCountInputRich() {
+function buildWizardRepeatCountInputRich(backData = null) {
   return buildRichMessage([
-    richHeading("✍️ Enter a custom repeat count", 1),
-    richParagraph("Type a whole number between 1 and 2,147,483,647."),
+    richHeading('✍️ Enter a custom repeat count', 1),
+    richParagraph('Type a whole number between 1 and 2,147,483,647.'),
     richDivider(),
     richButtons([
-      richButton("⬅️ Back", "wizard_back:count", "link"),
+      richButton('⬅️ Back', backData || 'wizard_back:count', 'link'),
     ]),
-    richButtons([
-      richButton("❌ Cancel", "wizard_cancel", "danger"),
-    ]),
+    richButtons([richButton('❌ Cancel', 'wizard_cancel', 'danger')]),
   ]);
 }
 
-function buildWizardEarlyWarningRich() {
+function buildWizardEarlyWarningRich(backData = null) {
   return buildRichMessage([
-    richHeading("⏳ How many minutes early should the warning be?", 1),
-    richParagraph("Example: 15, 30, 60 (or 0 for no warning)"),
+    richHeading('⏳ How many minutes early should the warning be?', 1),
+    richParagraph('Example: 15, 30, 60 (or 0 for no warning)'),
     richDivider(),
     richButtons([
-      richButton("5m", "wizard_early:5", "primary"),
-      richButton("15m", "wizard_early:15", "primary"),
-      richButton("30m", "wizard_early:30", "primary"),
-      richButton("60m", "wizard_early:60", "primary"),
+      richButton('5m', 'wizard_early:5', 'primary'),
+      richButton('15m', 'wizard_early:15', 'primary'),
+      richButton('30m', 'wizard_early:30', 'primary'),
+      richButton('60m', 'wizard_early:60', 'primary'),
     ]),
     richButtons([
-      richButton("None", "wizard_early:0", "link"),
-      richButton("❌ Cancel", "wizard_cancel", "danger"),
+      richButton('None', 'wizard_early:0', 'link'),
+      ...(backData ? [richButton('⬅️ Back to Review', backData, 'link')] : []),
+      richButton('❌ Cancel', 'wizard_cancel', 'danger'),
     ]),
   ]);
 }
 
 function boldRichText(richText) {
-  return { type: "bold", text: richText };
+  return { type: 'bold', text: richText };
 }
 
 function buildWizardReviewRows(state) {
   const timeStr = state.time.dt.toFormat("EEE, MMM d, yyyy 'at' h:mm a");
   const rows = [
-    [{ text: "📌 Title" }, { text: boldRichText(richTextFromStored(state.title)) }],
-    [{ text: "⏰ Time" }, { text: boldRichText(timeStr) }],
-    [{ text: "🔄 Repeat" }, { text: boldRichText(state.repeatText || "None") }],
+    [
+      { text: '📌 Title' },
+      { text: boldRichText(richTextFromStored(state.title)) },
+    ],
+    [{ text: '⏰ Time' }, { text: boldRichText(timeStr) }],
+    [{ text: '🔄 Repeat' }, { text: boldRichText(state.repeatText || 'None') }],
   ];
   if (state.repeat) {
     rows.push([
-      { text: "🔢 Times" },
+      { text: '🔢 Times' },
       { text: boldRichText(formatRepeatCount(state.totalOccurrences)) },
     ]);
   }
   rows.push([
-    { text: "⏳ Early Warning" },
-    { text: boldRichText(state.earlyWarning ? `${state.earlyWarning}m before` : "None") },
+    { text: '⏳ Early Warning' },
+    {
+      text: boldRichText(
+        state.earlyWarning ? `${state.earlyWarning}m before` : 'None'
+      ),
+    },
   ]);
   return rows;
 }
 
 function buildWizardReviewRich(state) {
   return buildRichMessage([
-    richHeading("📝 Review Your Reminder", 1),
+    richHeading('📝 Review Your Reminder', 1),
     richTable(buildWizardReviewRows(state)),
     richDivider(),
     richButtons([
-      richButton("✅ Create", "wizard_confirm", "success"),
-      richButton("❌ Cancel", "wizard_cancel", "danger"),
+      richButton('✏️ Title', 'wizard_edit:title', 'link'),
+      richButton('⏰ Time', 'wizard_edit:time', 'link'),
+    ]),
+    richButtons([
+      richButton('🔄 Repeat', 'wizard_edit:repeat', 'link'),
+      richButton('⏳ Warning', 'wizard_edit:warning', 'link'),
+    ]),
+    richButtons([
+      richButton('✅ Create', 'wizard_confirm', 'success'),
+      richButton('❌ Cancel', 'wizard_cancel', 'danger'),
     ]),
   ]);
 }
 
 const isGroupChat = (chat) =>
-  chat?.type === "group" || chat?.type === "supergroup";
+  chat?.type === 'group' || chat?.type === 'supergroup';
 
 // Bot API 10.3 doesn't allow force_reply to be toggled after an inline
 // keyboard is created. Ephemeral surfaces opt in from their first frame so
@@ -631,43 +710,45 @@ async function editSurface(surface, text, markup = null) {
       surface.receiverUserId,
       surface.ephemeralMessageId,
       text,
-      withPrivateReply(markup),
+      withPrivateReply(markup)
     );
   }
-  return editTelegramMessage(
-    surface.chatId,
-    surface.messageId,
-    text,
-    markup,
-  );
+  return editTelegramMessage(surface.chatId, surface.messageId, text, markup);
 }
 
 async function editRichSurface(surface, richMessage, markup = null) {
   if (!surface) {
-    console.log("[EDIT_RICH] surface is null, returning false");
+    console.log('[EDIT_RICH] surface is null, returning false');
     return false;
   }
-  console.log("[EDIT_RICH] surface:", JSON.stringify({ephemeral: surface.ephemeral, chatId: surface.chatId, messageId: surface.messageId}));
+  console.log(
+    '[EDIT_RICH] surface:',
+    JSON.stringify({
+      ephemeral: surface.ephemeral,
+      chatId: surface.chatId,
+      messageId: surface.messageId,
+    })
+  );
   if (!isRichMessageSupported()) {
-    const fallbackText = richMessage.markdown || richMessage.html || "...";
+    const fallbackText = richMessage.markdown || richMessage.html || '...';
     return editSurface(surface, fallbackText, markup);
   }
   if (surface.ephemeral) {
-    console.log("[EDIT_RICH] editing ephemeral message");
+    console.log('[EDIT_RICH] editing ephemeral message');
     return editRichEphemeralMessage(
       surface.chatId,
       surface.receiverUserId,
       surface.ephemeralMessageId,
       richMessage,
-      withPrivateReply(markup),
+      withPrivateReply(markup)
     );
   }
-  console.log("[EDIT_RICH] editing regular message");
+  console.log('[EDIT_RICH] editing regular message');
   return editRichMessage(
     surface.chatId,
     surface.messageId,
     richMessage,
-    markup,
+    markup
   );
 }
 
@@ -682,7 +763,7 @@ async function removeUserInput(message, userId) {
     await deleteEphemeralMessage(
       message.chat.id,
       message.receiver_user?.id || userId,
-      message.ephemeral_message_id,
+      message.ephemeral_message_id
     );
   } else if (message?.message_id) {
     await deleteTelegramMessage(message.chat.id, message.message_id);
@@ -703,7 +784,7 @@ async function beginPrivateSurface(message, userId, text, markup) {
     userId,
     text,
     withPrivateReply(markup),
-    options,
+    options
   );
   if (sent) return surfaceFromTelegramMessage(sent, userId);
 
@@ -715,7 +796,7 @@ async function beginPrivateSurface(message, userId, text, markup) {
 
 async function beginRichSurface(message, userId, richMessage, markup) {
   if (!isRichMessageSupported()) {
-    const fallbackText = richMessage.markdown || richMessage.html || "";
+    const fallbackText = richMessage.markdown || richMessage.html || '';
     return beginPrivateSurface(message, userId, fallbackText, markup);
   }
 
@@ -737,7 +818,7 @@ async function beginRichSurface(message, userId, richMessage, markup) {
     userId,
     richMessage,
     withPrivateReply(markup),
-    options,
+    options
   );
   if (sent) {
     const surface = surfaceFromTelegramMessage(sent, userId);
@@ -746,13 +827,13 @@ async function beginRichSurface(message, userId, richMessage, markup) {
   }
 
   // Fallback: try regular ephemeral with markdown text
-  const fallbackText = richMessage.markdown || richMessage.html || "";
+  const fallbackText = richMessage.markdown || richMessage.html || '';
   const fallbackSent = await sendEphemeralMessage(
     message.chat.id,
     userId,
     fallbackText,
     withPrivateReply(markup),
-    options,
+    options
   );
   if (fallbackSent) return surfaceFromTelegramMessage(fallbackSent, userId);
 
@@ -762,36 +843,36 @@ async function beginRichSurface(message, userId, richMessage, markup) {
 }
 
 const app = express();
-app.use(express.json({ limit: "10kb" }));
+app.use(express.json({ limit: '10kb' }));
 
 const PORT = process.env.PORT || 8080;
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
 if (!TOKEN || !process.env.DATABASE_URL) {
-  console.error("CRITICAL: Missing TELEGRAM_BOT_TOKEN or DATABASE_URL");
+  console.error('CRITICAL: Missing TELEGRAM_BOT_TOKEN or DATABASE_URL');
   process.exit(1);
 }
 
 if (!process.env.WEBHOOK_SECRET) {
-  console.warn("WARN: WEBHOOK_SECRET not set. Webhook is unauthenticated.");
+  console.warn('WARN: WEBHOOK_SECRET not set. Webhook is unauthenticated.');
 }
 
-app.get("/", (req, res) => res.status(200).send("OK"));
-app.get("/health", async (req, res) => {
+app.get('/', (req, res) => res.status(200).send('OK'));
+app.get('/health', async (req, res) => {
   try {
-    await pool.query("SELECT 1");
-    res.status(200).json({ status: "ok", db: "connected" });
+    await pool.query('SELECT 1');
+    res.status(200).json({ status: 'ok', db: 'connected' });
   } catch (err) {
-    res.status(503).json({ status: "error", db: "disconnected" });
+    res.status(503).json({ status: 'error', db: 'disconnected' });
   }
 });
 
-const server = app.listen(PORT, "0.0.0.0", () =>
-  console.log(`Server listening on port ${PORT}`),
+const server = app.listen(PORT, '0.0.0.0', () =>
+  console.log(`Server listening on port ${PORT}`)
 );
 
-process.on("SIGTERM", () => {
-  console.log("SIGTERM received, shutting down gracefully...");
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, shutting down gracefully...');
   let exited = false;
   const forceExit = () => {
     if (!exited) {
@@ -801,27 +882,39 @@ process.on("SIGTERM", () => {
   };
   setTimeout(forceExit, 10000);
   server.close(() => {
-    pool.end()
-      .then(() => { if (!exited) { exited = true; process.exit(0); } })
-      .catch((err) => { console.error("pool.end() failed:", err); forceExit(); });
+    pool
+      .end()
+      .then(() => {
+        if (!exited) {
+          exited = true;
+          process.exit(0);
+        }
+      })
+      .catch((err) => {
+        console.error('pool.end() failed:', err);
+        forceExit();
+      });
   });
 });
 
 checkRichMessageSupport().then(() => {
-  console.log("[STARTUP] Rich message support:", isRichMessageSupported() ? "enabled" : "fallback to MarkdownV2");
+  console.log(
+    '[STARTUP] Rich message support:',
+    isRichMessageSupported() ? 'enabled' : 'fallback to MarkdownV2'
+  );
 });
 
 setEphemeralGroupCommands([
-  { command: "start", description: "Open your private reminder dashboard" },
+  { command: 'start', description: 'Open your private reminder dashboard' },
 ]).then((result) => {
   if (result !== null) {
-    console.log("Ephemeral group commands registered.");
+    console.log('Ephemeral group commands registered.');
   }
 });
 
 const isInternalHost =
   process.env.DATABASE_URL &&
-  process.env.DATABASE_URL.includes("railway.internal");
+  process.env.DATABASE_URL.includes('railway.internal');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -835,8 +928,8 @@ const pool = new Pool({
   connectionTimeoutMillis: 5000,
 });
 
-pool.on("error", (err) =>
-  console.error("Unexpected Postgres pool error:", err),
+pool.on('error', (err) =>
+  console.error('Unexpected Postgres pool error:', err)
 );
 
 async function initDb() {
@@ -880,9 +973,9 @@ async function initDb() {
             ALTER TABLE reminders ADD COLUMN IF NOT EXISTS early_offset INT DEFAULT NULL;
             ALTER TABLE reminders ADD COLUMN IF NOT EXISTS early_alert_sent BOOLEAN DEFAULT FALSE;
         `);
-    console.log("Database initialized successfully!");
+    console.log('Database initialized successfully!');
   } catch (err) {
-    console.error("CRITICAL: Database initialization failed:", err);
+    console.error('CRITICAL: Database initialization failed:', err);
     process.exit(1);
   }
 }
@@ -899,17 +992,17 @@ setInterval(async () => {
        LEFT JOIN user_settings s ON s.user_id = r.user_id
        WHERE (r.remind_at <= NOW() AND r.sent = FALSE)
           OR (r.early_offset IS NOT NULL AND r.early_alert_sent = FALSE AND r.remind_at - (r.early_offset * INTERVAL '1 minute') <= NOW())
-       FOR UPDATE OF r SKIP LOCKED`,
+       FOR UPDATE OF r SKIP LOCKED`
     );
     for (const r of res.rows) {
       const now = new Date();
 
       const remindAt = new Date(r.remind_at);
-      const tz = r.user_timezone || "America/Chicago";
+      const tz = r.user_timezone || 'America/Chicago';
       const formattedTime = DateTime.fromJSDate(remindAt)
         .setZone(tz)
         .toFormat("EEE, MMM d, yyyy 'at' h:mm a")
-        .replace(/:00\s?(AM|PM)/i, "$1")
+        .replace(/:00\s?(AM|PM)/i, '$1')
         .replace(/\s?(AM|PM)/i, (m) => m.toLowerCase().trim());
 
       if (
@@ -920,70 +1013,72 @@ setInterval(async () => {
         await sendRichMessage(
           r.chat_id || r.user_id,
           buildRichMessage([
-            richHeadingFromStored("⚡ | ", r.text, ` in ${r.early_offset}m`, 5),
+            richHeadingFromStored('⚡ | ', r.text, ` in ${r.early_offset}m`, 5),
             richParagraph([
-              { type: "bold", text: [{ type: "superscript", text: formattedTime }] },
+              {
+                type: 'bold',
+                text: [{ type: 'superscript', text: formattedTime }],
+              },
             ]),
-          ]),
+          ])
         );
         await pool.query(
-          "UPDATE reminders SET early_alert_sent = TRUE WHERE id = $1",
-          [r.id],
+          'UPDATE reminders SET early_alert_sent = TRUE WHERE id = $1',
+          [r.id]
         );
       } else if (now >= remindAt && !r.sent) {
         await sendRichMessage(
           r.chat_id || r.user_id,
           buildRichMessage([
-            richHeadingFromStored("🔔 | ", r.text, "", 5),
+            richHeadingFromStored('🔔 | ', r.text, '', 5),
             richParagraph([
-              { type: "bold", text: [{ type: "superscript", text: formattedTime }] },
+              {
+                type: 'bold',
+                text: [{ type: 'superscript', text: formattedTime }],
+              },
             ]),
-          ]),
+          ])
         );
 
         if (r.recurring) {
-          const nextDate = calculateNextOccurrence(
-            remindAt,
-            r.recurring,
-            tz,
-          );
+          const nextDate = calculateNextOccurrence(remindAt, r.recurring, tz);
           const newCount = (r.current_occurrence || 0) + 1;
 
           if (!r.total_occurrences || newCount < r.total_occurrences) {
             await pool.query(
-              "UPDATE reminders SET remind_at = $1, current_occurrence = $2, early_alert_sent = FALSE WHERE id = $3",
-              [nextDate, newCount, r.id],
+              'UPDATE reminders SET remind_at = $1, current_occurrence = $2, early_alert_sent = FALSE WHERE id = $3',
+              [nextDate, newCount, r.id]
             );
           } else {
-            await pool.query("UPDATE reminders SET sent = TRUE WHERE id = $1", [
+            await pool.query('UPDATE reminders SET sent = TRUE WHERE id = $1', [
               r.id,
             ]);
           }
         } else {
-          await pool.query("UPDATE reminders SET sent = TRUE WHERE id = $1", [
+          await pool.query('UPDATE reminders SET sent = TRUE WHERE id = $1', [
             r.id,
           ]);
         }
       }
     }
   } catch (err) {
-    console.error("Reminder execution error:", err);
+    console.error('Reminder execution error:', err);
   } finally {
     pollingLocked = false;
   }
 }, 30000);
 
 async function getUserTimezone(userId) {
-  if (!process.env.DATABASE_URL) return "America/Chicago";
+  if (!process.env.DATABASE_URL) return 'America/Chicago';
   try {
     const res = await pool.query(
-      "SELECT timezone FROM user_settings WHERE user_id = $1",
-      [userId],
+      'SELECT timezone FROM user_settings WHERE user_id = $1',
+      [userId]
     );
-    return res.rows.length > 0 ? res.rows[0].timezone : "America/Chicago";
+    return res.rows.length > 0 ? res.rows[0].timezone : 'America/Chicago';
   } catch (err) {
-    console.error("[DB] getUserTimezone error:", err.message);
-    return "America/Chicago";
+    console.error('[DB] getUserTimezone error:', err.message);
+    return 'America/Chicago';
   }
 }
 
@@ -993,10 +1088,10 @@ async function setUserTimezone(userId, tz) {
     await pool.query(
       `INSERT INTO user_settings (user_id, timezone) VALUES ($1, $2)
              ON CONFLICT (user_id) DO UPDATE SET timezone = $2`,
-      [userId, tz],
+      [userId, tz]
     );
   } catch (err) {
-    console.error("Error saving user timezone:", err);
+    console.error('Error saving user timezone:', err);
   }
 }
 
@@ -1004,14 +1099,14 @@ async function getActiveMenuMsgId(userId) {
   if (!process.env.DATABASE_URL) return null;
   try {
     const res = await pool.query(
-      "SELECT active_menu_msg_id FROM user_settings WHERE user_id = $1",
-      [userId],
+      'SELECT active_menu_msg_id FROM user_settings WHERE user_id = $1',
+      [userId]
     );
     return res.rows.length > 0 && res.rows[0].active_menu_msg_id
       ? res.rows[0].active_menu_msg_id
       : null;
   } catch (err) {
-    console.error("[DB] getActiveMenuMsgId error:", err.message);
+    console.error('[DB] getActiveMenuMsgId error:', err.message);
     return null;
   }
 }
@@ -1028,10 +1123,10 @@ async function setActiveMenuMsgId(userId, msgId, triggerMsgId = null) {
              trigger_msg_id = COALESCE($3, user_settings.trigger_msg_id),
              collapse_at = $4,
              timezone = COALESCE(user_settings.timezone, EXCLUDED.timezone)`,
-      [userId, msgId, triggerMsgId, collapseAt, "America/Chicago"],
+      [userId, msgId, triggerMsgId, collapseAt, 'America/Chicago']
     );
   } catch (err) {
-    console.error("Error setting active menu msg id:", err);
+    console.error('Error setting active menu msg id:', err);
   }
 }
 
@@ -1039,12 +1134,12 @@ async function clearActiveMenuMsgId(userId, expectedMsgId) {
   if (!process.env.DATABASE_URL || expectedMsgId == null) return false;
   try {
     const result = await pool.query(
-      "UPDATE user_settings SET active_menu_msg_id = NULL, collapse_at = NULL WHERE user_id = $1 AND active_menu_msg_id = $2",
-      [userId, expectedMsgId],
+      'UPDATE user_settings SET active_menu_msg_id = NULL, collapse_at = NULL WHERE user_id = $1 AND active_menu_msg_id = $2',
+      [userId, expectedMsgId]
     );
     return result.rowCount > 0;
   } catch (err) {
-    console.error("Error clearing active menu msg id:", err);
+    console.error('Error clearing active menu msg id:', err);
     return false;
   }
 }
@@ -1053,12 +1148,12 @@ async function getPendingEdit(userId) {
   if (!process.env.DATABASE_URL) return null;
   try {
     const res = await pool.query(
-      "SELECT pending_edit FROM user_settings WHERE user_id = $1",
-      [userId],
+      'SELECT pending_edit FROM user_settings WHERE user_id = $1',
+      [userId]
     );
     return res.rows.length > 0 ? res.rows[0].pending_edit : null;
   } catch (err) {
-    console.error("[DB] getPendingEdit error:", err.message);
+    console.error('[DB] getPendingEdit error:', err.message);
     return null;
   }
 }
@@ -1070,10 +1165,10 @@ async function setPendingEdit(userId, pendingStr) {
       `INSERT INTO user_settings (user_id, pending_edit)
              VALUES ($1, $2)
              ON CONFLICT (user_id) DO UPDATE SET pending_edit = $2`,
-      [userId, pendingStr],
+      [userId, pendingStr]
     );
   } catch (err) {
-    console.error("Error setting pending edit:", err);
+    console.error('Error setting pending edit:', err);
   }
 }
 
@@ -1081,33 +1176,33 @@ async function clearPendingEdit(userId, expectedPendingEdit) {
   if (!process.env.DATABASE_URL || !expectedPendingEdit) return false;
   try {
     const result = await pool.query(
-      "UPDATE user_settings SET pending_edit = NULL WHERE user_id = $1 AND pending_edit = $2",
-      [userId, expectedPendingEdit],
+      'UPDATE user_settings SET pending_edit = NULL WHERE user_id = $1 AND pending_edit = $2',
+      [userId, expectedPendingEdit]
     );
     return result.rowCount > 0;
   } catch (err) {
-    console.error("Error clearing pending edit:", err);
+    console.error('Error clearing pending edit:', err);
     return false;
   }
 }
 
 function calculateNextOccurrence(currentDate, recurringStr, timeZone) {
   let dt = DateTime.fromJSDate(currentDate).setZone(timeZone);
-  const parts = recurringStr.split(":");
+  const parts = recurringStr.split(':');
   const type = parts[0];
-  const interval = parseInt(parts[1] || "1", 10);
+  const interval = parseInt(parts[1] || '1', 10);
 
-  if (type === "daily" || type === "days") dt = dt.plus({ days: interval });
-  else if (type === "weekly" || type === "weeks")
+  if (type === 'daily' || type === 'days') dt = dt.plus({ days: interval });
+  else if (type === 'weekly' || type === 'weeks')
     dt = dt.plus({ weeks: interval });
-  else if (type === "monthly" || type === "months")
+  else if (type === 'monthly' || type === 'months')
     dt = dt.plus({ months: interval });
-  else if (type === "yearly" || type === "years")
+  else if (type === 'yearly' || type === 'years')
     dt = dt.plus({ years: interval });
-  else if (type === "hourly" || type === "hours")
+  else if (type === 'hourly' || type === 'hours')
     dt = dt.plus({ hours: interval });
-  else if (type === "dow") {
-    const selectedDays = parts[1].split(",").map(Number).sort();
+  else if (type === 'dow') {
+    const selectedDays = parts[1].split(',').map(Number).sort();
     const currentDay = dt.weekday;
     let daysToAdd = -1;
     for (const day of selectedDays) {
@@ -1136,14 +1231,18 @@ async function detectTimezoneFromLocation(lat, lon) {
       return data.timeZone?.id || null;
     }
   } catch (err) {
-    console.error("[TZ_DETECT] Error:", err);
+    console.error('[TZ_DETECT] Error:', err);
   }
   return null;
 }
 
 async function getRemindersForMonth(userId, year, month) {
-  const start = DateTime.fromObject({ year, month, day: 1 }, { zone: "utc" }).startOf('month').toJSDate();
-  const end = DateTime.fromObject({ year, month, day: 1 }, { zone: "utc" }).endOf('month').toJSDate();
+  const start = DateTime.fromObject({ year, month, day: 1 }, { zone: 'utc' })
+    .startOf('month')
+    .toJSDate();
+  const end = DateTime.fromObject({ year, month, day: 1 }, { zone: 'utc' })
+    .endOf('month')
+    .toJSDate();
   const res = await pool.query(
     "SELECT EXTRACT(DAY FROM remind_at AT TIME ZONE COALESCE((SELECT timezone FROM user_settings WHERE user_id = $1), 'America/Chicago')) AS day FROM reminders WHERE user_id = $1 AND sent = FALSE AND remind_at >= $2 AND remind_at <= $3",
     [userId, start, end]
@@ -1157,13 +1256,13 @@ async function getRemindersForMonth(userId, year, month) {
 }
 
 function parseFlexibleDate(text, timeZone) {
-  let clean = text.trim().replace(/^reminder\s*/i, "");
+  let clean = text.trim().replace(/^reminder\s*/i, '');
   const cleanNoEmoji = clean
     .replace(
       /^(?:(?:\p{Extended_Pictographic})(?:\uFE0F|\u200D(?:\p{Extended_Pictographic}))*(?:\s|$))+/u,
-      "",
+      ''
     )
-    .replace(/^(?:[\p{Extended_Pictographic}\uFE0F\u200D]+\s*)+/u, "")
+    .replace(/^(?:[\p{Extended_Pictographic}\uFE0F\u200D]+\s*)+/u, '')
     .trim();
   let dateInput = cleanNoEmoji || clean;
   const nowInZone = DateTime.now().setZone(timeZone);
@@ -1171,14 +1270,14 @@ function parseFlexibleDate(text, timeZone) {
   let wantRepeatMenu = false;
   if (/\brepeat\b$/i.test(clean)) {
     wantRepeatMenu = true;
-    clean = clean.replace(/\brepeat\b$/i, "").trim();
+    clean = clean.replace(/\brepeat\b$/i, '').trim();
     dateInput =
       clean
         .replace(
           /^(?:(?:\p{Extended_Pictographic})(?:\uFE0F|\u200D(?:\p{Extended_Pictographic}))*(?:\s|$))+/u,
-          "",
+          ''
         )
-        .replace(/^(?:[\p{Extended_Pictographic}\uFE0F\u200D]+\s*)+/u, "")
+        .replace(/^(?:[\p{Extended_Pictographic}\uFE0F\u200D]+\s*)+/u, '')
         .trim() || clean;
   }
 
@@ -1206,8 +1305,8 @@ function parseFlexibleDate(text, timeZone) {
 
       if (dt <= nowInZone.plus({ seconds: 59 })) return null;
       const leadingEmoji = (clean.match(
-        /^(?:[\p{Extended_Pictographic}\uFE0F\u200D]+\s*)+/u,
-      ) || [""])[0];
+        /^(?:[\p{Extended_Pictographic}\uFE0F\u200D]+\s*)+/u
+      ) || [''])[0];
       const reminderText =
         match[2] && match[2].trim()
           ? `${leadingEmoji}${match[2].trim()}`.trim()
@@ -1228,7 +1327,7 @@ function parseFlexibleDate(text, timeZone) {
     nowInZone.day,
     nowInZone.hour,
     nowInZone.minute,
-    nowInZone.second,
+    nowInZone.second
   );
   const parsed = chrono.parse(dateInput, referenceDate, { forwardDate: true });
   if (parsed.length > 0) {
@@ -1237,24 +1336,24 @@ function parseFlexibleDate(text, timeZone) {
 
     let dt = nowInZone.set({
       hour:
-        parsedComp.get("hour") !== null
-          ? parsedComp.get("hour")
+        parsedComp.get('hour') !== null
+          ? parsedComp.get('hour')
           : nowInZone.hour,
-      minute: parsedComp.get("minute") !== null ? parsedComp.get("minute") : 0,
+      minute: parsedComp.get('minute') !== null ? parsedComp.get('minute') : 0,
       second: 0,
       millisecond: 0,
     });
 
-    if (parsedComp.get("day") !== null) {
+    if (parsedComp.get('day') !== null) {
       dt = dt.set({
-        year: parsedComp.get("year") || nowInZone.year,
-        month: parsedComp.get("month"),
-        day: parsedComp.get("day"),
+        year: parsedComp.get('year') || nowInZone.year,
+        month: parsedComp.get('month'),
+        day: parsedComp.get('day'),
       });
     }
 
     if (dt <= nowInZone) {
-      if (parsedComp.get("day") === null && parsedComp.get("month") === null) {
+      if (parsedComp.get('day') === null && parsedComp.get('month') === null) {
         dt = dt.plus({ days: 1 });
       } else {
         return null;
@@ -1271,11 +1370,11 @@ function parseFlexibleDate(text, timeZone) {
           reminderText =
             `${clean.slice(0, originalIdx)} ${clean.slice(originalIdx + dateText.length)}`.trim();
         } else {
-          reminderText = clean.replace(dateText, "").trim();
+          reminderText = clean.replace(dateText, '').trim();
         }
       }
     }
-    if (!reminderText) reminderText = "Reminder";
+    if (!reminderText) reminderText = 'Reminder';
 
     return {
       dt,
@@ -1290,34 +1389,32 @@ function parseFlexibleDate(text, timeZone) {
 
 async function getRemindersDashboardData(userId, userTz, passedName = null) {
   try {
-    let uName = passedName || "Your";
-    let titleName = uName === "Your" ? "Your" : `${uName}'s`;
+    let uName = passedName || 'Your';
+    let titleName = uName === 'Your' ? 'Your' : `${uName}'s`;
 
     const res = await pool.query(
-      "SELECT id, text, remind_at, recurring, total_occurrences FROM reminders WHERE user_id = $1 AND sent = FALSE ORDER BY remind_at ASC",
-      [userId],
+      'SELECT id, text, remind_at, recurring, total_occurrences FROM reminders WHERE user_id = $1 AND sent = FALSE ORDER BY remind_at ASC',
+      [userId]
     );
 
     if (res.rows.length === 0) {
       const richMessage = buildRichMessage([
         richHeading(`📋 ${titleName} Active Reminders`, 1),
-        richParagraph("📭 No active reminders found."),
+        richParagraph('📭 No active reminders found.'),
         richDivider(),
         richButtons([
-          richButton("➕ Create Reminder", "wizard_new", "success"),
-          richButton("📅 Calendar", "menu:calendar", "primary"),
+          richButton('➕ Create Reminder', 'wizard_new', 'success'),
+          richButton('📅 Calendar', 'menu:calendar', 'primary'),
         ]),
-        richButtons([
-          richButton("✖️ Close", "surface_close", "danger"),
-        ]),
+        richButtons([richButton('✖️ Close', 'surface_close', 'danger')]),
       ]);
       return {
         text: `📋 **${titleName} Active Reminders:**\n━━━━━━━━━━━━━━━━━━\n\n*📭 No active reminders found.*`,
         keyboard: {
           inline_keyboard: [
-            [{ text: "📭 No active reminders", callback_data: "noop" }],
-            [{ text: "➕ Create Reminder", callback_data: "wizard_new" }],
-            [{ text: "✖️ Close", callback_data: "surface_close" }],
+            [{ text: '📭 No active reminders', callback_data: 'noop' }],
+            [{ text: '➕ Create Reminder', callback_data: 'wizard_new' }],
+            [{ text: '✖️ Close', callback_data: 'surface_close' }],
           ],
         },
         richMessage,
@@ -1327,21 +1424,41 @@ async function getRemindersDashboardData(userId, userTz, passedName = null) {
     const reminderButtons = [];
     let lastDateLabel = null;
     for (const r of res.rows) {
-      const rDt = DateTime.fromJSDate(new Date(r.remind_at)).setZone(userTz || "America/Chicago");
-      const dateLabel = rDt.toFormat("EEEE, MMM d");
+      const rDt = DateTime.fromJSDate(new Date(r.remind_at)).setZone(
+        userTz || 'America/Chicago'
+      );
+      const dateLabel = rDt.toFormat('EEEE, MMM d');
       if (dateLabel !== lastDateLabel) {
-        const now = DateTime.now().setZone(userTz || "America/Chicago");
-        const isToday = rDt.hasSame(now, "day");
-        const isTomorrow = rDt.hasSame(now.plus({ days: 1 }), "day");
-        const header = isToday ? "📅 Today" : isTomorrow ? "📅 Tomorrow" : `📅 ${dateLabel}`;
-        reminderButtons.push({ type: "table", cells: [[{ text: header, align: "center", is_header: true }]], is_bordered: false });
+        const now = DateTime.now().setZone(userTz || 'America/Chicago');
+        const isToday = rDt.hasSame(now, 'day');
+        const isTomorrow = rDt.hasSame(now.plus({ days: 1 }), 'day');
+        const header = isToday
+          ? '📅 Today'
+          : isTomorrow
+            ? '📅 Tomorrow'
+            : `📅 ${dateLabel}`;
+        reminderButtons.push({
+          type: 'table',
+          cells: [[{ text: header, align: 'center', is_header: true }]],
+          is_bordered: false,
+        });
         reminderButtons.push(richDivider());
         lastDateLabel = dateLabel;
       }
-      let statusIcon = r.recurring ? (r.total_occurrences ? " | 🔢" : " | 🔄") : "";
-      reminderButtons.push(richButtons([
-        richButton(`${stripMarkdownLinks(r.text)}${statusIcon}`, `view:${r.id}`, "link"),
-      ]));
+      let statusIcon = r.recurring
+        ? r.total_occurrences
+          ? ' | 🔢'
+          : ' | 🔄'
+        : '';
+      reminderButtons.push(
+        richButtons([
+          richButton(
+            `${stripMarkdownLinks(r.text)}${statusIcon}`,
+            `view:${r.id}`,
+            'link'
+          ),
+        ])
+      );
     }
 
     const richMessage = buildRichMessage([
@@ -1350,23 +1467,28 @@ async function getRemindersDashboardData(userId, userTz, passedName = null) {
       ...reminderButtons,
       richDivider(),
       richButtons([
-        richButton("➕ New Reminder", "wizard_new", "success"),
-        richButton("📅 Calendar", "menu:calendar", "primary"),
+        richButton('➕ New Reminder', 'wizard_new', 'success'),
+        richButton('📅 Calendar', 'menu:calendar', 'primary'),
       ]),
-      richButtons([
-        richButton("✖️ Close", "surface_close", "danger"),
-      ]),
+      richButtons([richButton('✖️ Close', 'surface_close', 'danger')]),
     ]);
 
     let buttons = res.rows.map((r) => {
-      let statusIcon = r.recurring ? (r.total_occurrences ? " | 🔢" : " | 🔄") : "";
+      let statusIcon = r.recurring
+        ? r.total_occurrences
+          ? ' | 🔢'
+          : ' | 🔄'
+        : '';
       return [
-        { text: `${stripMarkdownLinks(r.text)}${statusIcon}`, callback_data: `view:${r.id}` },
+        {
+          text: `${stripMarkdownLinks(r.text)}${statusIcon}`,
+          callback_data: `view:${r.id}`,
+        },
       ];
     });
     buttons.push([
-      { text: "➕ New Reminder", callback_data: "wizard_new" },
-      { text: "✖️ Close", callback_data: "surface_close" },
+      { text: '➕ New Reminder', callback_data: 'wizard_new' },
+      { text: '✖️ Close', callback_data: 'surface_close' },
     ]);
 
     return {
@@ -1375,16 +1497,16 @@ async function getRemindersDashboardData(userId, userTz, passedName = null) {
       richMessage,
     };
   } catch (err) {
-    console.error("Error fetching reminders for dashboard:", err);
+    console.error('Error fetching reminders for dashboard:', err);
     const richMessage = buildRichMessage([
-      richHeading("⚠️ Error", 2),
-      richParagraph("Error loading reminders."),
+      richHeading('⚠️ Error', 2),
+      richParagraph('Error loading reminders.'),
     ]);
     return {
-      text: "⚠️ Error loading reminders.",
+      text: '⚠️ Error loading reminders.',
       keyboard: {
         inline_keyboard: [
-          [{ text: "⚠️ Error loading reminders", callback_data: "noop" }],
+          [{ text: '⚠️ Error loading reminders', callback_data: 'noop' }],
         ],
       },
       richMessage,
@@ -1397,7 +1519,7 @@ async function sendOrUpdateDashboard(
   text,
   markup,
   triggerMsgId = null,
-  richMessage = null,
+  richMessage = null
 ) {
   const existingMsgId = await getActiveMenuMsgId(userId);
   let targetMsgId = null;
@@ -1407,11 +1529,11 @@ async function sendOrUpdateDashboard(
     const activeEditSurface = pendingEditSurfacesBounded.get(userId);
     const ownedByWizard = messageIdsEqual(
       activeWizard?.surface?.messageId,
-      existingMsgId,
+      existingMsgId
     );
     const ownedByEdit = messageIdsEqual(
       activeEditSurface?.messageId,
-      existingMsgId,
+      existingMsgId
     );
     if (ownedByWizard || ownedByEdit) return;
     await deleteTelegramMessage(userId, existingMsgId);
@@ -1434,30 +1556,27 @@ async function sendOrUpdateDashboard(
     clearMenuTimer(timerKey);
     resetMenuTimer(timerKey, async (isCurrentTimer) => {
       try {
-        await expireDmMessage(
-          userId,
-          userId,
-          targetMsgId,
-          isCurrentTimer,
-        );
+        await expireDmMessage(userId, userId, targetMsgId, isCurrentTimer);
         console.log(`[TIMER] DM dashboard message deleted: ${targetMsgId}`);
       } catch (err) {
-        console.error("Failed to auto-collapse DM dashboard:", err);
+        console.error('Failed to auto-collapse DM dashboard:', err);
       }
     });
-    console.log(`[TIMER] DM dashboard timer set for user ${userId}, msg ${targetMsgId}`);
+    console.log(
+      `[TIMER] DM dashboard timer set for user ${userId}, msg ${targetMsgId}`
+    );
   }
 }
 
-app.post("/webhook", async (req, res) => {
+app.post('/webhook', async (req, res) => {
   if (
     process.env.WEBHOOK_SECRET &&
-    req.headers["x-telegram-bot-api-secret-token"] !==
+    req.headers['x-telegram-bot-api-secret-token'] !==
       process.env.WEBHOOK_SECRET
   ) {
     return res.sendStatus(403);
   }
-  if (!checkRateLimit("webhook", 100, 1000)) {
+  if (!checkRateLimit('webhook', 100, 1000)) {
     return res.sendStatus(429);
   }
   try {
@@ -1468,7 +1587,13 @@ app.post("/webhook", async (req, res) => {
       chosen_inline_result: chosenResult,
     } = req.body;
 
-    const updateType = message ? "message" : callbackQuery ? "callback" : inlineQuery ? "inline" : "other";
+    const updateType = message
+      ? 'message'
+      : callbackQuery
+        ? 'callback'
+        : inlineQuery
+          ? 'inline'
+          : 'other';
     console.log(`[WEBHOOK] ${updateType} received`);
 
     let userId = null;
@@ -1501,16 +1626,35 @@ app.post("/webhook", async (req, res) => {
 
       if (wizardStateBounded.has(userId)) {
         const state = wizardStateBounded.get(userId);
-        console.log("[WIZARD] state:", JSON.stringify({step: state.step, iMsgId: state.iMsgId, hasSurface: !!state.surface}));
+        console.log(
+          '[WIZARD] state:',
+          JSON.stringify({
+            step: state.step,
+            iMsgId: state.iMsgId,
+            hasSurface: !!state.surface,
+          })
+        );
         resetWizardTimer(userId, state);
         if (state.surface?.chatId !== chatId && !state.iMsgId) {
           return res.sendStatus(200);
         }
 
-        if (state.surface && state.surface.chatId !== userId && !state.surface.ephemeral) {
-          const sent = await sendRichMessage(userId, buildRichMessage([
-            richParagraph([{ type: "bold", text: [{ type: "subscript", text: "📝 Wizard moved to DM" }] }]),
-          ]));
+        if (
+          state.surface &&
+          state.surface.chatId !== userId &&
+          !state.surface.ephemeral
+        ) {
+          const sent = await sendRichMessage(
+            userId,
+            buildRichMessage([
+              richParagraph([
+                {
+                  type: 'bold',
+                  text: [{ type: 'subscript', text: '📝 Wizard moved to DM' }],
+                },
+              ]),
+            ])
+          );
           if (sent) {
             state.surface = surfaceFromTelegramMessage(sent, userId);
             if (state.surface) state.surface.richContent = true;
@@ -1522,9 +1666,19 @@ app.post("/webhook", async (req, res) => {
         await removeUserInput(message, userId);
         if (state.step === 1) {
           state.title = text;
+          if (state.editingField) {
+            delete state.prefillDate;
+            state.editingField = null;
+            state.step = 5;
+            wizardStateBounded.set(userId, state);
+            await editWizardRich(state, buildWizardReviewRich(state));
+            return res.sendStatus(200);
+          }
           if (state.prefillDate) {
             const userTz = await getUserTimezone(userId);
-            let prefillDt = DateTime.fromJSDate(state.prefillDate).setZone(userTz).set({ hour: 9, minute: 0, second: 0 });
+            let prefillDt = DateTime.fromJSDate(state.prefillDate)
+              .setZone(userTz)
+              .set({ hour: 9, minute: 0, second: 0 });
             if (prefillDt <= DateTime.now().setZone(userTz)) {
               prefillDt = prefillDt.plus({ days: 1 });
             }
@@ -1543,14 +1697,19 @@ app.post("/webhook", async (req, res) => {
             state.step = 2;
             wizardStateBounded.set(userId, state);
             if (state.surface) {
-              await editRichSurface(state.surface, buildRichMessage([
-                richHeading("⏰ When should this remind you?", 1),
-                richParagraph("Examples:\n• tomorrow 5pm\n• in 2 hours 30 minutes\n• Aug 12 8am\n• daily 9am (with repeat)"),
-                richDivider(),
-                richButtons([
-                  richButton("❌ Cancel", "wizard_cancel", "danger"),
-                ]),
-              ]));
+              await editRichSurface(
+                state.surface,
+                buildRichMessage([
+                  richHeading('⏰ When should this remind you?', 1),
+                  richParagraph(
+                    'Examples:\n• tomorrow 5pm\n• in 2 hours 30 minutes\n• Aug 12 8am\n• daily 9am (with repeat)'
+                  ),
+                  richDivider(),
+                  richButtons([
+                    richButton('❌ Cancel', 'wizard_cancel', 'danger'),
+                  ]),
+                ])
+              );
             }
           }
           return res.sendStatus(200);
@@ -1559,18 +1718,30 @@ app.post("/webhook", async (req, res) => {
           const parsed2 = parseFlexibleDate(text, userTz2);
           if (!parsed2) {
             if (state.surface) {
-              await editRichSurface(state.surface, buildRichMessage([
-                richHeading("⚠️ Could not parse the time", 2),
-                richParagraph("Please try again:\n• tomorrow 5pm\n• in 2h 30m\n• Aug 12 8am"),
-                richDivider(),
-                richButtons([
-                  richButton("❌ Cancel", "wizard_cancel", "danger"),
-                ]),
-              ]));
+              await editRichSurface(
+                state.surface,
+                buildRichMessage([
+                  richHeading('⚠️ Could not parse the time', 2),
+                  richParagraph(
+                    'Please try again:\n• tomorrow 5pm\n• in 2h 30m\n• Aug 12 8am'
+                  ),
+                  richDivider(),
+                  richButtons([
+                    richButton('❌ Cancel', 'wizard_cancel', 'danger'),
+                  ]),
+                ])
+              );
             }
             return res.sendStatus(200);
           }
           state.time = parsed2;
+          if (state.editingField) {
+            state.editingField = null;
+            state.step = 5;
+            wizardStateBounded.set(userId, state);
+            await editWizardRich(state, buildWizardReviewRich(state));
+            return res.sendStatus(200);
+          }
           state.step = 3;
           wizardStateBounded.set(userId, state);
           if (state.surface) {
@@ -1578,68 +1749,92 @@ app.post("/webhook", async (req, res) => {
           }
           return res.sendStatus(200);
         } else if (state.step === 3.5) {
-          const smartMatch = text.toLowerCase().match(
-            /(?:every\s+)?(\d+)\s*(minutes?|mins?|hours?|hrs?|days?|weeks?|months?|years?)/i,
-          );
+          const smartMatch = text
+            .toLowerCase()
+            .match(
+              /(?:every\s+)?(\d+)\s*(minutes?|mins?|hours?|hrs?|days?|weeks?|months?|years?)/i
+            );
           if (!smartMatch) {
             if (state.surface) {
-              await editRichSurface(state.surface, buildRichMessage([
-                richHeading("⚠️ Couldn't understand that", 2),
-                richParagraph("Try something like:\n• every 56 hours\n• every 2 days\n• every 90 minutes"),
-                richDivider(),
-                richButtons([
-                  richButton("⬅️ Back", "wizard_back:repeat", "link"),
-                ]),
-                richButtons([
-                  richButton("❌ Cancel", "wizard_cancel", "danger"),
-                ]),
-              ]));
+              await editRichSurface(
+                state.surface,
+                buildRichMessage([
+                  richHeading("⚠️ Couldn't understand that", 2),
+                  richParagraph(
+                    'Try something like:\n• every 56 hours\n• every 2 days\n• every 90 minutes'
+                  ),
+                  richDivider(),
+                  richButtons([
+                    richButton('⬅️ Back', 'wizard_back:repeat', 'link'),
+                  ]),
+                  richButtons([
+                    richButton('❌ Cancel', 'wizard_cancel', 'danger'),
+                  ]),
+                ])
+              );
             }
             return res.sendStatus(200);
           }
           const num = parseInt(smartMatch[1], 10);
           const unitRaw = smartMatch[2].toLowerCase();
           let unit, unitLabel;
-          if (unitRaw.startsWith("min")) {
-            unit = "minutes";
-            unitLabel = "Minutes";
-          } else if (unitRaw.startsWith("hour") || unitRaw.startsWith("hr")) {
-            unit = "hours";
-            unitLabel = "Hours";
-          } else if (unitRaw.startsWith("day")) {
-            unit = "days";
-            unitLabel = "Days";
-          } else if (unitRaw.startsWith("week")) {
-            unit = "weeks";
-            unitLabel = "Weeks";
-          } else if (unitRaw.startsWith("month")) {
-            unit = "months";
-            unitLabel = "Months";
-          } else if (unitRaw.startsWith("year")) {
-            unit = "years";
-            unitLabel = "Years";
+          if (unitRaw.startsWith('min')) {
+            unit = 'minutes';
+            unitLabel = 'Minutes';
+          } else if (unitRaw.startsWith('hour') || unitRaw.startsWith('hr')) {
+            unit = 'hours';
+            unitLabel = 'Hours';
+          } else if (unitRaw.startsWith('day')) {
+            unit = 'days';
+            unitLabel = 'Days';
+          } else if (unitRaw.startsWith('week')) {
+            unit = 'weeks';
+            unitLabel = 'Weeks';
+          } else if (unitRaw.startsWith('month')) {
+            unit = 'months';
+            unitLabel = 'Months';
+          } else if (unitRaw.startsWith('year')) {
+            unit = 'years';
+            unitLabel = 'Years';
           }
           state.repeat = `${unit}:${num}`;
           state.repeatText = `Every ${num} ${unitLabel}`;
           state.totalOccurrences = null;
           state.step = 3.75;
           wizardStateBounded.set(userId, state);
-          await editWizardRich(state, buildWizardRepeatCountRich());
+          await editWizardRich(
+            state,
+            buildWizardRepeatCountRich(
+              state.editingField ? 'wizard_edit_back' : null
+            )
+          );
           return res.sendStatus(200);
         } else if (state.step === 3.75) {
           const count = parseRepeatCount(text);
           if (count === null) {
-            await editWizardRich(state, buildRichMessage([
-              richHeading("⚠️ Invalid repeat count", 2),
-              richParagraph("Enter a whole number between 1 and 2,147,483,647."),
-              richDivider(),
-              richButtons([
-                richButton("❌ Cancel", "wizard_cancel", "danger"),
-              ]),
-            ]));
+            await editWizardRich(
+              state,
+              buildRichMessage([
+                richHeading('⚠️ Invalid repeat count', 2),
+                richParagraph(
+                  'Enter a whole number between 1 and 2,147,483,647.'
+                ),
+                richDivider(),
+                richButtons([
+                  richButton('❌ Cancel', 'wizard_cancel', 'danger'),
+                ]),
+              ])
+            );
             return res.sendStatus(200);
           }
           state.totalOccurrences = count;
+          if (state.editingField) {
+            state.editingField = null;
+            state.step = 5;
+            wizardStateBounded.set(userId, state);
+            await editWizardRich(state, buildWizardReviewRich(state));
+            return res.sendStatus(200);
+          }
           state.step = 4;
           wizardStateBounded.set(userId, state);
           await editWizardRich(state, buildWizardEarlyWarningRich());
@@ -1648,18 +1843,24 @@ app.post("/webhook", async (req, res) => {
           const mins = parseInt(text, 10);
           if (isNaN(mins) || mins < 0) {
             if (state.surface) {
-              await editRichSurface(state.surface, buildRichMessage([
-                richHeading("⚠️ Invalid number", 2),
-                richParagraph("Please enter a valid number of minutes (0 = no warning):"),
-                richDivider(),
-                richButtons([
-                  richButton("❌ Cancel", "wizard_cancel", "danger"),
-                ]),
-              ]));
+              await editRichSurface(
+                state.surface,
+                buildRichMessage([
+                  richHeading('⚠️ Invalid number', 2),
+                  richParagraph(
+                    'Please enter a valid number of minutes (0 = no warning):'
+                  ),
+                  richDivider(),
+                  richButtons([
+                    richButton('❌ Cancel', 'wizard_cancel', 'danger'),
+                  ]),
+                ])
+              );
             }
             return res.sendStatus(200);
           }
           state.earlyWarning = mins === 0 ? null : mins;
+          state.editingField = null;
           state.step = 5;
           wizardStateBounded.set(userId, state);
           await editWizardRich(state, buildWizardReviewRich(state));
@@ -1679,15 +1880,15 @@ app.post("/webhook", async (req, res) => {
         if (activeEditSurface) {
           await editSurface(
             activeEditSurface,
-            "⚠️ Reminder text is too long\\. Please keep it under 500 characters\\.",
-            null,
+            '⚠️ Reminder text is too long\\. Please keep it under 500 characters\\.',
+            null
           );
         } else {
           await beginPrivateSurface(
             message,
             userId,
-            "⚠️ Reminder text is too long\\. Please keep it under 500 characters\\.",
-            null,
+            '⚠️ Reminder text is too long\\. Please keep it under 500 characters\\.',
+            null
           );
         }
         await removeUserInput(message, userId);
@@ -1695,7 +1896,7 @@ app.post("/webhook", async (req, res) => {
       }
       const pendingEdit = await getPendingEdit(userId);
       if (pendingEdit) {
-        const parts = pendingEdit.split(":");
+        const parts = pendingEdit.split(':');
         const field = parts[0];
         const reminderId = parts[1];
         const pendingSurface = activeEditSurface;
@@ -1703,108 +1904,120 @@ app.post("/webhook", async (req, res) => {
 
         await removeUserInput(message, userId);
 
-        if (field === "text") {
+        if (field === 'text') {
           await pool.query(
-            "UPDATE reminders SET text = $1 WHERE id = $2 AND user_id = $3",
-            [text, reminderId, userId],
+            'UPDATE reminders SET text = $1 WHERE id = $2 AND user_id = $3',
+            [text, reminderId, userId]
           );
-        } else if (field === "time") {
+        } else if (field === 'time') {
           const parsed = parseFlexibleDate(text, userTz);
           if (parsed) {
             await pool.query(
-              "UPDATE reminders SET remind_at = $1 WHERE id = $2 AND user_id = $3",
-              [parsed.date, reminderId, userId],
+              'UPDATE reminders SET remind_at = $1 WHERE id = $2 AND user_id = $3',
+              [parsed.date, reminderId, userId]
             );
           } else {
             if (pendingSurface) {
               await editRichSurface(
                 pendingSurface,
                 buildRichMessage([
-                  richHeading("⚠️ Could not parse time", 5),
-                  richParagraph("Please try again or tap Cancel."),
+                  richHeading('⚠️ Could not parse time', 5),
+                  richParagraph('Please try again or tap Cancel.'),
                   richDivider(),
                   richButtons([
-                    richButton("⬅️ Cancel", `edit:${reminderId}`, "danger"),
+                    richButton('⬅️ Cancel', `edit:${reminderId}`, 'danger'),
                   ]),
-                ]),
+                ])
               );
             } else {
               await sendTelegramMessage(
                 userId,
-              "⚠️ Could not parse new time. Please try again or tap Cancel.",
+                '⚠️ Could not parse new time. Please try again or tap Cancel.',
                 null,
-                5000,
+                5000
               );
             }
             return res.sendStatus(200);
           }
-        } else if (field === "rec") {
+        } else if (field === 'rec') {
           const unit = parts[2];
           const num = parseInt(text.trim(), 10);
           if (!isNaN(num) && num > 0) {
             const recurringVal = `${unit}:${num}`;
             await pool.query(
-              "UPDATE reminders SET recurring = $1 WHERE id = $2 AND user_id = $3",
-              [recurringVal, reminderId, userId],
+              'UPDATE reminders SET recurring = $1 WHERE id = $2 AND user_id = $3',
+              [recurringVal, reminderId, userId]
             );
           } else {
             if (pendingSurface) {
               await editRichSurface(
                 pendingSurface,
                 buildRichMessage([
-                  richHeading("⚠️ Invalid number", 5),
-                  richParagraph("Please enter a positive whole number."),
+                  richHeading('⚠️ Invalid number', 5),
+                  richParagraph('Please enter a positive whole number.'),
                   richDivider(),
                   richButtons([
-                    richButton("⬅️ Cancel", `nummenu:${reminderId}:${unit}`, "danger"),
+                    richButton(
+                      '⬅️ Cancel',
+                      `nummenu:${reminderId}:${unit}`,
+                      'danger'
+                    ),
                   ]),
-                ]),
+                ])
               );
             }
             return res.sendStatus(200);
           }
-        } else if (field === "limit") {
+        } else if (field === 'limit') {
           const count = parseRepeatCount(text);
           if (count !== null) {
             await pool.query(
-              "UPDATE reminders SET total_occurrences = $1 WHERE id = $2 AND user_id = $3",
-              [count, reminderId, userId],
+              'UPDATE reminders SET total_occurrences = $1 WHERE id = $2 AND user_id = $3',
+              [count, reminderId, userId]
             );
           } else {
             if (pendingSurface) {
               await editRichSurface(
                 pendingSurface,
                 buildRichMessage([
-                  richHeading("⚠️ Invalid repeat count", 5),
-                  richParagraph("Enter a whole number between 1 and 2,147,483,647."),
+                  richHeading('⚠️ Invalid repeat count', 5),
+                  richParagraph(
+                    'Enter a whole number between 1 and 2,147,483,647.'
+                  ),
                   richDivider(),
                   richButtons([
-                    richButton("⬅️ Cancel", `limitmenu:${reminderId}`, "danger"),
+                    richButton(
+                      '⬅️ Cancel',
+                      `limitmenu:${reminderId}`,
+                      'danger'
+                    ),
                   ]),
-                ]),
+                ])
               );
             }
             return res.sendStatus(200);
           }
-        } else if (field === "early") {
+        } else if (field === 'early') {
           const mins = parseInt(text.trim(), 10);
           if (Number.isInteger(mins) && mins >= 0) {
             await pool.query(
-              "UPDATE reminders SET early_offset = $1, early_alert_sent = FALSE WHERE id = $2 AND user_id = $3",
-              [mins === 0 ? null : mins, reminderId, userId],
+              'UPDATE reminders SET early_offset = $1, early_alert_sent = FALSE WHERE id = $2 AND user_id = $3',
+              [mins === 0 ? null : mins, reminderId, userId]
             );
           } else {
             if (pendingSurface) {
               await editRichSurface(
                 pendingSurface,
                 buildRichMessage([
-                  richHeading("⚠️ Invalid number", 5),
-                  richParagraph("Enter a whole number of minutes, or 0 to turn the warning off."),
+                  richHeading('⚠️ Invalid number', 5),
+                  richParagraph(
+                    'Enter a whole number of minutes, or 0 to turn the warning off.'
+                  ),
                   richDivider(),
                   richButtons([
-                    richButton("⬅️ Cancel", `edit:${reminderId}`, "danger"),
+                    richButton('⬅️ Cancel', `edit:${reminderId}`, 'danger'),
                   ]),
-                ]),
+                ])
               );
             }
             return res.sendStatus(200);
@@ -1816,23 +2029,31 @@ app.post("/webhook", async (req, res) => {
         const dashData = await getRemindersDashboardData(
           userId,
           userTz,
-          userFirstName,
+          userFirstName
         );
         if (pendingSurface) {
           await editRichSurface(pendingSurface, dashData.richMessage);
         } else {
-          await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard, null, dashData.richMessage);
+          await sendOrUpdateDashboard(
+            userId,
+            dashData.text,
+            dashData.keyboard,
+            null,
+            dashData.richMessage
+          );
         }
         return res.sendStatus(200);
       }
 
-      if (
-        text.toLowerCase() === "view"
-      ) {
+      if (text.toLowerCase() === 'view') {
         const existingTz = await getUserTimezone(userId);
         if (existingTz) {
           const dashData = await getRemindersDashboardData(userId, existingTz);
-          const surface = await beginRichSurface(message, userId, dashData.richMessage);
+          const surface = await beginRichSurface(
+            message,
+            userId,
+            dashData.richMessage
+          );
           if (surface) {
             await removeUserInput(message, userId);
             const timerKey = `dm_dashboard_${userId}`;
@@ -1841,46 +2062,42 @@ app.post("/webhook", async (req, res) => {
               try {
                 await expireDmSurface(userId, surface, isCurrentTimer);
               } catch (err) {
-                console.error("Failed to auto-delete DM reminders:", err);
+                console.error('Failed to auto-delete DM reminders:', err);
               }
             });
           }
         } else {
           const tzRich = buildRichMessage([
-            richHeading("👋 Welcome!", 1),
-            richParagraph("Please select your primary timezone:"),
+            richHeading('👋 Welcome!', 1),
+            richParagraph('Please select your primary timezone:'),
             richDivider(),
             richButtons([
-              richButton("🇺🇸 Eastern", "settz:America/New_York", "primary"),
-              richButton("🇺🇸 Central", "settz:America/Chicago", "primary"),
+              richButton('🇺🇸 Eastern', 'settz:America/New_York', 'primary'),
+              richButton('🇺🇸 Central', 'settz:America/Chicago', 'primary'),
             ]),
             richButtons([
-              richButton("🇺🇸 Mountain", "settz:America/Denver", "primary"),
-              richButton("🇺🇸 Pacific", "settz:America/Los_Angeles", "primary"),
+              richButton('🇺🇸 Mountain', 'settz:America/Denver', 'primary'),
+              richButton('🇺🇸 Pacific', 'settz:America/Los_Angeles', 'primary'),
             ]),
             richButtons([
-              richButton("🇬🇧 London", "settz:Europe/London", "primary"),
-              richButton("🇪🇺 Central Europe", "settz:Europe/Paris", "primary"),
+              richButton('🇬🇧 London', 'settz:Europe/London', 'primary'),
+              richButton('🇪🇺 Central Europe', 'settz:Europe/Paris', 'primary'),
             ]),
-            richButtons([
-              richButton("🌐 UTC", "settz:UTC", "link"),
-            ]),
+            richButtons([richButton('🌐 UTC', 'settz:UTC', 'link')]),
           ]);
           const surface = await beginRichSurface(message, userId, tzRich);
           if (surface) await removeUserInput(message, userId);
         }
         return res.sendStatus(200);
-      } else if (text.toLowerCase() === "create") {
-        console.log("[WIZARD] Wizard triggered for user:", userId);
+      } else if (text.toLowerCase() === 'create') {
+        console.log('[WIZARD] Wizard triggered for user:', userId);
         wizardStateBounded.delete(userId);
         clearWizardTimer(userId);
         const openingRich = buildRichMessage([
-          richHeading("🪄 Initiating reminder protocol...", 1),
-          richParagraph("What should I remind you about?"),
+          richHeading('🪄 Initiating reminder protocol...', 1),
+          richParagraph('What should I remind you about?'),
           richDivider(),
-          richButtons([
-            richButton("❌ Abort", "wizard_cancel", "danger"),
-          ]),
+          richButtons([richButton('❌ Abort', 'wizard_cancel', 'danger')]),
         ]);
         let surface;
         if (isGroupChat(message.chat)) {
@@ -1894,26 +2111,34 @@ app.post("/webhook", async (req, res) => {
         }
 
         if (!surface) return res.sendStatus(200);
-        const wizState = { step: 1, surface, originalChatId: isGroupChat(message.chat) ? userId : chatId };
+        const wizState = {
+          step: 1,
+          surface,
+          originalChatId: isGroupChat(message.chat) ? userId : chatId,
+        };
         wizardStateBounded.set(userId, wizState);
         resetWizardTimer(userId, wizState);
         await removeUserInput(message, userId);
         return res.sendStatus(200);
-      } else if (text.toLowerCase() === "/help") {
+      } else if (text.toLowerCase() === '/help') {
         const helpRich = buildRichMessage([
-          richHeading("🤖 Bot Commands & Usage", 1),
+          richHeading('🤖 Bot Commands & Usage', 1),
           richDivider(),
-          richParagraph("/start — Welcome message + timezone selection"),
-          richParagraph("create / create reminder — Create a reminder step-by-step"),
-          richParagraph("/reminders — Show your active reminders"),
-          richParagraph("/calendar — View reminders in calendar"),
+          richParagraph('/start — Welcome message + timezone selection'),
+          richParagraph(
+            'create / create reminder — Create a reminder step-by-step'
+          ),
+          richParagraph('/reminders — Show your active reminders'),
+          richParagraph('/calendar — View reminders in calendar'),
           richDivider(),
-          richParagraph("Or just type a natural reminder like:\nreminder tomorrow 5pm buy milk"),
+          richParagraph(
+            'Or just type a natural reminder like:\nreminder tomorrow 5pm buy milk'
+          ),
         ]);
         const surface = await beginRichSurface(message, userId, helpRich);
         if (surface) await removeUserInput(message, userId);
         return res.sendStatus(200);
-      } else if (text.toLowerCase() === "/cancel") {
+      } else if (text.toLowerCase() === '/cancel') {
         const state = wizardStateBounded.get(userId);
         const pendingSurface = pendingEditSurfacesBounded.get(userId);
         wizardStateBounded.delete(userId);
@@ -1924,27 +2149,34 @@ app.post("/webhook", async (req, res) => {
         if (state?.surface || pendingSurface) {
           await editSurface(
             state?.surface || pendingSurface,
-            "✅ Operation cancelled\\. No changes were saved\\.",
-            null,
+            '✅ Operation cancelled\\. No changes were saved\\.',
+            null
           );
         } else {
           await beginPrivateSurface(
             message,
             userId,
-            "✅ Operation cancelled\\. No changes were saved\\.",
-            null,
+            '✅ Operation cancelled\\. No changes were saved\\.',
+            null
           );
         }
         await removeUserInput(message, userId);
         return res.sendStatus(200);
-      } else if (text.toLowerCase() === "/calendar" || text.toLowerCase() === "calendar") {
+      } else if (
+        text.toLowerCase() === '/calendar' ||
+        text.toLowerCase() === 'calendar'
+      ) {
         const calUserTz = await getUserTimezone(userId);
-        const now = DateTime.now().setZone(calUserTz || "America/Chicago");
-        const remindersOnDay = await getRemindersForMonth(userId, now.year, now.month);
+        const now = DateTime.now().setZone(calUserTz || 'America/Chicago');
+        const remindersOnDay = await getRemindersForMonth(
+          userId,
+          now.year,
+          now.month
+        );
         const cal = buildCalendar(now.year, now.month, remindersOnDay);
         const calRich = buildRichMessage([
           richHeading(`📅 ${cal.monthName}`, 1),
-          richParagraph("Tap a day to see reminders:"),
+          richParagraph('Tap a day to see reminders:'),
           richDivider(),
           ...cal.richBlocks,
         ]);
@@ -1957,7 +2189,7 @@ app.post("/webhook", async (req, res) => {
             try {
               await expireDmSurface(userId, surface, isCurrentTimer);
             } catch (err) {
-              console.error("Failed to auto-delete DM calendar:", err);
+              console.error('Failed to auto-delete DM calendar:', err);
             }
           });
         }
@@ -1966,7 +2198,10 @@ app.post("/webhook", async (req, res) => {
 
       if (message.location) {
         const { latitude, longitude } = message.location;
-        const detectedTz = await detectTimezoneFromLocation(latitude, longitude);
+        const detectedTz = await detectTimezoneFromLocation(
+          latitude,
+          longitude
+        );
         if (detectedTz) {
           await setUserTimezone(userId, detectedTz);
           await sendTelegramMessage(
@@ -1975,34 +2210,40 @@ app.post("/webhook", async (req, res) => {
             null,
             5000
           );
-          const dashData = await getRemindersDashboardData(userId, detectedTz, userFirstName);
-          await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard, null, dashData.richMessage);
+          const dashData = await getRemindersDashboardData(
+            userId,
+            detectedTz,
+            userFirstName
+          );
+          await sendOrUpdateDashboard(
+            userId,
+            dashData.text,
+            dashData.keyboard,
+            null,
+            dashData.richMessage
+          );
         } else {
           await sendRichMessage(
             userId,
             buildRichMessage([
-              richHeading("⚠️ Could not detect timezone", 5),
-              richParagraph("Please select your timezone manually:"),
+              richHeading('⚠️ Could not detect timezone', 5),
+              richParagraph('Please select your timezone manually:'),
               richDivider(),
+              richButtons([richButton('📍 Auto-detect', 'tz_detect', 'link')]),
               richButtons([
-                richButton("📍 Auto-detect", "tz_detect", "link"),
+                richButton('🇺🇸 Eastern', 'settz:America/New_York', 'link'),
+                richButton('🇺🇸 Central', 'settz:America/Chicago', 'link'),
               ]),
               richButtons([
-                richButton("🇺🇸 Eastern", "settz:America/New_York", "link"),
-                richButton("🇺🇸 Central", "settz:America/Chicago", "link"),
+                richButton('🇺🇸 Mountain', 'settz:America/Denver', 'link'),
+                richButton('🇺🇸 Pacific', 'settz:America/Los_Angeles', 'link'),
               ]),
               richButtons([
-                richButton("🇺🇸 Mountain", "settz:America/Denver", "link"),
-                richButton("🇺🇸 Pacific", "settz:America/Los_Angeles", "link"),
+                richButton('🇬🇧 London', 'settz:Europe/London', 'link'),
+                richButton('🇪🇺 Europe', 'settz:Europe/Paris', 'link'),
               ]),
-              richButtons([
-                richButton("🇬🇧 London", "settz:Europe/London", "link"),
-                richButton("🇪🇺 Europe", "settz:Europe/Paris", "link"),
-              ]),
-              richButtons([
-                richButton("🌐 UTC", "settz:UTC", "link"),
-              ]),
-            ]),
+              richButtons([richButton('🌐 UTC', 'settz:UTC', 'link')]),
+            ])
           );
         }
         await removeUserInput(message, userId);
@@ -2013,39 +2254,37 @@ app.post("/webhook", async (req, res) => {
       const parsed = parseFlexibleDate(text, userTz);
 
       if (!parsed) {
-        if (typeof chatId !== "undefined" && typeof msgId !== "undefined") {
+        if (typeof chatId !== 'undefined' && typeof msgId !== 'undefined') {
           await deleteTelegramMessage(chatId, msgId);
         }
         await beginRichSurface(
           message,
           userId,
           buildRichMessage([
-            richHeading("⚠️ Could not understand that", 5),
-            richParagraph("Try something like:"),
+            richHeading('⚠️ Could not understand that', 5),
+            richParagraph('Try something like:'),
             richList([
-              richListItem("tomorrow 5pm buy milk"),
-              richListItem("in 2 hours call mom"),
-              richListItem("Aug 12 8am meeting"),
-              richListItem("daily 9am take vitamins"),
+              richListItem('tomorrow 5pm buy milk'),
+              richListItem('in 2 hours call mom'),
+              richListItem('Aug 12 8am meeting'),
+              richListItem('daily 9am take vitamins'),
             ]),
             richDivider(),
-            richButtons([
-              richButton("❌ Close", "surface_close", "danger"),
-            ]),
+            richButtons([richButton('❌ Close', 'surface_close', 'danger')]),
           ]),
-          null,
+          null
         );
         await removeUserInput(message, userId);
         return res.sendStatus(200);
       }
 
       if (parsed) {
-        if (typeof chatId !== "undefined" && typeof msgId !== "undefined") {
+        if (typeof chatId !== 'undefined' && typeof msgId !== 'undefined') {
           await deleteTelegramMessage(chatId, msgId);
         }
         const insertRes = await pool.query(
-          "INSERT INTO reminders (user_id, chat_id, text, remind_at) VALUES ($1, $2, $3, $4) RETURNING id",
-          [userId, chatId, parsed.reminderText, parsed.date],
+          'INSERT INTO reminders (user_id, chat_id, text, remind_at) VALUES ($1, $2, $3, $4) RETURNING id',
+          [userId, chatId, parsed.reminderText, parsed.date]
         );
         if (parsed.wantRepeatMenu) {
           const editKb = getEditMenuKeyboard(insertRes.rows[0].id, null, null);
@@ -2055,24 +2294,24 @@ app.post("/webhook", async (req, res) => {
             editKb,
             null,
             buildRichMessage([
-              richHeading("✏️ Editing Reminder", 1),
-              richParagraph("Select options below:"),
+              richHeading('✏️ Editing Reminder', 1),
+              richParagraph('Select options below:'),
               richDivider(),
               ...editKb.richBlocks,
-            ]),
+            ])
           );
         } else {
           const dashData = await getRemindersDashboardData(
             userId,
             userTz,
-            userFirstName,
+            userFirstName
           );
           await sendOrUpdateDashboard(
             userId,
             dashData.text,
             dashData.keyboard,
             msgId,
-            dashData.richMessage,
+            dashData.richMessage
           );
         }
       }
@@ -2085,7 +2324,7 @@ app.post("/webhook", async (req, res) => {
       const data = callbackQuery.data;
       const callbackSurface = surfaceFromTelegramMessage(
         callbackQuery.message,
-        userId,
+        userId
       );
       const editCallbackSurface = (text, markup = null) =>
         editSurface(callbackSurface, text, markup);
@@ -2097,12 +2336,23 @@ app.post("/webhook", async (req, res) => {
       if (inlineMsgId) {
         const owner = inlineOwnerMap.get(inlineMsgId);
         if (owner && owner !== userId) {
-          await answerCallbackQuery(callbackQuery.id, "⚠️ This button belongs to another user.", true);
+          await answerCallbackQuery(
+            callbackQuery.id,
+            '⚠️ This button belongs to another user.',
+            true
+          );
           return res.sendStatus(200);
         }
       }
 
-      console.log("[CALLBACK] data:", data, "inlineMsgId:", inlineMsgId, "hasMessage:", !!callbackQuery.message);
+      console.log(
+        '[CALLBACK] data:',
+        data,
+        'inlineMsgId:',
+        inlineMsgId,
+        'hasMessage:',
+        !!callbackQuery.message
+      );
       if (messageId && chatId) {
         const timerKey = `dm_dashboard_${userId}`;
         clearMenuTimer(timerKey);
@@ -2112,29 +2362,34 @@ app.post("/webhook", async (req, res) => {
             if (messageIdsEqual(activeWizard?.surface?.messageId, messageId)) {
               return;
             }
-            await expireDmMessage(
-              userId,
-              chatId,
-              messageId,
-              isCurrentTimer,
-            );
+            await expireDmMessage(userId, chatId, messageId, isCurrentTimer);
             console.log(`[TIMER] Callback DM message deleted: ${messageId}`);
           } catch (err) {
-            console.error("Failed to auto-delete DM message:", err);
+            console.error('Failed to auto-delete DM message:', err);
           }
         });
-        console.log(`[TIMER] Callback DM timer set for user ${userId}, msg ${messageId}`);
+        console.log(
+          `[TIMER] Callback DM timer set for user ${userId}, msg ${messageId}`
+        );
       }
       if (inlineMsgId) {
         const inlineTimerKey = `inline_${inlineMsgId}`;
         clearMenuTimer(inlineTimerKey);
         resetMenuTimer(inlineTimerKey, async () => {
           try {
-            await editInlineRichMessage(inlineMsgId, buildRichMessage([
-              richParagraph([{ type: "bold", text: [{ type: "subscript", text: "✅ Closed" }] }]),
-            ]));
+            await editInlineRichMessage(
+              inlineMsgId,
+              buildRichMessage([
+                richParagraph([
+                  {
+                    type: 'bold',
+                    text: [{ type: 'subscript', text: '✅ Closed' }],
+                  },
+                ]),
+              ])
+            );
           } catch (err) {
-            console.error("Failed to auto-collapse inline message:", err);
+            console.error('Failed to auto-collapse inline message:', err);
           }
         });
       }
@@ -2142,38 +2397,47 @@ app.post("/webhook", async (req, res) => {
       const activeWizard = wizardStateBounded.get(userId);
       if (activeWizard) resetWizardTimer(userId, activeWizard);
 
-      let userTz = (await getUserTimezone(userId)) || "America/Chicago";
+      let userTz = (await getUserTimezone(userId)) || 'America/Chicago';
 
       if (messageId) {
         await setActiveMenuMsgId(userId, messageId);
       }
 
-      if (data === "wizard_new") {
+      if (data === 'wizard_new') {
         if (inlineMsgId && !callbackSurface) {
           const wizKey = `wizard_create:${userId}`;
           if (!pendingWizardCreates.has(wizKey)) {
             pendingWizardCreates.add(wizKey);
             setTimeout(() => pendingWizardCreates.delete(wizKey), 10000);
-            await answerCallbackQuery(callbackQuery.id, "⚠️ Tap Create again within 10s to confirm", false);
+            await answerCallbackQuery(
+              callbackQuery.id,
+              '⚠️ Tap Create again within 10s to confirm',
+              false
+            );
             return res.sendStatus(200);
           }
           pendingWizardCreates.delete(wizKey);
         }
-        await answerCallbackQuery(callbackQuery.id, "Opening reminder wizard in your DMs...", false);
+        await answerCallbackQuery(
+          callbackQuery.id,
+          'Opening reminder wizard in your DMs...',
+          false
+        );
         let surface = callbackSurface;
-        const isInGroup = callbackQuery.message && isGroupChat(callbackQuery.message.chat);
+        const isInGroup =
+          callbackQuery.message && isGroupChat(callbackQuery.message.chat);
 
         if (isInGroup) {
           const sent = await sendRichMessage(
             userId,
             buildRichMessage([
               richHeading("📝 What's the reminder title?", 1),
-              richParagraph("Type the title for your reminder (e.g., buy milk, team meeting, pay bills):"),
+              richParagraph(
+                'Type the title for your reminder (e.g., buy milk, team meeting, pay bills):'
+              ),
               richDivider(),
-              richButtons([
-                richButton("❌ Cancel", "wizard_cancel", "danger"),
-              ]),
-            ]),
+              richButtons([richButton('❌ Cancel', 'wizard_cancel', 'danger')]),
+            ])
           );
           if (sent) {
             surface = surfaceFromTelegramMessage(sent, userId);
@@ -2184,49 +2448,94 @@ app.post("/webhook", async (req, res) => {
             userId,
             buildRichMessage([
               richHeading("📝 What's the reminder title?", 1),
-              richParagraph("Type the title for your reminder (e.g., buy milk, team meeting, pay bills):"),
+              richParagraph(
+                'Type the title for your reminder (e.g., buy milk, team meeting, pay bills):'
+              ),
               richDivider(),
-              richButtons([
-                richButton("❌ Cancel", "wizard_cancel", "danger"),
-              ]),
-            ]),
+              richButtons([richButton('❌ Cancel', 'wizard_cancel', 'danger')]),
+            ])
           );
           if (sent) {
             surface = surfaceFromTelegramMessage(sent, userId);
             if (surface) surface.richContent = true;
           }
         } else if (surface) {
-          await editRichSurface(surface, buildRichMessage([
-            richHeading("📝 What's the reminder title?", 1),
-            richParagraph("Type the title for your reminder (e.g., buy milk, team meeting, pay bills):"),
-            richDivider(),
-            richButtons([
-              richButton("❌ Cancel", "wizard_cancel", "danger"),
-            ]),
-          ]));
+          await editRichSurface(
+            surface,
+            buildRichMessage([
+              richHeading("📝 What's the reminder title?", 1),
+              richParagraph(
+                'Type the title for your reminder (e.g., buy milk, team meeting, pay bills):'
+              ),
+              richDivider(),
+              richButtons([richButton('❌ Cancel', 'wizard_cancel', 'danger')]),
+            ])
+          );
         }
         if (surface || inlineMsgId) {
-          const wizState = { step: 1, surface: surface || null, iMsgId: callbackQuery.inline_message_id || inlineMsgId || null, originalChatId: isGroupChat(callbackQuery.message?.chat) ? userId : chatId };
+          const wizState = {
+            step: 1,
+            surface: surface || null,
+            iMsgId: callbackQuery.inline_message_id || inlineMsgId || null,
+            originalChatId: isGroupChat(callbackQuery.message?.chat)
+              ? userId
+              : chatId,
+          };
           wizardStateBounded.set(userId, wizState);
           resetWizardTimer(userId, wizState, 120 * 1000);
         }
         if (inlineMsgId && !callbackSurface) {
-          await editInlineRichMessage(inlineMsgId, buildRichMessage([
-            richParagraph([{ type: "bold", text: [{ type: "subscript", text: "✅ Wizard opened in your DM!" }] }]),
-            richParagraph([{ type: "bold", text: [{ type: "subscript", text: "Type your reminder title there." }] }]),
-          ])).catch(() => {});
+          await editInlineRichMessage(
+            inlineMsgId,
+            buildRichMessage([
+              richParagraph([
+                {
+                  type: 'bold',
+                  text: [
+                    { type: 'subscript', text: '✅ Wizard opened in your DM!' },
+                  ],
+                },
+              ]),
+              richParagraph([
+                {
+                  type: 'bold',
+                  text: [
+                    {
+                      type: 'subscript',
+                      text: 'Type your reminder title there.',
+                    },
+                  ],
+                },
+              ]),
+            ])
+          ).catch(() => {});
           const inlineTimerKey = `inline_${inlineMsgId}`;
-          resetMenuTimer(inlineTimerKey, async () => {
-            try {
-              await editInlineRichMessage(inlineMsgId, buildRichMessage([
-                richParagraph([{ type: "bold", text: [{ type: "subscript", text: "✅ Closed" }] }]),
-              ]));
-            } catch (err) {
-              console.error("Failed to auto-collapse inline wizard message:", err);
-            }
-          }, 10000);
+          resetMenuTimer(
+            inlineTimerKey,
+            async () => {
+              try {
+                await editInlineRichMessage(
+                  inlineMsgId,
+                  buildRichMessage([
+                    richParagraph([
+                      {
+                        type: 'bold',
+                        text: [{ type: 'subscript', text: '✅ Closed' }],
+                      },
+                    ]),
+                  ])
+                );
+              } catch (err) {
+                console.error(
+                  'Failed to auto-collapse inline wizard message:',
+                  err
+                );
+              }
+            },
+            10000
+          );
         }
-      } else if (data === "surface_close") {
+      } else if (data === 'surface_close') {
         await answerCallbackQuery(callbackQuery.id);
         wizardStateBounded.delete(userId);
         clearWizardTimer(userId);
@@ -2237,62 +2546,142 @@ app.post("/webhook", async (req, res) => {
           await deleteEphemeralMessage(
             callbackSurface.chatId,
             userId,
-            callbackSurface.ephemeralMessageId,
+            callbackSurface.ephemeralMessageId
           );
         } else if (callbackSurface) {
           await deleteTelegramMessage(
             callbackSurface.chatId,
-            callbackSurface.messageId,
+            callbackSurface.messageId
           );
         } else if (callbackQuery.inline_message_id) {
           await editInlineRichMessage(
             callbackQuery.inline_message_id,
             buildRichMessage([
-              richParagraph([{ type: "bold", text: [{ type: "subscript", text: "✅ Closed" }] }]),
-            ]),
+              richParagraph([
+                {
+                  type: 'bold',
+                  text: [{ type: 'subscript', text: '✅ Closed' }],
+                },
+              ]),
+            ])
           );
         }
-      } else if (data.startsWith("wizard_back:")) {
+      } else if (data.startsWith('wizard_back:')) {
         await answerCallbackQuery(callbackQuery.id);
         const state = wizardStateBounded.get(userId);
         if (!state) return res.sendStatus(200);
-        const target = data.slice("wizard_back:".length);
-        if (target === "count") {
+        const target = data.slice('wizard_back:'.length);
+        const editBack = state.editingField ? 'wizard_edit_back' : null;
+        if (target === 'count') {
           state.step = 3.75;
         } else {
           state.step = 3;
           state.repeat = null;
-          state.repeatText = "None";
+          state.repeatText = 'None';
           state.totalOccurrences = null;
         }
         wizardStateBounded.set(userId, state);
         resetWizardTimer(userId, state);
         await editWizardRich(
           state,
-          target === "count"
-            ? buildWizardRepeatCountRich()
-            : buildWizardRepeatRich(),
+          target === 'count'
+            ? buildWizardRepeatCountRich(editBack)
+            : buildWizardRepeatRich(editBack)
         );
         return res.sendStatus(200);
-      } else if (data.startsWith("wizard_repeat:")) {
+      } else if (data.startsWith('wizard_edit:')) {
         await answerCallbackQuery(callbackQuery.id);
-        const parts = data.split(":");
+        const state = wizardStateBounded.get(userId);
+        if (!state) return res.sendStatus(200);
+        const field = data.slice('wizard_edit:'.length);
+        state.editingField = field;
+        if (field === 'title') {
+          state.step = 1;
+        } else if (field === 'time') {
+          state.step = 2;
+        } else if (field === 'repeat') {
+          state.step = 3;
+        } else if (field === 'warning') {
+          state.step = 4;
+        } else {
+          return res.sendStatus(200);
+        }
+        wizardStateBounded.set(userId, state);
+        resetWizardTimer(userId, state);
+        if (field === 'title') {
+          await editWizardRich(
+            state,
+            buildRichMessage([
+              richHeading('✏️ Edit the title', 1),
+              richParagraph('Type a new title for your reminder:'),
+              richDivider(),
+              richButtons([
+                richButton('⬅️ Back to Review', 'wizard_edit_back', 'link'),
+              ]),
+              richButtons([richButton('❌ Cancel', 'wizard_cancel', 'danger')]),
+            ])
+          );
+        } else if (field === 'time') {
+          await editWizardRich(
+            state,
+            buildRichMessage([
+              richHeading('✏️ Edit the time', 1),
+              richParagraph(
+                'Examples:\n• tomorrow 5pm\n• in 2 hours 30 minutes\n• Aug 12 8am'
+              ),
+              richDivider(),
+              richButtons([
+                richButton('⬅️ Back to Review', 'wizard_edit_back', 'link'),
+              ]),
+              richButtons([richButton('❌ Cancel', 'wizard_cancel', 'danger')]),
+            ])
+          );
+        } else if (field === 'repeat') {
+          await editWizardRich(
+            state,
+            buildWizardRepeatRich('wizard_edit_back')
+          );
+        } else if (field === 'warning') {
+          await editWizardRich(
+            state,
+            buildWizardEarlyWarningRich('wizard_edit_back')
+          );
+        }
+        return res.sendStatus(200);
+      } else if (data === 'wizard_edit_back') {
+        await answerCallbackQuery(callbackQuery.id);
+        const state = wizardStateBounded.get(userId);
+        if (!state) return res.sendStatus(200);
+        state.editingField = null;
+        state.step = 5;
+        wizardStateBounded.set(userId, state);
+        resetWizardTimer(userId, state);
+        await editWizardRich(state, buildWizardReviewRich(state));
+        return res.sendStatus(200);
+      } else if (data.startsWith('wizard_repeat:')) {
+        await answerCallbackQuery(callbackQuery.id);
+        const parts = data.split(':');
         const repeatType = parts[1];
-        if (repeatType === "smart") {
+        if (repeatType === 'smart') {
           const state = wizardStateBounded.get(userId);
           if (!state) return res.sendStatus(200);
           if (state.surface) {
-            await editRichSurface(state.surface, buildRichMessage([
-              richHeading("🧠 Enter repeat interval in natural language", 1),
-              richParagraph("Examples:\n• every 56 hours\n• every 2 days\n• every 90 minutes\n• every 3 weeks\n• every 6 months\n• every 2 years"),
-              richDivider(),
-              richButtons([
-                richButton("⬅️ Back", "wizard_back:repeat", "link"),
-              ]),
-              richButtons([
-                richButton("❌ Cancel", "wizard_cancel", "danger"),
-              ]),
-            ]));
+            await editRichSurface(
+              state.surface,
+              buildRichMessage([
+                richHeading('🧠 Enter repeat interval in natural language', 1),
+                richParagraph(
+                  'Examples:\n• every 56 hours\n• every 2 days\n• every 90 minutes\n• every 3 weeks\n• every 6 months\n• every 2 years'
+                ),
+                richDivider(),
+                richButtons([
+                  richButton('⬅️ Back', 'wizard_back:repeat', 'link'),
+                ]),
+                richButtons([
+                  richButton('❌ Cancel', 'wizard_cancel', 'danger'),
+                ]),
+              ])
+            );
           }
           state.step = 3.5;
           wizardStateBounded.set(userId, state);
@@ -2302,17 +2691,28 @@ app.post("/webhook", async (req, res) => {
         const state = wizardStateBounded.get(userId);
         if (state) {
           state.repeat =
-            repeatType === "none" ? null : `${repeatType}:${parts[2] || "1"}`;
+            repeatType === 'none' ? null : `${repeatType}:${parts[2] || '1'}`;
           state.repeatText =
-            repeatType === "none"
-              ? "None"
+            repeatType === 'none'
+              ? 'None'
               : repeatType.charAt(0).toUpperCase() + repeatType.slice(1);
           state.totalOccurrences = null;
-          if (state.repeat) {
+          if (state.editingField && !state.repeat) {
+            state.editingField = null;
+            state.step = 5;
+            wizardStateBounded.set(userId, state);
+            resetWizardTimer(userId, state);
+            await editWizardRich(state, buildWizardReviewRich(state));
+          } else if (state.repeat) {
             state.step = 3.75;
             wizardStateBounded.set(userId, state);
             resetWizardTimer(userId, state);
-            await editWizardRich(state, buildWizardRepeatCountRich());
+            await editWizardRich(
+              state,
+              buildWizardRepeatCountRich(
+                state.editingField ? 'wizard_edit_back' : null
+              )
+            );
           } else {
             state.step = 4;
             wizardStateBounded.set(userId, state);
@@ -2320,49 +2720,66 @@ app.post("/webhook", async (req, res) => {
             await editWizardRich(state, buildWizardEarlyWarningRich());
           }
         }
-      } else if (data.startsWith("wizard_count:")) {
-        const value = data.slice("wizard_count:".length);
+      } else if (data.startsWith('wizard_count:')) {
+        const value = data.slice('wizard_count:'.length);
         const state = wizardStateBounded.get(userId);
         if (!state || !state.repeat) return res.sendStatus(200);
 
-        if (value === "custom") {
+        if (value === 'custom') {
           state.step = 3.75;
           wizardStateBounded.set(userId, state);
           resetWizardTimer(userId, state);
           await answerCallbackQuery(callbackQuery.id);
-          await editWizardRich(state, buildWizardRepeatCountInputRich());
+          await editWizardRich(
+            state,
+            buildWizardRepeatCountInputRich(
+              state.editingField ? 'wizard_edit_back' : null
+            )
+          );
           return res.sendStatus(200);
         }
 
-        const count = value === "forever" ? null : parseRepeatCount(value);
-        if (value !== "forever" && count === null) {
-          await answerCallbackQuery(callbackQuery.id, "Invalid repeat count.", true);
+        const count = value === 'forever' ? null : parseRepeatCount(value);
+        if (value !== 'forever' && count === null) {
+          await answerCallbackQuery(
+            callbackQuery.id,
+            'Invalid repeat count.',
+            true
+          );
           return res.sendStatus(200);
         }
         state.totalOccurrences = count;
-        state.step = 4;
+        const countDoneEditing = !!state.editingField;
+        state.editingField = null;
+        state.step = countDoneEditing ? 5 : 4;
         wizardStateBounded.set(userId, state);
         resetWizardTimer(userId, state);
         await answerCallbackQuery(callbackQuery.id);
-        await editWizardRich(state, buildWizardEarlyWarningRich());
+        await editWizardRich(
+          state,
+          countDoneEditing
+            ? buildWizardReviewRich(state)
+            : buildWizardEarlyWarningRich()
+        );
         return res.sendStatus(200);
-      } else if (data.startsWith("wizard_early:")) {
+      } else if (data.startsWith('wizard_early:')) {
         await answerCallbackQuery(callbackQuery.id);
-        const mins = parseInt(data.split(":")[1], 10);
+        const mins = parseInt(data.split(':')[1], 10);
         const state = wizardStateBounded.get(userId);
         if (state) {
           state.earlyWarning = mins === 0 ? null : mins;
+          state.editingField = null;
           state.step = 5;
           wizardStateBounded.set(userId, state);
           resetWizardTimer(userId, state);
           await editWizardRich(state, buildWizardReviewRich(state));
         }
-      } else if (data === "wizard_confirm") {
+      } else if (data === 'wizard_confirm') {
         await answerCallbackQuery(callbackQuery.id);
         const state = wizardStateBounded.get(userId);
         if (state) {
           await pool.query(
-            "INSERT INTO reminders (user_id, chat_id, text, remind_at, recurring, total_occurrences, early_offset) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
+            'INSERT INTO reminders (user_id, chat_id, text, remind_at, recurring, total_occurrences, early_offset) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
             [
               userId,
               state.originalChatId,
@@ -2371,21 +2788,19 @@ app.post("/webhook", async (req, res) => {
               state.repeat,
               state.repeat ? (state.totalOccurrences ?? null) : null,
               state.earlyWarning,
-            ],
+            ]
           );
           wizardStateBounded.delete(userId);
           clearWizardTimer(userId);
           const createdRich = buildRichMessage([
-            richHeading("✅ Reminder Created!", 6),
+            richHeading('✅ Reminder Created!', 6),
             richTable(buildWizardReviewRows(state)),
             richDivider(),
             richButtons([
-              richButton("📋 View Reminders", "menu:list", "primary"),
-              richButton("➕ New Reminder", "wizard_new", "primary"),
+              richButton('📋 View Reminders', 'menu:list', 'primary'),
+              richButton('➕ New Reminder', 'wizard_new', 'primary'),
             ]),
-            richButtons([
-              richButton("✖️ Close", "surface_close", "danger"),
-            ]),
+            richButtons([richButton('✖️ Close', 'surface_close', 'danger')]),
           ]);
           if (state.surface) {
             await editRichSurface(state.surface, createdRich);
@@ -2397,35 +2812,44 @@ app.post("/webhook", async (req, res) => {
               clearMenuTimer(inlineTimerKey);
               resetMenuTimer(inlineTimerKey, async () => {
                 try {
-                  await editInlineRichMessage(state.iMsgId, buildRichMessage([
-                    richParagraph([{ type: "bold", text: [{ type: "subscript", text: "✅ Closed" }] }]),
-                  ]));
+                  await editInlineRichMessage(
+                    state.iMsgId,
+                    buildRichMessage([
+                      richParagraph([
+                        {
+                          type: 'bold',
+                          text: [{ type: 'subscript', text: '✅ Closed' }],
+                        },
+                      ]),
+                    ])
+                  );
                 } catch (err) {
-                  console.error("Failed to collapse inline wizard result:", err);
+                  console.error(
+                    'Failed to collapse inline wizard result:',
+                    err
+                  );
                 }
               });
             } catch (err) {
-              console.error("Failed to update inline wizard result:", err);
+              console.error('Failed to update inline wizard result:', err);
             }
           }
         }
-      } else if (data === "wizard_cancel") {
+      } else if (data === 'wizard_cancel') {
         const state = wizardStateBounded.get(userId);
         wizardStateBounded.delete(userId);
         clearWizardTimer(userId);
         clearUserPendingState(userId);
-        await answerCallbackQuery(callbackQuery.id, "Wizard cancelled.", false);
+        await answerCallbackQuery(callbackQuery.id, 'Wizard cancelled.', false);
         const cancelledRich = buildRichMessage([
-          richHeading("✅ Reminder cancelled", 6),
-          richParagraph("No reminder was created."),
+          richHeading('✅ Reminder cancelled', 6),
+          richParagraph('No reminder was created.'),
           richDivider(),
           richButtons([
-            richButton("📋 Back to List", "menu:list", "primary"),
-            richButton("➕ Create Reminder", "wizard_new", "primary"),
+            richButton('📋 Back to List', 'menu:list', 'primary'),
+            richButton('➕ Create Reminder', 'wizard_new', 'primary'),
           ]),
-          richButtons([
-            richButton("✖️ Close", "surface_close", "danger"),
-          ]),
+          richButtons([richButton('✖️ Close', 'surface_close', 'danger')]),
         ]);
         if (state?.surface) {
           await editRichSurface(state.surface, cancelledRich);
@@ -2436,39 +2860,51 @@ app.post("/webhook", async (req, res) => {
         } else if (inlineMsgId) {
           await editInlineRichMessage(inlineMsgId, cancelledRich);
         }
-      } else if (data === "tz_detect") {
-        await answerCallbackQuery(callbackQuery.id, "📍 Share your location to auto-detect timezone", false);
-        await editRichCallbackSurface(buildRichMessage([
-          richHeading("📍 Share Your Location", 1),
-          richParagraph("Tap the button below to share your location, and I'll auto-detect your timezone."),
-          richDivider(),
-          richButtons([
-            richButton("📍 Send Location", "tz_send_loc", "primary"),
-          ]),
-          richButtons([
-            richButton("⬅️ Back", "menu:list", "link"),
-          ]),
-        ]));
-      } else if (data === "tz_send_loc") {
+      } else if (data === 'tz_detect') {
+        await answerCallbackQuery(
+          callbackQuery.id,
+          '📍 Share your location to auto-detect timezone',
+          false
+        );
+        await editRichCallbackSurface(
+          buildRichMessage([
+            richHeading('📍 Share Your Location', 1),
+            richParagraph(
+              "Tap the button below to share your location, and I'll auto-detect your timezone."
+            ),
+            richDivider(),
+            richButtons([
+              richButton('📍 Send Location', 'tz_send_loc', 'primary'),
+            ]),
+            richButtons([richButton('⬅️ Back', 'menu:list', 'link')]),
+          ])
+        );
+      } else if (data === 'tz_send_loc') {
         await answerCallbackQuery(callbackQuery.id);
-        await editRichCallbackSurface(buildRichMessage([
-          richHeading("📍 Share Your Location", 1),
-          richParagraph("Use the attachment menu (📎) to share your location with the bot."),
-          richDivider(),
-          richButtons([
-            richButton("⬅️ Back", "menu:list", "link"),
-          ]),
-        ]));
-      } else if (data.startsWith("calprev:") || data.startsWith("calnext:")) {
+        await editRichCallbackSurface(
+          buildRichMessage([
+            richHeading('📍 Share Your Location', 1),
+            richParagraph(
+              'Use the attachment menu (📎) to share your location with the bot.'
+            ),
+            richDivider(),
+            richButtons([richButton('⬅️ Back', 'menu:list', 'link')]),
+          ])
+        );
+      } else if (data.startsWith('calprev:') || data.startsWith('calnext:')) {
         await answerCallbackQuery(callbackQuery.id);
-        const parts = data.split(":");
+        const parts = data.split(':');
         const calYear = parseInt(parts[1], 10);
         const calMonth = parseInt(parts[2], 10);
-        const remindersOnDay = await getRemindersForMonth(userId, calYear, calMonth);
+        const remindersOnDay = await getRemindersForMonth(
+          userId,
+          calYear,
+          calMonth
+        );
         const cal = buildCalendar(calYear, calMonth, remindersOnDay);
         const calRich = buildRichMessage([
           richHeading(`📅 ${cal.monthName}`, 1),
-          richParagraph("Tap a day to see reminders:"),
+          richParagraph('Tap a day to see reminders:'),
           richDivider(),
           ...cal.richBlocks,
         ]);
@@ -2477,87 +2913,147 @@ app.post("/webhook", async (req, res) => {
         } else if (callbackQuery.inline_message_id) {
           await editInlineRichMessage(callbackQuery.inline_message_id, calRich);
         }
-      } else if (data.startsWith("calday:")) {
+      } else if (data.startsWith('calday:')) {
         await answerCallbackQuery(callbackQuery.id);
-        const dateKey = data.replace("calday:", "");
-        const [calYear, calMonth, calDay] = dateKey.split("-").map(Number);
-        if (isNaN(calYear) || isNaN(calMonth) || isNaN(calDay) || calMonth < 1 || calMonth > 12 || calDay < 1 || calDay > 31) {
+        const dateKey = data.replace('calday:', '');
+        const [calYear, calMonth, calDay] = dateKey.split('-').map(Number);
+        if (
+          isNaN(calYear) ||
+          isNaN(calMonth) ||
+          isNaN(calDay) ||
+          calMonth < 1 ||
+          calMonth > 12 ||
+          calDay < 1 ||
+          calDay > 31
+        ) {
           return res.sendStatus(200);
         }
         const calDt = DateTime.local(calYear, calMonth, calDay);
         if (!calDt.isValid) return res.sendStatus(200);
-        const dayStart = calDt.startOf("day").toJSDate();
-        const dayEnd = calDt.endOf("day").toJSDate();
+        const dayStart = calDt.startOf('day').toJSDate();
+        const dayEnd = calDt.endOf('day').toJSDate();
         const res = await pool.query(
-          "SELECT id, text, remind_at, recurring FROM reminders WHERE user_id = $1 AND sent = FALSE AND remind_at >= $2 AND remind_at < $3 ORDER BY remind_at ASC",
+          'SELECT id, text, remind_at, recurring FROM reminders WHERE user_id = $1 AND sent = FALSE AND remind_at >= $2 AND remind_at < $3 ORDER BY remind_at ASC',
           [userId, dayStart, dayEnd]
         );
-        const dateLabel = DateTime.local(calYear, calMonth, calDay).toFormat("EEEE, MMM d");
-        const prevDay = DateTime.local(calYear, calMonth, calDay).minus({ days: 1 });
-        const nextDay = DateTime.local(calYear, calMonth, calDay).plus({ days: 1 });
-        const prevDayKey = prevDay.toFormat("yyyy-MM-dd");
-        const nextDayKey = nextDay.toFormat("yyyy-MM-dd");
+        const dateLabel = DateTime.local(calYear, calMonth, calDay).toFormat(
+          'EEEE, MMM d'
+        );
+        const prevDay = DateTime.local(calYear, calMonth, calDay).minus({
+          days: 1,
+        });
+        const nextDay = DateTime.local(calYear, calMonth, calDay).plus({
+          days: 1,
+        });
+        const prevDayKey = prevDay.toFormat('yyyy-MM-dd');
+        const nextDayKey = nextDay.toFormat('yyyy-MM-dd');
         if (res.rows.length === 0) {
           const dayRich = buildRichMessage([
             richHeading(`📅 ${dateLabel}`, 1),
             richButtons([
-              richButton(`◀️ ${prevDay.toFormat("MMM d")}`, `calday:${prevDayKey}`, "link"),
-              richButton(`${nextDay.toFormat("MMM d")} ▶️`, `calday:${nextDayKey}`, "link"),
+              richButton(
+                `◀️ ${prevDay.toFormat('MMM d')}`,
+                `calday:${prevDayKey}`,
+                'link'
+              ),
+              richButton(
+                `${nextDay.toFormat('MMM d')} ▶️`,
+                `calday:${nextDayKey}`,
+                'link'
+              ),
             ]),
-            richParagraph("No reminders scheduled for this day."),
+            richParagraph('No reminders scheduled for this day.'),
             richDivider(),
             richButtons([
-              richButton("➕ Add Reminder", `caladd:${dateKey}`, "success"),
+              richButton('➕ Add Reminder', `caladd:${dateKey}`, 'success'),
             ]),
             richButtons([
-              richButton("⬅️ Back to Calendar", `calback:${calYear}:${calMonth}`, "link"),
+              richButton(
+                '⬅️ Back to Calendar',
+                `calback:${calYear}:${calMonth}`,
+                'link'
+              ),
             ]),
           ]);
           if (callbackSurface) {
             await editRichCallbackSurface(dayRich);
           } else if (callbackQuery.inline_message_id) {
-            await editInlineRichMessage(callbackQuery.inline_message_id, dayRich);
+            await editInlineRichMessage(
+              callbackQuery.inline_message_id,
+              dayRich
+            );
           }
         } else {
           const blocks = [
             richHeading(`📅 ${dateLabel}`, 1),
             richButtons([
-              richButton(`◀️ ${prevDay.toFormat("MMM d")}`, `calday:${prevDayKey}`, "link"),
-              richButton(`${nextDay.toFormat("MMM d")} ▶️`, `calday:${nextDayKey}`, "link"),
+              richButton(
+                `◀️ ${prevDay.toFormat('MMM d')}`,
+                `calday:${prevDayKey}`,
+                'link'
+              ),
+              richButton(
+                `${nextDay.toFormat('MMM d')} ▶️`,
+                `calday:${nextDayKey}`,
+                'link'
+              ),
             ]),
             richHeading(`${res.rows.length} reminder(s):`, 1),
             richDivider(),
           ];
           for (const r of res.rows) {
-            const time = DateTime.fromJSDate(new Date(r.remind_at)).setZone(userTz || "America/Chicago").toFormat("h:mm a");
-            blocks.push(richButtons([
-              richButton(`${time} - ${stripMarkdownLinks(r.text)}`, `view:${r.id}`, "link"),
-            ]));
+            const time = DateTime.fromJSDate(new Date(r.remind_at))
+              .setZone(userTz || 'America/Chicago')
+              .toFormat('h:mm a');
+            blocks.push(
+              richButtons([
+                richButton(
+                  `${time} - ${stripMarkdownLinks(r.text)}`,
+                  `view:${r.id}`,
+                  'link'
+                ),
+              ])
+            );
           }
           blocks.push(richDivider());
-          blocks.push(richButtons([
-            richButton("➕ Add Reminder", `caladd:${dateKey}`, "success"),
-          ]));
-          blocks.push(richButtons([
-            richButton("⬅️ Back to Calendar", `calback:${calYear}:${calMonth}`, "link"),
-          ]));
+          blocks.push(
+            richButtons([
+              richButton('➕ Add Reminder', `caladd:${dateKey}`, 'success'),
+            ])
+          );
+          blocks.push(
+            richButtons([
+              richButton(
+                '⬅️ Back to Calendar',
+                `calback:${calYear}:${calMonth}`,
+                'link'
+              ),
+            ])
+          );
           const dayRich = buildRichMessage(blocks);
           if (callbackSurface) {
             await editRichCallbackSurface(dayRich);
           } else if (callbackQuery.inline_message_id) {
-            await editInlineRichMessage(callbackQuery.inline_message_id, dayRich);
+            await editInlineRichMessage(
+              callbackQuery.inline_message_id,
+              dayRich
+            );
           }
         }
-      } else if (data.startsWith("calback:")) {
+      } else if (data.startsWith('calback:')) {
         await answerCallbackQuery(callbackQuery.id);
-        const parts = data.split(":");
+        const parts = data.split(':');
         const calYear = parseInt(parts[1], 10);
         const calMonth = parseInt(parts[2], 10);
-        const remindersOnDay = await getRemindersForMonth(userId, calYear, calMonth);
+        const remindersOnDay = await getRemindersForMonth(
+          userId,
+          calYear,
+          calMonth
+        );
         const cal = buildCalendar(calYear, calMonth, remindersOnDay);
         const calRich = buildRichMessage([
           richHeading(`📅 ${cal.monthName}`, 1),
-          richParagraph("Tap a day to see reminders:"),
+          richParagraph('Tap a day to see reminders:'),
           richDivider(),
           ...cal.richBlocks,
         ]);
@@ -2566,29 +3062,47 @@ app.post("/webhook", async (req, res) => {
         } else if (callbackQuery.inline_message_id) {
           await editInlineRichMessage(callbackQuery.inline_message_id, calRich);
         }
-      } else if (data.startsWith("caladd:")) {
+      } else if (data.startsWith('caladd:')) {
         await answerCallbackQuery(callbackQuery.id);
-        const dateKey = data.replace("caladd:", "");
-        const [calYear, calMonth, calDay] = dateKey.split("-").map(Number);
-        if (isNaN(calYear) || isNaN(calMonth) || isNaN(calDay) || calMonth < 1 || calMonth > 12 || calDay < 1 || calDay > 31) {
+        const dateKey = data.replace('caladd:', '');
+        const [calYear, calMonth, calDay] = dateKey.split('-').map(Number);
+        if (
+          isNaN(calYear) ||
+          isNaN(calMonth) ||
+          isNaN(calDay) ||
+          calMonth < 1 ||
+          calMonth > 12 ||
+          calDay < 1 ||
+          calDay > 31
+        ) {
           return res.sendStatus(200);
         }
         const calDt = DateTime.local(calYear, calMonth, calDay);
         if (!calDt.isValid) return res.sendStatus(200);
-        const dateLabel = calDt.toFormat("EEEE, MMM d");
+        const dateLabel = calDt.toFormat('EEEE, MMM d');
 
         if (callbackSurface) {
-          const wizState = { step: 1, surface: callbackSurface, iMsgId: null, originalChatId: isGroupChat(callbackQuery.message?.chat) ? userId : chatId, prefillDate: calDt };
+          const wizState = {
+            step: 1,
+            surface: callbackSurface,
+            iMsgId: null,
+            originalChatId: isGroupChat(callbackQuery.message?.chat)
+              ? userId
+              : chatId,
+            prefillDate: calDt,
+          };
           wizardStateBounded.set(userId, wizState);
           resetWizardTimer(userId, wizState);
-          await editRichCallbackSurface(buildRichMessage([
-            richHeading("📝 What's the reminder title?", 1),
-            richParagraph(`Adding a reminder for ${dateLabel}`),
-            richDivider(),
-            richButtons([
-              richButton("❌ Cancel", `calday:${dateKey}`, "danger"),
-            ]),
-          ]));
+          await editRichCallbackSurface(
+            buildRichMessage([
+              richHeading("📝 What's the reminder title?", 1),
+              richParagraph(`Adding a reminder for ${dateLabel}`),
+              richDivider(),
+              richButtons([
+                richButton('❌ Cancel', `calday:${dateKey}`, 'danger'),
+              ]),
+            ])
+          );
         } else if (callbackQuery.inline_message_id) {
           const sent = await sendRichMessage(
             userId,
@@ -2597,25 +3111,50 @@ app.post("/webhook", async (req, res) => {
               richParagraph(`Adding a reminder for ${dateLabel}`),
               richDivider(),
               richButtons([
-                richButton("❌ Cancel", `calday:${dateKey}`, "danger"),
+                richButton('❌ Cancel', `calday:${dateKey}`, 'danger'),
               ]),
-            ]),
+            ])
           );
-          const surface = sent ? surfaceFromTelegramMessage(sent, userId) : null;
+          const surface = sent
+            ? surfaceFromTelegramMessage(sent, userId)
+            : null;
           if (surface) surface.richContent = true;
-          const wizState = { step: 1, surface: surface || null, iMsgId: callbackQuery.inline_message_id, originalChatId: null, prefillDate: calDt };
+          const wizState = {
+            step: 1,
+            surface: surface || null,
+            iMsgId: callbackQuery.inline_message_id,
+            originalChatId: null,
+            prefillDate: calDt,
+          };
           wizardStateBounded.set(userId, wizState);
           resetWizardTimer(userId, wizState, 120 * 1000);
           await editInlineRichMessage(
             callbackQuery.inline_message_id,
             buildRichMessage([
-              richParagraph([{ type: "bold", text: [{ type: "subscript", text: "✅ Wizard opened in your DM!" }] }]),
-              richParagraph([{ type: "bold", text: [{ type: "subscript", text: `Adding a reminder for ${dateLabel} — type the title in your DMs.` }] }]),
-            ]),
+              richParagraph([
+                {
+                  type: 'bold',
+                  text: [
+                    { type: 'subscript', text: '✅ Wizard opened in your DM!' },
+                  ],
+                },
+              ]),
+              richParagraph([
+                {
+                  type: 'bold',
+                  text: [
+                    {
+                      type: 'subscript',
+                      text: `Adding a reminder for ${dateLabel} — type the title in your DMs.`,
+                    },
+                  ],
+                },
+              ]),
+            ])
           );
         }
-      } else if (data.startsWith("settz:")) {
-        const tz = data.replace("settz:", "");
+      } else if (data.startsWith('settz:')) {
+        const tz = data.replace('settz:', '');
         if (!DateTime.now().setZone(tz).isValid) {
           return res.sendStatus(200);
         }
@@ -2623,21 +3162,27 @@ app.post("/webhook", async (req, res) => {
         await answerCallbackQuery(
           callbackQuery.id,
           `✅ Timezone saved: ${tz}`,
-          true,
+          true
         );
         const dashData = await getRemindersDashboardData(
           userId,
           tz,
-          userFirstName,
+          userFirstName
         );
         if (callbackSurface) {
           await editRichCallbackSurface(dashData.richMessage);
         } else {
-          await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard, null, dashData.richMessage);
+          await sendOrUpdateDashboard(
+            userId,
+            dashData.text,
+            dashData.keyboard,
+            null,
+            dashData.richMessage
+          );
         }
-      } else if (data === "noop") {
+      } else if (data === 'noop') {
         await answerCallbackQuery(callbackQuery.id);
-      } else if (data === "menu:list") {
+      } else if (data === 'menu:list') {
         await answerCallbackQuery(callbackQuery.id);
         await setPendingEdit(userId, null);
         pendingEditSurfacesBounded.delete(userId);
@@ -2647,18 +3192,26 @@ app.post("/webhook", async (req, res) => {
           clearMenuTimer(inlineTimerKey);
           resetMenuTimer(inlineTimerKey, async () => {
             try {
-              await editInlineRichMessage(inlineMsgId, buildRichMessage([
-                richParagraph([{ type: "bold", text: [{ type: "subscript", text: "✅ Closed" }] }]),
-              ]));
+              await editInlineRichMessage(
+                inlineMsgId,
+                buildRichMessage([
+                  richParagraph([
+                    {
+                      type: 'bold',
+                      text: [{ type: 'subscript', text: '✅ Closed' }],
+                    },
+                  ]),
+                ])
+              );
             } catch (err) {
-              console.error("Failed to auto-collapse inline list:", err);
+              console.error('Failed to auto-collapse inline list:', err);
             }
           });
         }
         const dashData = await getRemindersDashboardData(
           userId,
           userTz,
-          userFirstName,
+          userFirstName
         );
         pendingEditSurfacesBounded.delete(userId);
         if (callbackSurface) {
@@ -2666,16 +3219,26 @@ app.post("/webhook", async (req, res) => {
         } else if (inlineMsgId) {
           await editInlineRichMessage(inlineMsgId, dashData.richMessage);
         } else {
-          await sendOrUpdateDashboard(userId, dashData.text, null, null, dashData.richMessage);
+          await sendOrUpdateDashboard(
+            userId,
+            dashData.text,
+            null,
+            null,
+            dashData.richMessage
+          );
         }
-      } else if (data === "menu:calendar") {
+      } else if (data === 'menu:calendar') {
         await answerCallbackQuery(callbackQuery.id);
-        const now = DateTime.now().setZone(userTz || "America/Chicago");
-        const remindersOnDay = await getRemindersForMonth(userId, now.year, now.month);
+        const now = DateTime.now().setZone(userTz || 'America/Chicago');
+        const remindersOnDay = await getRemindersForMonth(
+          userId,
+          now.year,
+          now.month
+        );
         const cal = buildCalendar(now.year, now.month, remindersOnDay);
         const calRich = buildRichMessage([
           richHeading(`📅 ${cal.monthName}`, 1),
-          richParagraph("Tap a day to see reminders:"),
+          richParagraph('Tap a day to see reminders:'),
           richDivider(),
           ...cal.richBlocks,
         ]);
@@ -2687,56 +3250,90 @@ app.post("/webhook", async (req, res) => {
           await editInlineRichMessage(callbackQuery.inline_message_id, calRich);
           resetMenuTimer(inlineTimerKey, async () => {
             try {
-              await editInlineRichMessage(callbackQuery.inline_message_id, buildRichMessage([
-                richParagraph([{ type: "bold", text: [{ type: "subscript", text: "✅ Closed" }] }]),
-              ]));
+              await editInlineRichMessage(
+                callbackQuery.inline_message_id,
+                buildRichMessage([
+                  richParagraph([
+                    {
+                      type: 'bold',
+                      text: [{ type: 'subscript', text: '✅ Closed' }],
+                    },
+                  ]),
+                ])
+              );
             } catch (err) {
-              console.error("Failed to auto-collapse inline calendar:", err);
+              console.error('Failed to auto-collapse inline calendar:', err);
             }
           });
         }
-      } else if (data.startsWith("del:")) {
-        const reminderId = parseReminderId(data, "del:");
+      } else if (data.startsWith('del:')) {
+        const reminderId = parseReminderId(data, 'del:');
         if (!reminderId) return res.sendStatus(200);
         const key = `del_confirm:${userId}:${reminderId}`;
 
         if (pendingDeletes.has(key)) {
           pendingDeletes.delete(key);
           await pool.query(
-            "DELETE FROM reminders WHERE id = $1 AND user_id = $2",
-            [reminderId, userId],
+            'DELETE FROM reminders WHERE id = $1 AND user_id = $2',
+            [reminderId, userId]
           );
-          await answerCallbackQuery(callbackQuery.id, "🗑️ Reminder deleted!", false);
+          await answerCallbackQuery(
+            callbackQuery.id,
+            '🗑️ Reminder deleted!',
+            false
+          );
 
-          const dashData = await getRemindersDashboardData(userId, userTz, userFirstName);
+          const dashData = await getRemindersDashboardData(
+            userId,
+            userTz,
+            userFirstName
+          );
           if (callbackSurface) {
             await editRichCallbackSurface(dashData.richMessage);
           } else if (callbackQuery.inline_message_id) {
             const inlineTimerKey = `inline_${callbackQuery.inline_message_id}`;
             clearMenuTimer(inlineTimerKey);
-            await editInlineRichMessage(callbackQuery.inline_message_id, dashData.richMessage);
+            await editInlineRichMessage(
+              callbackQuery.inline_message_id,
+              dashData.richMessage
+            );
             resetMenuTimer(inlineTimerKey, async () => {
               try {
-                await editInlineRichMessage(callbackQuery.inline_message_id, buildRichMessage([
-                  richParagraph([{ type: "bold", text: [{ type: "subscript", text: "✅ Closed" }] }]),
-                ]));
+                await editInlineRichMessage(
+                  callbackQuery.inline_message_id,
+                  buildRichMessage([
+                    richParagraph([
+                      {
+                        type: 'bold',
+                        text: [{ type: 'subscript', text: '✅ Closed' }],
+                      },
+                    ]),
+                  ])
+                );
               } catch (err) {
-                console.error("Failed to auto-collapse inline list after delete:", err);
+                console.error(
+                  'Failed to auto-collapse inline list after delete:',
+                  err
+                );
               }
             });
           }
         } else {
           pendingDeletes.add(key);
           setTimeout(() => pendingDeletes.delete(key), 10000);
-          await answerCallbackQuery(callbackQuery.id, "⚠️ Tap Delete again within 10s to confirm", false);
+          await answerCallbackQuery(
+            callbackQuery.id,
+            '⚠️ Tap Delete again within 10s to confirm',
+            false
+          );
         }
         return res.sendStatus(200);
-      } else if (data.startsWith("view:")) {
-        const reminderId = parseReminderId(data, "view:");
+      } else if (data.startsWith('view:')) {
+        const reminderId = parseReminderId(data, 'view:');
         if (!reminderId) return res.sendStatus(200);
         const result = await pool.query(
-          "SELECT text, remind_at, recurring, total_occurrences, current_occurrence, early_offset FROM reminders WHERE id = $1 AND user_id = $2",
-          [reminderId, userId],
+          'SELECT text, remind_at, recurring, total_occurrences, current_occurrence, early_offset FROM reminders WHERE id = $1 AND user_id = $2',
+          [reminderId, userId]
         );
         if (result.rows.length > 0) {
           const r = result.rows[0];
@@ -2744,37 +3341,62 @@ app.post("/webhook", async (req, res) => {
 
           const formattedTime = dt
             .toFormat("EEE, LLL d, yyyy 'at' h:mm a")
-            .replace(/:00\s?(AM|PM)/i, "$1")
+            .replace(/:00\s?(AM|PM)/i, '$1')
             .replace(/\s?(AM|PM)/i, (m) => m.toLowerCase().trim());
 
           let extras = [];
           if (r.recurring)
             extras.push(
-              `🔄 Repeat: ${formatRepeatText(r.recurring)}${r.total_occurrences ? ` (${r.current_occurrence || 0}/${r.total_occurrences})` : ""}`,
+              `🔄 Repeat: ${formatRepeatText(r.recurring)}${r.total_occurrences ? ` (${r.current_occurrence || 0}/${r.total_occurrences})` : ''}`
             );
           if (r.early_offset)
             extras.push(`⏳ Early Warning: ${r.early_offset}m`);
 
           const richBlocks = [
-            richHeading("🔔 Reminder Details", 1),
+            richHeading('🔔 Reminder Details', 1),
             richTable([
-              [{ text: "📝 Title" }, { text: boldRichText(richTextFromStored(r.text)) }],
-              [{ text: "🕒 Time" }, { text: boldRichText(formattedTime) }],
-              ...(r.recurring ? [[{ text: "🔄 Repeat" }, { text: boldRichText(formatRepeatText(r.recurring) + (r.total_occurrences ? ` (${r.current_occurrence || 0}/${r.total_occurrences})` : "")) }]] : []),
-              ...(r.early_offset ? [[{ text: "⏳ Early Warning" }, { text: boldRichText(`${r.early_offset}m`) }]] : []),
+              [
+                { text: '📝 Title' },
+                { text: boldRichText(richTextFromStored(r.text)) },
+              ],
+              [{ text: '🕒 Time' }, { text: boldRichText(formattedTime) }],
+              ...(r.recurring
+                ? [
+                    [
+                      { text: '🔄 Repeat' },
+                      {
+                        text: boldRichText(
+                          formatRepeatText(r.recurring) +
+                            (r.total_occurrences
+                              ? ` (${r.current_occurrence || 0}/${r.total_occurrences})`
+                              : '')
+                        ),
+                      },
+                    ],
+                  ]
+                : []),
+              ...(r.early_offset
+                ? [
+                    [
+                      { text: '⏳ Early Warning' },
+                      { text: boldRichText(`${r.early_offset}m`) },
+                    ],
+                  ]
+                : []),
             ]),
             richDivider(),
             richButtons([
-              richButton("✏️ Edit", `edit:${reminderId}`, "primary"),
-              richButton("❌ Delete", `del:${reminderId}`, "danger"),
+              richButton('✏️ Edit', `edit:${reminderId}`, 'primary'),
+              richButton('❌ Delete', `del:${reminderId}`, 'danger'),
             ]),
-            richButtons([
-              richButton("🔙 Back", "menu:list", "link"),
-            ]),
+            richButtons([richButton('🔙 Back', 'menu:list', 'link')]),
           ];
 
           if (callbackQuery.inline_message_id) {
-            await editInlineRichMessage(callbackQuery.inline_message_id, buildRichMessage(richBlocks));
+            await editInlineRichMessage(
+              callbackQuery.inline_message_id,
+              buildRichMessage(richBlocks)
+            );
             const inlineTimerKey = `inline_${callbackQuery.inline_message_id}`;
             clearMenuTimer(inlineTimerKey);
             resetMenuTimer(inlineTimerKey, async () => {
@@ -2782,39 +3404,62 @@ app.post("/webhook", async (req, res) => {
                 await editInlineRichMessage(
                   callbackQuery.inline_message_id,
                   buildRichMessage([
-                    richParagraph([{ type: "bold", text: [{ type: "subscript", text: "✅ Closed" }] }]),
-                  ]),
+                    richParagraph([
+                      {
+                        type: 'bold',
+                        text: [{ type: 'subscript', text: '✅ Closed' }],
+                      },
+                    ]),
+                  ])
                 );
               } catch (err) {
-                console.error("Failed to collapse inline details:", err);
+                console.error('Failed to collapse inline details:', err);
               }
             });
           } else {
             await editRichCallbackSurface(buildRichMessage(richBlocks));
           }
         } else {
-          await answerCallbackQuery(callbackQuery.id, "Reminder not found.", true);
+          await answerCallbackQuery(
+            callbackQuery.id,
+            'Reminder not found.',
+            true
+          );
         }
-      } else if (data.startsWith("edit:")) {
-        const reminderId = parseReminderId(data, "edit:");
+      } else if (data.startsWith('edit:')) {
+        const reminderId = parseReminderId(data, 'edit:');
         if (!reminderId) return res.sendStatus(200);
         await setPendingEdit(userId, null);
         pendingEditSurfacesBounded.delete(userId);
         wizardStateBounded.delete(userId);
         clearWizardTimer(userId);
         const iMsgId = callbackQuery.inline_message_id;
-        console.log("[EDIT] reminderId:", reminderId, "iMsgId:", iMsgId, "callbackSurface:", !!callbackSurface, "hasMessage:", !!callbackQuery.message);
+        console.log(
+          '[EDIT] reminderId:',
+          reminderId,
+          'iMsgId:',
+          iMsgId,
+          'callbackSurface:',
+          !!callbackSurface,
+          'hasMessage:',
+          !!callbackQuery.message
+        );
 
         if (!iMsgId) {
           await answerCallbackQuery(callbackQuery.id);
           const result = await pool.query(
-            "SELECT text, recurring, total_occurrences, early_offset FROM reminders WHERE id = $1 AND user_id = $2",
-            [reminderId, userId],
+            'SELECT text, recurring, total_occurrences, early_offset FROM reminders WHERE id = $1 AND user_id = $2',
+            [reminderId, userId]
           );
           if (result.rows.length > 0) {
             const r = result.rows[0];
             await editRichCallbackSurface(
-              buildEditMenuRich(reminderId, r.recurring, r.total_occurrences, r.early_offset),
+              buildEditMenuRich(
+                reminderId,
+                r.recurring,
+                r.total_occurrences,
+                r.early_offset
+              )
             );
           }
           return res.sendStatus(200);
@@ -2826,13 +3471,13 @@ app.post("/webhook", async (req, res) => {
             pendingInlineEdits.delete(key);
             await answerCallbackQuery(
               callbackQuery.id,
-              "📩 Sent edit options to DM!",
-              false,
+              '📩 Sent edit options to DM!',
+              false
             );
 
             const result = await pool.query(
-              "SELECT text, recurring, total_occurrences, early_offset FROM reminders WHERE id = $1 AND user_id = $2",
-              [reminderId, userId],
+              'SELECT text, recurring, total_occurrences, early_offset FROM reminders WHERE id = $1 AND user_id = $2',
+              [reminderId, userId]
             );
             if (result.rows.length > 0) {
               const r = result.rows[0];
@@ -2848,145 +3493,200 @@ app.post("/webhook", async (req, res) => {
                   reminderId,
                   r.recurring,
                   r.total_occurrences,
-                  r.early_offset,
+                  r.early_offset
                 ),
                 null,
-                buildEditMenuRich(reminderId, r.recurring, r.total_occurrences, r.early_offset),
+                buildEditMenuRich(
+                  reminderId,
+                  r.recurring,
+                  r.total_occurrences,
+                  r.early_offset
+                )
               );
             }
 
-            await editInlineRichMessage(iMsgId, buildRichMessage([
-              richHeading("📝 Edit menu sent to your DM!", 6),
-            ]));
+            await editInlineRichMessage(
+              iMsgId,
+              buildRichMessage([
+                richHeading('📝 Edit menu sent to your DM!', 6),
+              ])
+            );
           } else {
             pendingInlineEdits.add(key);
             setTimeout(() => pendingInlineEdits.delete(key), 10000);
-            await answerCallbackQuery(callbackQuery.id, "⚠️ Tap Edit again within 10s to confirm", false);
+            await answerCallbackQuery(
+              callbackQuery.id,
+              '⚠️ Tap Edit again within 10s to confirm',
+              false
+            );
           }
           return res.sendStatus(200);
         }
-      } else if (data.startsWith("setearly:")) {
-        const parts = data.split(":");
+      } else if (data.startsWith('setearly:')) {
+        const parts = data.split(':');
         const reminderId = parseInt(parts[1], 10);
         if (isNaN(reminderId) || reminderId <= 0) return res.sendStatus(200);
         const mins = parseInt(parts[2], 10);
         const offsetVal = mins === 0 ? null : mins;
         await pool.query(
-          "UPDATE reminders SET early_offset = $1, early_alert_sent = FALSE WHERE id = $2 AND user_id = $3",
-          [offsetVal, reminderId, userId],
+          'UPDATE reminders SET early_offset = $1, early_alert_sent = FALSE WHERE id = $2 AND user_id = $3',
+          [offsetVal, reminderId, userId]
         );
         await answerCallbackQuery(
           callbackQuery.id,
-          "⚡ Early warning updated!",
-          true,
+          '⚡ Early warning updated!',
+          true
         );
         const result = await pool.query(
-          "SELECT recurring, total_occurrences, early_offset FROM reminders WHERE id = $1 AND user_id = $2",
-          [reminderId, userId],
+          'SELECT recurring, total_occurrences, early_offset FROM reminders WHERE id = $1 AND user_id = $2',
+          [reminderId, userId]
         );
         if (result.rows.length > 0) {
           const r = result.rows[0];
           await editRichCallbackSurface(
-            buildEditMenuRich(reminderId, r.recurring, r.total_occurrences, r.early_offset),
+            buildEditMenuRich(
+              reminderId,
+              r.recurring,
+              r.total_occurrences,
+              r.early_offset
+            )
           );
         }
-      } else if (data.startsWith("prompt_early:")) {
-        const reminderId = data.replace("prompt_early:", "");
+      } else if (data.startsWith('prompt_early:')) {
+        const reminderId = data.replace('prompt_early:', '');
         await setPendingEdit(userId, `early:${reminderId}`);
         if (callbackSurface) {
           pendingEditSurfacesBounded.set(userId, callbackSurface);
           resetDmPromptTimer(userId, callbackSurface);
         }
-        await editRichCallbackSurface(buildRichMessage([
-          richHeading("⚡ How many minutes early?", 1),
-          richParagraph("Example: 15, 45, 120"),
-          richDivider(),
-          richButtons([
-            richButton("⬅️ Cancel", `edit:${reminderId}`, "danger"),
-          ]),
-        ]));
+        await editRichCallbackSurface(
+          buildRichMessage([
+            richHeading('⚡ How many minutes early?', 1),
+            richParagraph('Example: 15, 45, 120'),
+            richDivider(),
+            richButtons([
+              richButton('⬅️ Cancel', `edit:${reminderId}`, 'danger'),
+            ]),
+          ])
+        );
         await answerCallbackQuery(callbackQuery.id);
-      } else if (data.startsWith("prompt_edit_text:")) {
-        const reminderId = parseReminderId(data, "prompt_edit_text:");
+      } else if (data.startsWith('prompt_edit_text:')) {
+        const reminderId = parseReminderId(data, 'prompt_edit_text:');
         if (!reminderId) return res.sendStatus(200);
         await setPendingEdit(userId, `text:${reminderId}`);
         if (callbackSurface) {
           pendingEditSurfacesBounded.set(userId, callbackSurface);
           resetDmPromptTimer(userId, callbackSurface);
         }
-        await editRichCallbackSurface(buildRichMessage([
-          richHeading("📝 Type the new note/text", 1),
-          richParagraph("Enter the new text for this reminder:"),
-          richDivider(),
-          richButtons([
-            richButton("⬅️ Cancel", `edit:${reminderId}`, "danger"),
-          ]),
-        ]));
+        await editRichCallbackSurface(
+          buildRichMessage([
+            richHeading('📝 Type the new note/text', 1),
+            richParagraph('Enter the new text for this reminder:'),
+            richDivider(),
+            richButtons([
+              richButton('⬅️ Cancel', `edit:${reminderId}`, 'danger'),
+            ]),
+          ])
+        );
         await answerCallbackQuery(callbackQuery.id);
-      } else if (data.startsWith("prompt_edit_time:")) {
-        const reminderId = parseReminderId(data, "prompt_edit_time:");
+      } else if (data.startsWith('prompt_edit_time:')) {
+        const reminderId = parseReminderId(data, 'prompt_edit_time:');
         if (!reminderId) return res.sendStatus(200);
         await setPendingEdit(userId, `time:${reminderId}`);
         if (callbackSurface) {
           pendingEditSurfacesBounded.set(userId, callbackSurface);
           resetDmPromptTimer(userId, callbackSurface);
         }
-        await editRichCallbackSurface(buildRichMessage([
-          richHeading("🕒 Type the new time/date", 1),
-          richParagraph("Example: tomorrow at 8am, 2h, or Aug 12 5pm"),
-          richDivider(),
-          richButtons([
-            richButton("⬅️ Cancel", `edit:${reminderId}`, "danger"),
-          ]),
-        ]));
+        await editRichCallbackSurface(
+          buildRichMessage([
+            richHeading('🕒 Type the new time/date', 1),
+            richParagraph('Example: tomorrow at 8am, 2h, or Aug 12 5pm'),
+            richDivider(),
+            richButtons([
+              richButton('⬅️ Cancel', `edit:${reminderId}`, 'danger'),
+            ]),
+          ])
+        );
         await answerCallbackQuery(callbackQuery.id);
-      } else if (data.startsWith("dowmenu:")) {
-        const reminderId = data.replace("dowmenu:", "");
+      } else if (data.startsWith('dowmenu:')) {
+        const reminderId = data.replace('dowmenu:', '');
         const result = await pool.query(
-          "SELECT recurring FROM reminders WHERE id = $1 AND user_id = $2",
-          [reminderId, userId],
+          'SELECT recurring FROM reminders WHERE id = $1 AND user_id = $2',
+          [reminderId, userId]
         );
         if (result.rows.length > 0) {
           await answerCallbackQuery(callbackQuery.id);
           const current = result.rows[0].recurring;
-          const selected = (current && current.startsWith("dow:"))
-            ? current.split(":")[1].split(",").map(Number)
-            : [];
-          const dayLabel = (n, label) => selected.includes(n) ? `✅ ${label}` : label;
-          await editRichCallbackSurface(buildRichMessage([
-            richHeading("📅 Select specific days to repeat", 1),
-            richDivider(),
-            richButtons([
-              richButton(dayLabel(1, "Mon"), `toggledow:${reminderId}:1`, "link"),
-              richButton(dayLabel(2, "Tue"), `toggledow:${reminderId}:2`, "link"),
-              richButton(dayLabel(3, "Wed"), `toggledow:${reminderId}:3`, "link"),
-              richButton(dayLabel(4, "Thu"), `toggledow:${reminderId}:4`, "link"),
-            ]),
-            richButtons([
-              richButton(dayLabel(5, "Fri"), `toggledow:${reminderId}:5`, "link"),
-              richButton(dayLabel(6, "Sat"), `toggledow:${reminderId}:6`, "link"),
-              richButton(dayLabel(7, "Sun"), `toggledow:${reminderId}:7`, "link"),
-            ]),
-            richDivider(),
-            richButtons([
-              richButton("💾 Save / Back", `edit:${reminderId}`, "primary"),
-            ]),
-          ]));
+          const selected =
+            current && current.startsWith('dow:')
+              ? current.split(':')[1].split(',').map(Number)
+              : [];
+          const dayLabel = (n, label) =>
+            selected.includes(n) ? `✅ ${label}` : label;
+          await editRichCallbackSurface(
+            buildRichMessage([
+              richHeading('📅 Select specific days to repeat', 1),
+              richDivider(),
+              richButtons([
+                richButton(
+                  dayLabel(1, 'Mon'),
+                  `toggledow:${reminderId}:1`,
+                  'link'
+                ),
+                richButton(
+                  dayLabel(2, 'Tue'),
+                  `toggledow:${reminderId}:2`,
+                  'link'
+                ),
+                richButton(
+                  dayLabel(3, 'Wed'),
+                  `toggledow:${reminderId}:3`,
+                  'link'
+                ),
+                richButton(
+                  dayLabel(4, 'Thu'),
+                  `toggledow:${reminderId}:4`,
+                  'link'
+                ),
+              ]),
+              richButtons([
+                richButton(
+                  dayLabel(5, 'Fri'),
+                  `toggledow:${reminderId}:5`,
+                  'link'
+                ),
+                richButton(
+                  dayLabel(6, 'Sat'),
+                  `toggledow:${reminderId}:6`,
+                  'link'
+                ),
+                richButton(
+                  dayLabel(7, 'Sun'),
+                  `toggledow:${reminderId}:7`,
+                  'link'
+                ),
+              ]),
+              richDivider(),
+              richButtons([
+                richButton('💾 Save / Back', `edit:${reminderId}`, 'primary'),
+              ]),
+            ])
+          );
         }
-      } else if (data.startsWith("toggledow:")) {
-        const parts = data.split(":");
+      } else if (data.startsWith('toggledow:')) {
+        const parts = data.split(':');
         const reminderId = parseInt(parts[1], 10);
         if (isNaN(reminderId) || reminderId <= 0) return res.sendStatus(200);
         const dayNum = parseInt(parts[2], 10);
         const result = await pool.query(
-          "SELECT recurring FROM reminders WHERE id = $1 AND user_id = $2",
-          [reminderId, userId],
+          'SELECT recurring FROM reminders WHERE id = $1 AND user_id = $2',
+          [reminderId, userId]
         );
         if (result.rows.length > 0) {
           let current = result.rows[0].recurring;
           let selected =
-            current && current.startsWith("dow:")
-              ? current.split(":")[1].split(",").map(Number)
+            current && current.startsWith('dow:')
+              ? current.split(':')[1].split(',').map(Number)
               : [];
           if (selected.includes(dayNum)) {
             selected = selected.filter((n) => n !== dayNum);
@@ -2994,60 +3694,101 @@ app.post("/webhook", async (req, res) => {
             selected.push(dayNum);
           }
           selected.sort();
-          let newRec = selected.length > 0 ? `dow:${selected.join(",")}` : null;
+          let newRec = selected.length > 0 ? `dow:${selected.join(',')}` : null;
           await pool.query(
-            "UPDATE reminders SET recurring = $1 WHERE id = $2 AND user_id = $3",
-            [newRec, reminderId, userId],
+            'UPDATE reminders SET recurring = $1 WHERE id = $2 AND user_id = $3',
+            [newRec, reminderId, userId]
           );
           await answerCallbackQuery(callbackQuery.id);
-          const dayLabel = (n, label) => selected.includes(n) ? `✅ ${label}` : label;
-          await editRichCallbackSurface(buildRichMessage([
-            richHeading("📅 Select specific days to repeat", 1),
-            richDivider(),
-            richButtons([
-              richButton(dayLabel(1, "Mon"), `toggledow:${reminderId}:1`, "link"),
-              richButton(dayLabel(2, "Tue"), `toggledow:${reminderId}:2`, "link"),
-              richButton(dayLabel(3, "Wed"), `toggledow:${reminderId}:3`, "link"),
-              richButton(dayLabel(4, "Thu"), `toggledow:${reminderId}:4`, "link"),
-            ]),
-            richButtons([
-              richButton(dayLabel(5, "Fri"), `toggledow:${reminderId}:5`, "link"),
-              richButton(dayLabel(6, "Sat"), `toggledow:${reminderId}:6`, "link"),
-              richButton(dayLabel(7, "Sun"), `toggledow:${reminderId}:7`, "link"),
-            ]),
-            richDivider(),
-            richButtons([
-              richButton("💾 Save / Back", `edit:${reminderId}`, "primary"),
-            ]),
-          ]));
+          const dayLabel = (n, label) =>
+            selected.includes(n) ? `✅ ${label}` : label;
+          await editRichCallbackSurface(
+            buildRichMessage([
+              richHeading('📅 Select specific days to repeat', 1),
+              richDivider(),
+              richButtons([
+                richButton(
+                  dayLabel(1, 'Mon'),
+                  `toggledow:${reminderId}:1`,
+                  'link'
+                ),
+                richButton(
+                  dayLabel(2, 'Tue'),
+                  `toggledow:${reminderId}:2`,
+                  'link'
+                ),
+                richButton(
+                  dayLabel(3, 'Wed'),
+                  `toggledow:${reminderId}:3`,
+                  'link'
+                ),
+                richButton(
+                  dayLabel(4, 'Thu'),
+                  `toggledow:${reminderId}:4`,
+                  'link'
+                ),
+              ]),
+              richButtons([
+                richButton(
+                  dayLabel(5, 'Fri'),
+                  `toggledow:${reminderId}:5`,
+                  'link'
+                ),
+                richButton(
+                  dayLabel(6, 'Sat'),
+                  `toggledow:${reminderId}:6`,
+                  'link'
+                ),
+                richButton(
+                  dayLabel(7, 'Sun'),
+                  `toggledow:${reminderId}:7`,
+                  'link'
+                ),
+              ]),
+              richDivider(),
+              richButtons([
+                richButton('💾 Save / Back', `edit:${reminderId}`, 'primary'),
+              ]),
+            ])
+          );
         } else {
-          await answerCallbackQuery(callbackQuery.id, "Reminder not found.", true);
+          await answerCallbackQuery(
+            callbackQuery.id,
+            'Reminder not found.',
+            true
+          );
         }
-      } else if (data.startsWith("unitmenu:")) {
-        const reminderId = parseReminderId(data, "unitmenu:");
+      } else if (data.startsWith('unitmenu:')) {
+        const reminderId = parseReminderId(data, 'unitmenu:');
         if (!reminderId) return res.sendStatus(200);
         await answerCallbackQuery(callbackQuery.id);
-        await editRichCallbackSurface(buildRichMessage([
-          richHeading("⚙️ Select Custom Interval Unit", 1),
-          richDivider(),
-          richButtons([
-            richButton("⏱️ Hours", `nummenu:${reminderId}:hours`, "primary"),
-            richButton("📅 Days", `nummenu:${reminderId}:days`, "primary"),
-          ]),
-          richButtons([
-            richButton("🗓️ Weeks", `nummenu:${reminderId}:weeks`, "primary"),
-            richButton("📆 Months", `nummenu:${reminderId}:months`, "primary"),
-          ]),
-          richButtons([
-            richButton("🎂 Years", `nummenu:${reminderId}:years`, "primary"),
-          ]),
-          richDivider(),
-          richButtons([
-            richButton("⬅️ Back to Edit", `edit:${reminderId}`, "link"),
-          ]),
-        ]));
-      } else if (data.startsWith("nummenu:")) {
-        const [, reminderIdStr, unit] = data.split(":");
+        await editRichCallbackSurface(
+          buildRichMessage([
+            richHeading('⚙️ Select Custom Interval Unit', 1),
+            richDivider(),
+            richButtons([
+              richButton('⏱️ Hours', `nummenu:${reminderId}:hours`, 'primary'),
+              richButton('📅 Days', `nummenu:${reminderId}:days`, 'primary'),
+            ]),
+            richButtons([
+              richButton('🗓️ Weeks', `nummenu:${reminderId}:weeks`, 'primary'),
+              richButton(
+                '📆 Months',
+                `nummenu:${reminderId}:months`,
+                'primary'
+              ),
+            ]),
+            richButtons([
+              richButton('🎂 Years', `nummenu:${reminderId}:years`, 'primary'),
+            ]),
+            richDivider(),
+            richButtons([
+              richButton('⬅️ Back to Edit', `edit:${reminderId}`, 'link'),
+            ]),
+          ])
+        );
+      } else if (data.startsWith('nummenu:')) {
+        const [, reminderIdStr, unit] = data.split(':');
         const reminderId = parseInt(reminderIdStr, 10);
         if (isNaN(reminderId) || reminderId <= 0) return res.sendStatus(200);
         await setPendingEdit(userId, null);
@@ -3056,276 +3797,366 @@ app.post("/webhook", async (req, res) => {
         const nums = [2, 3, 4, 5, 6, 8, 10, 12, 14, 21, 30];
         const numButtons = [];
         for (let i = 0; i < nums.length; i += 4) {
-          const row = nums.slice(i, i + 4).map(n =>
-            richButton(`${n}`, `setrec:${reminderId}:${unit}:${n}`, "primary")
-          );
+          const row = nums
+            .slice(i, i + 4)
+            .map((n) =>
+              richButton(`${n}`, `setrec:${reminderId}:${unit}:${n}`, 'primary')
+            );
           numButtons.push(richButtons(row));
         }
-        await editRichCallbackSurface(buildRichMessage([
-          richHeading(`⚙️ Every how many ${unit.toUpperCase()}?`, 1),
-          richDivider(),
-          ...numButtons,
-          richDivider(),
-          richButtons([
-            richButton("✍️ Custom Number...", `prompt_rec:${reminderId}:${unit}`, "link"),
-          ]),
-          richButtons([
-            richButton("⬅️ Back to Units", `unitmenu:${reminderId}`, "link"),
-          ]),
-        ]));
-      } else if (data.startsWith("prompt_rec:")) {
-        const [, reminderId, unit] = data.split(":");
+        await editRichCallbackSurface(
+          buildRichMessage([
+            richHeading(`⚙️ Every how many ${unit.toUpperCase()}?`, 1),
+            richDivider(),
+            ...numButtons,
+            richDivider(),
+            richButtons([
+              richButton(
+                '✍️ Custom Number...',
+                `prompt_rec:${reminderId}:${unit}`,
+                'link'
+              ),
+            ]),
+            richButtons([
+              richButton('⬅️ Back to Units', `unitmenu:${reminderId}`, 'link'),
+            ]),
+          ])
+        );
+      } else if (data.startsWith('prompt_rec:')) {
+        const [, reminderId, unit] = data.split(':');
         await setPendingEdit(userId, `rec:${reminderId}:${unit}`);
         if (callbackSurface) {
           pendingEditSurfacesBounded.set(userId, callbackSurface);
           resetDmPromptTimer(userId, callbackSurface);
         }
-        await editRichCallbackSurface(buildRichMessage([
-          richHeading(`⚙️ Enter custom repeat interval in ${unit.toUpperCase()}`, 1),
-          richParagraph("Example: 56, 72, 100"),
-          richDivider(),
-          richButtons([
-            richButton("⬅️ Cancel", `nummenu:${reminderId}:${unit}`, "danger"),
-          ]),
-        ]));
+        await editRichCallbackSurface(
+          buildRichMessage([
+            richHeading(
+              `⚙️ Enter custom repeat interval in ${unit.toUpperCase()}`,
+              1
+            ),
+            richParagraph('Example: 56, 72, 100'),
+            richDivider(),
+            richButtons([
+              richButton(
+                '⬅️ Cancel',
+                `nummenu:${reminderId}:${unit}`,
+                'danger'
+              ),
+            ]),
+          ])
+        );
         await answerCallbackQuery(callbackQuery.id);
-      } else if (data.startsWith("prompt_limit:")) {
-        const reminderId = parseReminderId(data, "prompt_limit:");
+      } else if (data.startsWith('prompt_limit:')) {
+        const reminderId = parseReminderId(data, 'prompt_limit:');
         if (!reminderId) return res.sendStatus(200);
         await setPendingEdit(userId, `limit:${reminderId}`);
         if (callbackSurface) {
           pendingEditSurfacesBounded.set(userId, callbackSurface);
           resetDmPromptTimer(userId, callbackSurface);
         }
-        await editRichCallbackSurface(buildRichMessage([
-          richHeading("✍️ Enter a custom repeat count", 1),
-          richParagraph("Type a whole number between 1 and 2,147,483,647."),
-          richDivider(),
-          richButtons([
-            richButton("⬅️ Cancel", `limitmenu:${reminderId}`, "danger"),
-          ]),
-        ]));
+        await editRichCallbackSurface(
+          buildRichMessage([
+            richHeading('✍️ Enter a custom repeat count', 1),
+            richParagraph('Type a whole number between 1 and 2,147,483,647.'),
+            richDivider(),
+            richButtons([
+              richButton('⬅️ Cancel', `limitmenu:${reminderId}`, 'danger'),
+            ]),
+          ])
+        );
         await answerCallbackQuery(callbackQuery.id);
-      } else if (data.startsWith("limitmenu:")) {
-        const reminderId = parseReminderId(data, "limitmenu:");
+      } else if (data.startsWith('limitmenu:')) {
+        const reminderId = parseReminderId(data, 'limitmenu:');
         if (!reminderId) return res.sendStatus(200);
         await setPendingEdit(userId, null);
         pendingEditSurfacesBounded.delete(userId);
         const result = await pool.query(
-          "SELECT total_occurrences, early_offset FROM reminders WHERE id = $1 AND user_id = $2",
-          [reminderId, userId],
+          'SELECT total_occurrences, early_offset FROM reminders WHERE id = $1 AND user_id = $2',
+          [reminderId, userId]
         );
         if (result.rows.length > 0) {
           await answerCallbackQuery(callbackQuery.id);
           const limitMenu = getLimitMenuKeyboard(
             reminderId,
-            result.rows[0].total_occurrences,
+            result.rows[0].total_occurrences
           );
           if (isRichMessageSupported()) {
-            await editRichCallbackSurface(buildRichMessage([
-              richHeading("🔁 Select How Many Times to Repeat", 1),
-              richDivider(),
-              ...limitMenu.richBlocks,
-            ]));
+            await editRichCallbackSurface(
+              buildRichMessage([
+                richHeading('🔁 Select How Many Times to Repeat', 1),
+                richDivider(),
+                ...limitMenu.richBlocks,
+              ])
+            );
           } else {
             await editCallbackSurface(
-              "🔁 Select How Many Times to Repeat",
-              limitMenu,
+              '🔁 Select How Many Times to Repeat',
+              limitMenu
             );
           }
         } else {
-          await answerCallbackQuery(callbackQuery.id, "Reminder not found.", true);
+          await answerCallbackQuery(
+            callbackQuery.id,
+            'Reminder not found.',
+            true
+          );
         }
-      } else if (data.startsWith("setrec:")) {
-        const [, reminderIdStr, recType, interval = "1"] = data.split(":");
+      } else if (data.startsWith('setrec:')) {
+        const [, reminderIdStr, recType, interval = '1'] = data.split(':');
         const reminderId = parseInt(reminderIdStr, 10);
         if (isNaN(reminderId) || reminderId <= 0) return res.sendStatus(200);
         const recurringVal =
-          recType === "none" ? null : `${recType}:${interval}`;
+          recType === 'none' ? null : `${recType}:${interval}`;
 
         await pool.query(
-          "UPDATE reminders SET recurring = $1 WHERE id = $2 AND user_id = $3",
-          [recurringVal, reminderId, userId],
+          'UPDATE reminders SET recurring = $1 WHERE id = $2 AND user_id = $3',
+          [recurringVal, reminderId, userId]
         );
         await answerCallbackQuery(
           callbackQuery.id,
-          "✅ Recurrence updated!",
-          true,
+          '✅ Recurrence updated!',
+          true
         );
 
         const result = await pool.query(
-          "SELECT total_occurrences, early_offset FROM reminders WHERE id = $1 AND user_id = $2",
-          [reminderId, userId],
+          'SELECT total_occurrences, early_offset FROM reminders WHERE id = $1 AND user_id = $2',
+          [reminderId, userId]
         );
         if (result.rows.length > 0) {
           await editRichCallbackSurface(
-            buildEditMenuRich(reminderId, recurringVal, result.rows[0].total_occurrences, result.rows[0].early_offset),
+            buildEditMenuRich(
+              reminderId,
+              recurringVal,
+              result.rows[0].total_occurrences,
+              result.rows[0].early_offset
+            )
           );
         }
-      } else if (data.startsWith("setlimit:")) {
-        const [, reminderIdStr, countStr] = data.split(":");
+      } else if (data.startsWith('setlimit:')) {
+        const [, reminderIdStr, countStr] = data.split(':');
         const reminderId = parseInt(reminderIdStr, 10);
         if (isNaN(reminderId) || reminderId <= 0) return res.sendStatus(200);
         const count = parseInt(countStr, 10);
         const limitVal = count === 0 ? null : count;
 
         await pool.query(
-          "UPDATE reminders SET total_occurrences = $1 WHERE id = $2 AND user_id = $3",
-          [limitVal, reminderId, userId],
+          'UPDATE reminders SET total_occurrences = $1 WHERE id = $2 AND user_id = $3',
+          [limitVal, reminderId, userId]
         );
         await answerCallbackQuery(
           callbackQuery.id,
-          "✅ Repeat limit updated!",
-          true,
+          '✅ Repeat limit updated!',
+          true
         );
 
         const result = await pool.query(
-          "SELECT recurring, early_offset FROM reminders WHERE id = $1 AND user_id = $2",
-          [reminderId, userId],
+          'SELECT recurring, early_offset FROM reminders WHERE id = $1 AND user_id = $2',
+          [reminderId, userId]
         );
         if (result.rows.length > 0) {
           await editRichCallbackSurface(
-            buildEditMenuRich(reminderId, result.rows[0].recurring, limitVal, result.rows[0].early_offset),
+            buildEditMenuRich(
+              reminderId,
+              result.rows[0].recurring,
+              limitVal,
+              result.rows[0].early_offset
+            )
           );
         }
       }
     }
 
     if (inlineQuery) {
-      console.log("[INLINE] Query received:", inlineQuery.query || "(empty)");
+      console.log('[INLINE] Query received:', inlineQuery.query || '(empty)');
       try {
-        const userTz = (await getUserTimezone(userId)) || "America/Chicago";
+        const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
         const queryText = inlineQuery.query.trim();
         let results = [];
 
         if (queryText) {
           results.push({
-            type: "article",
-            id: "noop_text",
+            type: 'article',
+            id: 'noop_text',
             title: "⚠️ Don't type — just tap below",
-            description: "↕️ Swipe to see options",
+            description: '↕️ Swipe to see options',
             thumbnail_url:
-              "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f6ab.png",
+              'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f6ab.png',
             thumb_width: 72,
             thumb_height: 72,
             input_message_content: {
-              message_text: "📝 No text needed! Just tap an option below.",
+              message_text: '📝 No text needed! Just tap an option below.',
             },
           });
         }
 
         results.push({
-          type: "article",
-          id: "create_wizard_dm",
-          title: "➕ Create Reminder",
-          description: "Set time & message to get notified",
+          type: 'article',
+          id: 'create_wizard_dm',
+          title: '➕ Create Reminder',
+          description: 'Set time & message to get notified',
           thumbnail_url:
-            "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f0.png",
+            'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/23f0.png',
           thumb_width: 72,
           thumb_height: 72,
           input_message_content: {
             rich_message: {
               blocks: [
-                { type: "paragraph", text: [{ type: "bold", text: [{ type: "subscript", text: "📝 Creating your reminder..." }] }] },
+                {
+                  type: 'paragraph',
+                  text: [
+                    {
+                      type: 'bold',
+                      text: [
+                        {
+                          type: 'subscript',
+                          text: '📝 Creating your reminder...',
+                        },
+                      ],
+                    },
+                  ],
+                },
               ],
             },
           },
           reply_markup: {
             inline_keyboard: [
-              [{ text: "🔄 Loading...", callback_data: "noop" }],
+              [{ text: '🔄 Loading...', callback_data: 'noop' }],
             ],
           },
         });
         results.push({
-          type: "article",
-          id: "show_reminders_dm",
-          title: "👀 View Reminders (DM)",
-          description: "Manage your reminders via DM",
+          type: 'article',
+          id: 'show_reminders_dm',
+          title: '👀 View Reminders (DM)',
+          description: 'Manage your reminders via DM',
           thumbnail_url:
-            "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4e9.png",
+            'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4e9.png',
           thumb_width: 72,
           thumb_height: 72,
           input_message_content: {
             rich_message: {
               blocks: [
-                { type: "paragraph", text: [{ type: "bold", text: [{ type: "subscript", text: "💻 Establishing DM connection..." }] }] },
+                {
+                  type: 'paragraph',
+                  text: [
+                    {
+                      type: 'bold',
+                      text: [
+                        {
+                          type: 'subscript',
+                          text: '💻 Establishing DM connection...',
+                        },
+                      ],
+                    },
+                  ],
+                },
               ],
             },
           },
           reply_markup: {
             inline_keyboard: [
-              [{ text: "🔄 Loading...", callback_data: "noop" }],
+              [{ text: '🔄 Loading...', callback_data: 'noop' }],
             ],
           },
         });
         results.push({
-          type: "article",
-          id: "show_reminders_inline_v6",
-          title: "👀 View Reminders (Inline)",
-          description: "Show reminder list here",
+          type: 'article',
+          id: 'show_reminders_inline_v6',
+          title: '👀 View Reminders (Inline)',
+          description: 'Show reminder list here',
           thumbnail_url:
-            "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f5e8.png",
+            'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f5e8.png',
           thumb_width: 72,
           thumb_height: 72,
           input_message_content: {
             rich_message: {
               blocks: [
-                { type: "paragraph", text: [{ type: "bold", text: [{ type: "subscript", text: "📋 Fetching active reminders..." }] }] },
+                {
+                  type: 'paragraph',
+                  text: [
+                    {
+                      type: 'bold',
+                      text: [
+                        {
+                          type: 'subscript',
+                          text: '📋 Fetching active reminders...',
+                        },
+                      ],
+                    },
+                  ],
+                },
               ],
             },
           },
           reply_markup: {
             inline_keyboard: [
-              [{ text: "🔄 Loading...", callback_data: "noop" }],
+              [{ text: '🔄 Loading...', callback_data: 'noop' }],
             ],
           },
         });
         results.push({
-          type: "article",
-          id: "show_calendar_inline",
-          title: "📅 View Calendar (Inline)",
-          description: "Show calendar view here",
+          type: 'article',
+          id: 'show_calendar_inline',
+          title: '📅 View Calendar (Inline)',
+          description: 'Show calendar view here',
           thumbnail_url:
-            "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4c5.png",
+            'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4c5.png',
           thumb_width: 72,
           thumb_height: 72,
           input_message_content: {
             rich_message: {
               blocks: [
-                { type: "paragraph", text: [{ type: "bold", text: [{ type: "subscript", text: "📅 Loading calendar..." }] }] },
+                {
+                  type: 'paragraph',
+                  text: [
+                    {
+                      type: 'bold',
+                      text: [
+                        { type: 'subscript', text: '📅 Loading calendar...' },
+                      ],
+                    },
+                  ],
+                },
               ],
             },
           },
           reply_markup: {
             inline_keyboard: [
-              [{ text: "🔄 Loading...", callback_data: "noop" }],
+              [{ text: '🔄 Loading...', callback_data: 'noop' }],
             ],
           },
         });
 
-        console.log("[INLINE] Sending", results.length, "results");
+        console.log('[INLINE] Sending', results.length, 'results');
         await answerInlineQuery(inlineQuery.id, results);
       } catch (inlineErr) {
-        console.error("[INLINE] Error handling inline query:", inlineErr);
+        console.error('[INLINE] Error handling inline query:', inlineErr);
       }
     }
 
     if (chosenResult) {
-      const selectedResultId = chosenResult.result_id || "";
+      const selectedResultId = chosenResult.result_id || '';
       const iMsgId = chosenResult.inline_message_id || null;
 
       if (iMsgId && userId) {
         inlineOwnerMap.set(iMsgId, userId);
       }
 
-      if (selectedResultId === "show_reminders_dm") {
-        const userTz = (await getUserTimezone(userId)) || "America/Chicago";
+      if (selectedResultId === 'show_reminders_dm') {
+        const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
         const dashData = await getRemindersDashboardData(
           userId,
           userTz,
-          userFirstName,
+          userFirstName
         );
-        await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard, null, dashData.richMessage);
+        await sendOrUpdateDashboard(
+          userId,
+          dashData.text,
+          dashData.keyboard,
+          null,
+          dashData.richMessage
+        );
 
         if (iMsgId) {
           setTimeout(async () => {
@@ -3333,31 +4164,43 @@ app.post("/webhook", async (req, res) => {
               await editInlineRichMessage(
                 iMsgId,
                 buildRichMessage([
-                  richHeading("✅ Reminders sent to your DM!", 6),
-                ]),
+                  richHeading('✅ Reminders sent to your DM!', 6),
+                ])
               );
               const inlineTimerKey = `inline_${iMsgId}`;
               clearMenuTimer(inlineTimerKey);
-              resetMenuTimer(inlineTimerKey, async () => {
-                try {
-                  await editInlineRichMessage(iMsgId, buildRichMessage([
-                    richParagraph([{ type: "bold", text: [{ type: "subscript", text: "✅ Closed" }] }]),
-                  ]));
-                } catch (err) {
-                  console.error("Failed to auto-collapse DM message:", err);
-                }
-              }, 10000);
+              resetMenuTimer(
+                inlineTimerKey,
+                async () => {
+                  try {
+                    await editInlineRichMessage(
+                      iMsgId,
+                      buildRichMessage([
+                        richParagraph([
+                          {
+                            type: 'bold',
+                            text: [{ type: 'subscript', text: '✅ Closed' }],
+                          },
+                        ]),
+                      ])
+                    );
+                  } catch (err) {
+                    console.error('Failed to auto-collapse DM message:', err);
+                  }
+                },
+                10000
+              );
             } catch (err) {
-              console.error("Failed to collapse inline DM message:", err);
+              console.error('Failed to collapse inline DM message:', err);
             }
           }, 3000);
         }
-      } else if (selectedResultId === "show_reminders_inline_v6") {
-        const userTz = (await getUserTimezone(userId)) || "America/Chicago";
+      } else if (selectedResultId === 'show_reminders_inline_v6') {
+        const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
         const dashData = await getRemindersDashboardData(
           userId,
           userTz,
-          userFirstName,
+          userFirstName
         );
 
         if (iMsgId) {
@@ -3366,35 +4209,53 @@ app.post("/webhook", async (req, res) => {
           clearMenuTimer(inlineTimerKey);
           resetMenuTimer(inlineTimerKey, async () => {
             try {
-              await editInlineRichMessage(iMsgId, buildRichMessage([
-                richParagraph([{ type: "bold", text: [{ type: "subscript", text: "✅ Closed" }] }]),
-              ]));
+              await editInlineRichMessage(
+                iMsgId,
+                buildRichMessage([
+                  richParagraph([
+                    {
+                      type: 'bold',
+                      text: [{ type: 'subscript', text: '✅ Closed' }],
+                    },
+                  ]),
+                ])
+              );
             } catch (err) {
-              console.error("Failed to auto-collapse inline list:", err);
+              console.error('Failed to auto-collapse inline list:', err);
             }
           });
         } else {
-          await sendOrUpdateDashboard(userId, dashData.text, dashData.keyboard, null, dashData.richMessage);
+          await sendOrUpdateDashboard(
+            userId,
+            dashData.text,
+            dashData.keyboard,
+            null,
+            dashData.richMessage
+          );
         }
-      } else if (selectedResultId === "show_reminders_share") {
-        const userTz = (await getUserTimezone(userId)) || "America/Chicago";
+      } else if (selectedResultId === 'show_reminders_share') {
+        const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
         const dashData = await getRemindersDashboardData(
           userId,
           userTz,
-          userFirstName,
+          userFirstName
         );
 
         if (iMsgId) {
           await editInlineRichMessage(iMsgId, dashData.richMessage);
         }
-      } else if (selectedResultId === "show_calendar_inline") {
-        const userTz = (await getUserTimezone(userId)) || "America/Chicago";
+      } else if (selectedResultId === 'show_calendar_inline') {
+        const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
         const now = DateTime.now().setZone(userTz);
-        const remindersOnDay = await getRemindersForMonth(userId, now.year, now.month);
+        const remindersOnDay = await getRemindersForMonth(
+          userId,
+          now.year,
+          now.month
+        );
         const cal = buildCalendar(now.year, now.month, remindersOnDay);
         const calRich = buildRichMessage([
           richHeading(`📅 ${cal.monthName}`, 1),
-          richParagraph("Tap a day to see reminders:"),
+          richParagraph('Tap a day to see reminders:'),
           richDivider(),
           ...cal.richBlocks,
         ]);
@@ -3405,45 +4266,77 @@ app.post("/webhook", async (req, res) => {
           clearMenuTimer(inlineTimerKey);
           resetMenuTimer(inlineTimerKey, async () => {
             try {
-              await editInlineRichMessage(iMsgId, buildRichMessage([
-                richParagraph([{ type: "bold", text: [{ type: "subscript", text: "✅ Closed" }] }]),
-              ]));
+              await editInlineRichMessage(
+                iMsgId,
+                buildRichMessage([
+                  richParagraph([
+                    {
+                      type: 'bold',
+                      text: [{ type: 'subscript', text: '✅ Closed' }],
+                    },
+                  ]),
+                ])
+              );
             } catch (err) {
-              console.error("Failed to auto-collapse inline calendar:", err);
+              console.error('Failed to auto-collapse inline calendar:', err);
             }
           });
         }
-      } else if (selectedResultId === "create_wizard_dm") {
+      } else if (selectedResultId === 'create_wizard_dm') {
         if (iMsgId) {
           const sent = await sendRichMessage(
             userId,
             buildRichMessage([
               richHeading("📝 What's the reminder title?", 1),
-              richParagraph("Type the title for your reminder (e.g., buy milk, team meeting, pay bills):"),
+              richParagraph(
+                'Type the title for your reminder (e.g., buy milk, team meeting, pay bills):'
+              ),
               richDivider(),
-              richButtons([
-                richButton("❌ Cancel", "wizard_cancel", "danger"),
-              ]),
-            ]),
+              richButtons([richButton('❌ Cancel', 'wizard_cancel', 'danger')]),
+            ])
           );
-          const surface = sent ? surfaceFromTelegramMessage(sent, userId) : null;
+          const surface = sent
+            ? surfaceFromTelegramMessage(sent, userId)
+            : null;
           if (surface) surface.richContent = true;
-          const wizState = { step: 1, surface: surface || null, iMsgId: iMsgId, originalChatId: null };
+          const wizState = {
+            step: 1,
+            surface: surface || null,
+            iMsgId: iMsgId,
+            originalChatId: null,
+          };
           wizardStateBounded.set(userId, wizState);
           resetWizardTimer(userId, wizState, 120 * 1000);
           await editInlineRichMessage(
             iMsgId,
             buildRichMessage([
-              richParagraph([{ type: "bold", text: [{ type: "subscript", text: "✅ Wizard opened in your DM!" }] }]),
-              richParagraph([{ type: "bold", text: [{ type: "subscript", text: "Type your reminder title there." }] }]),
-            ]),
+              richParagraph([
+                {
+                  type: 'bold',
+                  text: [
+                    { type: 'subscript', text: '✅ Wizard opened in your DM!' },
+                  ],
+                },
+              ]),
+              richParagraph([
+                {
+                  type: 'bold',
+                  text: [
+                    {
+                      type: 'subscript',
+                      text: 'Type your reminder title there.',
+                    },
+                  ],
+                },
+              ]),
+            ])
           );
         }
       }
     }
     res.sendStatus(200);
   } catch (error) {
-    console.error("[WEBHOOK ERROR]:", error);
+    console.error('[WEBHOOK ERROR]:', error);
     res.sendStatus(500);
   }
 });
