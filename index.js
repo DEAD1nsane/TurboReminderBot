@@ -794,10 +794,19 @@ async function beginPrivateSurface(message, userId, text, markup) {
   return surfaceFromTelegramMessage(dm, userId);
 }
 
-async function beginRichSurface(message, userId, richMessage, markup) {
+async function beginRichSurface(
+  message,
+  userId,
+  richMessage,
+  markup = null,
+  fallbackText = '',
+  fallbackMarkup = null
+) {
+  const resolvedText =
+    fallbackText || richMessage.markdown || richMessage.html || '';
+  const resolvedMarkup = fallbackMarkup || markup;
   if (!isRichMessageSupported()) {
-    const fallbackText = richMessage.markdown || richMessage.html || '';
-    return beginPrivateSurface(message, userId, fallbackText, markup);
+    return beginPrivateSurface(message, userId, resolvedText, resolvedMarkup);
   }
 
   if (!isGroupChat(message.chat)) {
@@ -806,6 +815,15 @@ async function beginRichSurface(message, userId, richMessage, markup) {
       const surface = surfaceFromTelegramMessage(sent, userId);
       if (surface) surface.richContent = true;
       return surface;
+    }
+    // Rich send failed in DM (unsupported API version, network error,
+    // etc.) — fall back to a plain message so the command still responds
+    // instead of silently doing nothing.
+    console.error(
+      '[SURFACE] sendRichMessage failed in DM, falling back to plain text'
+    );
+    if (resolvedText) {
+      return beginPrivateSurface(message, userId, resolvedText, resolvedMarkup);
     }
     return null;
   }
@@ -827,18 +845,17 @@ async function beginRichSurface(message, userId, richMessage, markup) {
   }
 
   // Fallback: try regular ephemeral with markdown text
-  const fallbackText = richMessage.markdown || richMessage.html || '';
   const fallbackSent = await sendEphemeralMessage(
     message.chat.id,
     userId,
-    fallbackText,
-    withPrivateReply(markup),
+    resolvedText,
+    withPrivateReply(resolvedMarkup),
     options
   );
   if (fallbackSent) return surfaceFromTelegramMessage(fallbackSent, userId);
 
   // Final fallback: DM
-  const dm = await sendTelegramMessage(userId, fallbackText, markup);
+  const dm = await sendTelegramMessage(userId, resolvedText, resolvedMarkup);
   return surfaceFromTelegramMessage(dm, userId);
 }
 
@@ -2052,7 +2069,10 @@ app.post('/webhook', async (req, res) => {
           const surface = await beginRichSurface(
             message,
             userId,
-            dashData.richMessage
+            dashData.richMessage,
+            null,
+            dashData.text,
+            dashData.keyboard
           );
           if (surface) {
             await removeUserInput(message, userId);
