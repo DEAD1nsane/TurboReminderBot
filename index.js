@@ -33,6 +33,7 @@ const {
   answerInlineQuery,
   checkRichMessageSupport,
   isRichMessageSupported,
+  getLastTelegramError,
 } = require('./telegram');
 
 const activityTimers = new Map();
@@ -252,6 +253,38 @@ function clearMenuTimer(key) {
     clearTimeout(activityTimers.get(key));
     activityTimers.delete(key);
   }
+}
+
+// Collapse an inline message to "✅ Closed", retrying transient failures.
+// Collapse timers are fire-and-forget: a single network blip (or a deploy
+// restart mid-flight) used to orphan the message forever. "Message is not
+// modified" just means it's already closed — treat as success, quietly.
+async function collapseInlineMessage(inlineMessageId) {
+  const closedRich = buildRichMessage([
+    richParagraph([
+      {
+        type: 'bold',
+        text: [{ type: 'subscript', text: '✅ Closed' }],
+      },
+    ]),
+  ]);
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    if (attempt > 1) {
+      await new Promise((r) => setTimeout(r, 10000 * (attempt - 1)));
+    }
+    const ok = await editInlineRichMessage(inlineMessageId, closedRich).catch(
+      () => false
+    );
+    if (ok) return true;
+    const errDesc = String(getLastTelegramError() || '');
+    if (errDesc.includes('message is not modified')) return true;
+    if (attempt === 3) {
+      console.error(
+        `Failed to collapse inline message ${inlineMessageId} after 3 attempts (last error: ${errDesc})`
+      );
+    }
+  }
+  return false;
 }
 
 function clearUserPendingState(userId) {
@@ -2832,24 +2865,7 @@ app.post('/webhook', async (req, res) => {
               const inlineTimerKey = `inline_${state.iMsgId}`;
               clearMenuTimer(inlineTimerKey);
               resetMenuTimer(inlineTimerKey, async () => {
-                try {
-                  await editInlineRichMessage(
-                    state.iMsgId,
-                    buildRichMessage([
-                      richParagraph([
-                        {
-                          type: 'bold',
-                          text: [{ type: 'subscript', text: '✅ Closed' }],
-                        },
-                      ]),
-                    ])
-                  );
-                } catch (err) {
-                  console.error(
-                    'Failed to collapse inline wizard result:',
-                    err
-                  );
-                }
+                await collapseInlineMessage(state.iMsgId);
               });
             } catch (err) {
               console.error('Failed to update inline wizard result:', err);
@@ -2881,24 +2897,7 @@ app.post('/webhook', async (req, res) => {
             const inlineTimerKey = `inline_${state.iMsgId}`;
             clearMenuTimer(inlineTimerKey);
             resetMenuTimer(inlineTimerKey, async () => {
-              try {
-                await editInlineRichMessage(
-                  state.iMsgId,
-                  buildRichMessage([
-                    richParagraph([
-                      {
-                        type: 'bold',
-                        text: [{ type: 'subscript', text: '✅ Closed' }],
-                      },
-                    ]),
-                  ])
-                );
-              } catch (err) {
-                console.error(
-                  'Failed to collapse inline cancelled wizard:',
-                  err
-                );
-              }
+              await collapseInlineMessage(state.iMsgId);
             });
           } catch (err) {
             console.error('Failed to update inline cancelled wizard:', err);

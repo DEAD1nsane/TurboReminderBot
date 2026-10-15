@@ -2,9 +2,9 @@ const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
 function escapeHtml(text) {
   return String(text)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
 /**
@@ -15,35 +15,41 @@ function escapeHtml(text) {
  * User-provided text is HTML-escaped before any request is sent.
  */
 function formatTelegramHtml(text) {
-  const unescaped = String(text || "").replace(
+  const unescaped = String(text || '').replace(
     /\\([_*\[\]()~`>#+\-=|{}.!\\])/g,
-    "$1",
+    '$1'
   );
   let formatted = escapeHtml(unescaped);
 
-  formatted = formatted.replace(/`([^`\n]+)`/g, "<code>$1</code>");
-  formatted = formatted.replace(/\*\*([\s\S]+?)\*\*/g, "<b>$1</b>");
-  formatted = formatted.replace(
-    /(^|[^*])\*([^*\n]+)\*(?!\*)/g,
-    "$1<i>$2</i>",
-  );
+  formatted = formatted.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+  formatted = formatted.replace(/\*\*([\s\S]+?)\*\*/g, '<b>$1</b>');
+  formatted = formatted.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<i>$2</i>');
   formatted = formatted.replace(
     /\|\|([\s\S]+?)\|\|/g,
-    "<tg-spoiler>$1</tg-spoiler>",
+    '<tg-spoiler>$1</tg-spoiler>'
   );
   formatted = formatted
-    .split("\n")
+    .split('\n')
     .map((line) =>
-      line.startsWith("&gt; ")
+      line.startsWith('&gt; ')
         ? `<blockquote>${line.slice(5)}</blockquote>`
-        : line,
+        : line
     )
-    .join("\n");
+    .join('\n');
 
   return formatted;
 }
 
 let richMessageSupported = true;
+
+// Last Telegram API error description (set by callTelegram on failure,
+// cleared on success). Lets callers distinguish "already in desired state"
+// from transient failures without changing every return signature.
+let lastTelegramError = null;
+
+function getLastTelegramError() {
+  return lastTelegramError;
+}
 
 async function fetchWithTimeout(resource, options = {}) {
   const { timeout = 10000 } = options;
@@ -61,14 +67,18 @@ async function fetchWithTimeout(resource, options = {}) {
 
 async function checkRichMessageSupport() {
   try {
-    const res = await callTelegram("getBotInfo", {}, "getBotInfo");
+    const res = await callTelegram('getBotInfo', {}, 'getBotInfo');
     if (res) {
       richMessageSupported = true;
-      console.log("[TELEGRAM] Rich message support: enabled (Bot API 10.2+ required)");
+      console.log(
+        '[TELEGRAM] Rich message support: enabled (Bot API 10.2+ required)'
+      );
     }
   } catch {
     richMessageSupported = false;
-    console.log("[TELEGRAM] Could not verify rich message support, will fallback to MarkdownV2");
+    console.log(
+      '[TELEGRAM] Could not verify rich message support, will fallback to MarkdownV2'
+    );
   }
 }
 
@@ -81,18 +91,21 @@ async function callTelegram(method, payload, logLabel = method) {
     const res = await fetchWithTimeout(
       `https://api.telegram.org/bot${TOKEN}/${method}`,
       {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
-      },
+      }
     );
     const data = await res.json();
     if (!data.ok) {
+      lastTelegramError = data.description || 'unknown error';
       console.error(`[TELEGRAM] ${logLabel} failed:`, data.description);
       return null;
     }
+    lastTelegramError = null;
     return data.result;
   } catch (err) {
+    lastTelegramError = err?.message || String(err);
     console.error(`[TELEGRAM] ${logLabel} error:`, err);
     return null;
   }
@@ -102,19 +115,19 @@ async function sendTelegramMessage(
   chatId,
   text,
   replyMarkup = null,
-  autoDeleteMs = null,
+  autoDeleteMs = null
 ) {
   const payload = {
     chat_id: chatId,
     text: formatTelegramHtml(text),
-    parse_mode: "HTML",
+    parse_mode: 'HTML',
   };
   if (replyMarkup) payload.reply_markup = replyMarkup;
-  const result = await callTelegram("sendMessage", payload);
+  const result = await callTelegram('sendMessage', payload);
   if (result && autoDeleteMs) {
     setTimeout(
       () => deleteTelegramMessage(chatId, result.message_id),
-      autoDeleteMs,
+      autoDeleteMs
     );
   }
   return result || null;
@@ -129,7 +142,7 @@ async function sendEphemeralMessage(
   receiverUserId,
   text,
   replyMarkup = null,
-  options = {},
+  options = {}
 ) {
   const ephemeralParams = { receiver_user_id: receiverUserId };
   if (options.callbackQueryId) {
@@ -142,7 +155,7 @@ async function sendEphemeralMessage(
   const payload = {
     chat_id: chatId,
     text: formatTelegramHtml(text),
-    parse_mode: "HTML",
+    parse_mode: 'HTML',
     ephemeral_message_parameters: ephemeralParams,
   };
   if (replyMarkup) payload.reply_markup = replyMarkup;
@@ -153,7 +166,7 @@ async function sendEphemeralMessage(
   }
 
   return (
-    (await callTelegram("sendMessage", payload, "send ephemeral message")) ||
+    (await callTelegram('sendMessage', payload, 'send ephemeral message')) ||
     null
   );
 }
@@ -162,16 +175,16 @@ async function editTelegramMessage(
   chatId,
   messageId,
   text,
-  replyMarkup = null,
+  replyMarkup = null
 ) {
   const payload = {
     chat_id: chatId,
     message_id: messageId,
     text: formatTelegramHtml(text),
-    parse_mode: "HTML",
+    parse_mode: 'HTML',
   };
   if (replyMarkup != null) payload.reply_markup = replyMarkup;
-  const result = await callTelegram("editMessageText", payload);
+  const result = await callTelegram('editMessageText', payload);
   return result !== null;
 }
 
@@ -180,26 +193,26 @@ async function editEphemeralMessage(
   receiverUserId,
   ephemeralMessageId,
   text,
-  replyMarkup = null,
+  replyMarkup = null
 ) {
   const payload = {
     chat_id: chatId,
     receiver_user_id: receiverUserId,
     ephemeral_message_id: ephemeralMessageId,
     text: formatTelegramHtml(text),
-    parse_mode: "HTML",
+    parse_mode: 'HTML',
   };
   if (replyMarkup != null) payload.reply_markup = replyMarkup;
   const result = await callTelegram(
-    "editEphemeralMessageText",
+    'editEphemeralMessageText',
     payload,
-    "edit ephemeral message",
+    'edit ephemeral message'
   );
   return result !== null;
 }
 
 async function deleteTelegramMessage(chatId, messageId) {
-  return callTelegram("deleteMessage", {
+  return callTelegram('deleteMessage', {
     chat_id: chatId,
     message_id: messageId,
   });
@@ -208,25 +221,25 @@ async function deleteTelegramMessage(chatId, messageId) {
 async function deleteEphemeralMessage(
   chatId,
   receiverUserId,
-  ephemeralMessageId,
+  ephemeralMessageId
 ) {
   return callTelegram(
-    "deleteEphemeralMessage",
+    'deleteEphemeralMessage',
     {
       chat_id: chatId,
       receiver_user_id: receiverUserId,
       ephemeral_message_id: ephemeralMessageId,
     },
-    "delete ephemeral message",
+    'delete ephemeral message'
   );
 }
 
 async function answerCallbackQuery(
   callbackQueryId,
-  text = "",
-  showAlert = false,
+  text = '',
+  showAlert = false
 ) {
-  return callTelegram("answerCallbackQuery", {
+  return callTelegram('answerCallbackQuery', {
     callback_query_id: callbackQueryId,
     text,
     show_alert: showAlert,
@@ -235,15 +248,15 @@ async function answerCallbackQuery(
 
 async function setEphemeralGroupCommands(commands) {
   return callTelegram(
-    "setMyCommands",
+    'setMyCommands',
     {
       commands: commands.map((command) => ({
         ...command,
         is_ephemeral: true,
       })),
-      scope: { type: "all_group_chats" },
+      scope: { type: 'all_group_chats' },
     },
-    "register ephemeral group commands",
+    'register ephemeral group commands'
   );
 }
 
@@ -252,18 +265,31 @@ async function setEphemeralGroupCommands(commands) {
 async function sendRichMessage(chatId, richMessage, replyMarkup = null) {
   const payload = { chat_id: chatId, rich_message: richMessage };
   if (replyMarkup) payload.reply_markup = replyMarkup;
-  const result = await callTelegram("sendRichMessage", payload, "send rich message");
+  const result = await callTelegram(
+    'sendRichMessage',
+    payload,
+    'send rich message'
+  );
   return result || null;
 }
 
-async function editRichMessage(chatId, messageId, richMessage, replyMarkup = null) {
+async function editRichMessage(
+  chatId,
+  messageId,
+  richMessage,
+  replyMarkup = null
+) {
   const payload = {
     chat_id: chatId,
     message_id: messageId,
     rich_message: richMessage,
     reply_markup: replyMarkup || { inline_keyboard: [] },
   };
-  const result = await callTelegram("editMessageText", payload, "edit rich message");
+  const result = await callTelegram(
+    'editMessageText',
+    payload,
+    'edit rich message'
+  );
   return result !== null;
 }
 
@@ -272,7 +298,7 @@ async function sendRichEphemeralMessage(
   receiverUserId,
   richMessage,
   replyMarkup = null,
-  options = {},
+  options = {}
 ) {
   const ephemeralParams = { receiver_user_id: receiverUserId };
   if (options.callbackQueryId) {
@@ -295,8 +321,11 @@ async function sendRichEphemeralMessage(
   }
 
   return (
-    (await callTelegram("sendRichMessage", payload, "send rich ephemeral message")) ||
-    null
+    (await callTelegram(
+      'sendRichMessage',
+      payload,
+      'send rich ephemeral message'
+    )) || null
   );
 }
 
@@ -305,7 +334,7 @@ async function editRichEphemeralMessage(
   receiverUserId,
   ephemeralMessageId,
   richMessage,
-  replyMarkup = null,
+  replyMarkup = null
 ) {
   const payload = {
     chat_id: chatId,
@@ -315,22 +344,30 @@ async function editRichEphemeralMessage(
   };
   if (replyMarkup != null) payload.reply_markup = replyMarkup;
   const result = await callTelegram(
-    "editEphemeralMessageText",
+    'editEphemeralMessageText',
     payload,
-    "edit rich ephemeral message",
+    'edit rich ephemeral message'
   );
   return result !== null;
 }
 
 // ── Inline message edit (no chat_id needed) ────────────────────────────────
 
-async function editInlineRichMessage(inlineMessageId, richMessage, replyMarkup = null) {
+async function editInlineRichMessage(
+  inlineMessageId,
+  richMessage,
+  replyMarkup = null
+) {
   const payload = {
     inline_message_id: inlineMessageId,
     rich_message: richMessage,
     reply_markup: replyMarkup || { inline_keyboard: [] },
   };
-  const result = await callTelegram("editMessageText", payload, "edit inline rich message");
+  const result = await callTelegram(
+    'editMessageText',
+    payload,
+    'edit inline rich message'
+  );
   return result !== null;
 }
 
@@ -338,10 +375,14 @@ async function editInlineMessage(inlineMessageId, text, replyMarkup = null) {
   const payload = {
     inline_message_id: inlineMessageId,
     text: formatTelegramHtml(text),
-    parse_mode: "HTML",
+    parse_mode: 'HTML',
   };
   if (replyMarkup != null) payload.reply_markup = replyMarkup;
-  const result = await callTelegram("editMessageText", payload, "edit inline message");
+  const result = await callTelegram(
+    'editMessageText',
+    payload,
+    'edit inline message'
+  );
   return result !== null;
 }
 
@@ -351,9 +392,10 @@ async function answerInlineQuery(inlineQueryId, results, options = {}) {
     results,
     cache_time: options.cacheTime ?? 0,
   };
-  if (options.isPersonal !== undefined) payload.is_personal = options.isPersonal;
+  if (options.isPersonal !== undefined)
+    payload.is_personal = options.isPersonal;
   if (options.nextOffset) payload.next_offset = options.nextOffset;
-  return callTelegram("answerInlineQuery", payload, "answer inline query");
+  return callTelegram('answerInlineQuery', payload, 'answer inline query');
 }
 
 module.exports = {
@@ -376,4 +418,5 @@ module.exports = {
   editInlineMessage,
   checkRichMessageSupport,
   isRichMessageSupported,
+  getLastTelegramError,
 };
