@@ -175,7 +175,8 @@ function resetWizardTimer(userId, state, timeoutMs = 30 * 1000) {
           () => !wizardTimers.has(userId)
         );
       } catch {}
-    } else if (state.iMsgId) {
+    }
+    if (state.iMsgId) {
       await editInlineRichMessage(
         state.iMsgId,
         buildRichMessage([
@@ -2873,8 +2874,35 @@ app.post('/webhook', async (req, res) => {
         ]);
         if (state?.surface) {
           await editRichSurface(state.surface, cancelledRich);
-        } else if (state?.iMsgId) {
-          await editInlineRichMessage(state.iMsgId, cancelledRich);
+        }
+        if (state?.iMsgId) {
+          try {
+            await editInlineRichMessage(state.iMsgId, cancelledRich);
+            const inlineTimerKey = `inline_${state.iMsgId}`;
+            clearMenuTimer(inlineTimerKey);
+            resetMenuTimer(inlineTimerKey, async () => {
+              try {
+                await editInlineRichMessage(
+                  state.iMsgId,
+                  buildRichMessage([
+                    richParagraph([
+                      {
+                        type: 'bold',
+                        text: [{ type: 'subscript', text: '✅ Closed' }],
+                      },
+                    ]),
+                  ])
+                );
+              } catch (err) {
+                console.error(
+                  'Failed to collapse inline cancelled wizard:',
+                  err
+                );
+              }
+            });
+          } catch (err) {
+            console.error('Failed to update inline cancelled wizard:', err);
+          }
         } else if (callbackSurface) {
           await editRichCallbackSurface(cancelledRich);
         } else if (inlineMsgId) {
