@@ -3988,10 +3988,13 @@ app.post('/webhook', async (req, res) => {
     }
 
     if (inlineQuery) {
+      // Ack the webhook immediately so Telegram doesn't retry while we
+      // answer. answerInlineQuery has a tight timeout ("query is too old"
+      // if we arrive late), so nothing blocking may sit in front of it.
+      res.sendStatus(200);
       console.log('[INLINE] Query received:', inlineQuery.query || '(empty)');
       try {
-        const userTz = (await getUserTimezone(userId)) || 'America/Chicago';
-        const queryText = inlineQuery.query.trim();
+        const queryText = (inlineQuery.query || '').trim();
         let results = [];
 
         if (queryText) {
@@ -4153,6 +4156,7 @@ app.post('/webhook', async (req, res) => {
       } catch (inlineErr) {
         console.error('[INLINE] Error handling inline query:', inlineErr);
       }
+      return;
     }
 
     if (chosenResult) {
