@@ -1,0 +1,2 @@
+DATABASE_URL="${{Postgres.DATABASE_URL}}" # Connection string for the Postgres service, pulled from the Postgres service's own DATABASE_URL.
+TELEGRAM_BOT_TOKEN="" # Bot token from @BotFather. Required — the bot exits on startup if it is missing.

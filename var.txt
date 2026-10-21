@@ -1,0 +1,12 @@
+PGDATA="" # Postgres data directory on the volume. Leave blank to use the image default (/var/lib/postgresql/data).
+PGHOST="${{RAILWAY_PRIVATE_DOMAIN}}" # Private-network hostname of the Postgres service (set automatically by Railway).
+PGPORT="" # Port Postgres listens on inside the private network. Leave blank for the default 5432.
+PGUSER="${{POSTGRES_USER}}" # Username clients authenticate with. Mirrors POSTGRES_USER.
+PGDATABASE="${{POSTGRES_DB}}" # Database clients connect to by default. Mirrors POSTGRES_DB.
+PGPASSWORD="${{POSTGRES_PASSWORD}}" # Password for PGUSER. Mirrors POSTGRES_PASSWORD.
+POSTGRES_DB="" # Database created on first init and used by the app. Leave blank to default to POSTGRES_USER.
+DATABASE_URL="postgresql://${{PGUSER}}:${{POSTGRES_PASSWORD}}@${{RAILWAY_PRIVATE_DOMAIN}}:5432/${{PGDATABASE}}" # Full connection string built from the vars above; node-postgres and most libraries read this one.
+POSTGRES_USER="" # Superuser role created on first init. Leave blank to default to "postgres".
+SSL_CERT_DAYS="" # Lifetime in days of the self-signed TLS certs (default 820). Certs are auto-regenerated on restart once expired or within 30 days of expiring.
+POSTGRES_PASSWORD="${{ secret(32, \"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ\") }}" # Superuser password. The template generates a random 32-char password at deploy time; replace it with your own if you prefer.
+RAILWAY_DEPLOYMENT_DRAINING_SECONDS="" # Seconds between SIGTERM and SIGKILL when a deployment is replaced (default 0). Raise it so the DB can flush cleanly on redeploy.
