@@ -39,11 +39,10 @@ Point the bot at your deployed domain once it is live:
 
 ```bash
 curl -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
-  -d url="https://<your-domain>/webhook" \
-  -d secret_token="$WEBHOOK_SECRET"
+  -d url="https://<your-domain>/webhook"
 ```
 
-Set `WEBHOOK_SECRET` on the bot service to have Telegram sign requests; the app rejects any request whose `x-telegram-bot-api-secret-token` header does not match, and warns at startup if the variable is missing.
+Optional hardening: set `WEBHOOK_SECRET` on the bot service and pass it as `secret_token` when registering the webhook. The app then rejects any request whose `x-telegram-bot-api-secret-token` header does not match.
 
 Other implementation notes:
 
