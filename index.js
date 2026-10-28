@@ -3465,25 +3465,46 @@ app.post('/webhook', async (req, res) => {
             });
           } else {
             await editRichCallbackSurface(buildRichMessage(richBlocks));
-            // Set timer to collapse the view details in DM
-            const dmTimerKey = `dm_dashboard_${userId}`;
-            clearMenuTimer(dmTimerKey);
-            resetMenuTimer(dmTimerKey, async (isCurrentTimer) => {
-              try {
-                if (!isCurrentTimer()) return;
-                await expireDmMessage(
-                  userId,
-                  userId,
-                  callbackSurface.messageId,
-                  isCurrentTimer
-                );
-                console.log(
-                  `[TIMER] DM view details message deleted: ${callbackSurface.messageId}`
-                );
-              } catch (err) {
-                console.error('Failed to auto-collapse DM view details:', err);
-              }
-            });
+            // Set timer to collapse the view details in DM - use a unique key
+            // so it doesn't conflict with the main dashboard timer
+            const viewMsgId = callbackSurface?.messageId;
+            if (!viewMsgId) {
+              console.error(
+                '[VIEW] No messageId in callbackSurface, cannot set timer'
+              );
+            } else {
+              const dmViewTimerKey = `dm_view_${userId}_${viewMsgId}`;
+              clearMenuTimer(dmViewTimerKey);
+              resetMenuTimer(
+                dmViewTimerKey,
+                async (isCurrentTimer) => {
+                  try {
+                    if (!isCurrentTimer()) return;
+                    console.log(
+                      `[TIMER] Attempting to delete DM view message: ${viewMsgId}`
+                    );
+                    await expireDmMessage(
+                      userId,
+                      userId,
+                      viewMsgId,
+                      isCurrentTimer
+                    );
+                    console.log(
+                      `[TIMER] DM view details message deleted: ${viewMsgId}`
+                    );
+                  } catch (err) {
+                    console.error(
+                      'Failed to auto-collapse DM view details:',
+                      err
+                    );
+                  }
+                },
+                30000
+              );
+              console.log(
+                `[TIMER] DM view timer set for user ${userId}, msg ${viewMsgId}, duration 30s`
+              );
+            }
           }
         } else {
           await answerCallbackQuery(
