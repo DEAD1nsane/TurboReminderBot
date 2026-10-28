@@ -3465,6 +3465,25 @@ app.post('/webhook', async (req, res) => {
             });
           } else {
             await editRichCallbackSurface(buildRichMessage(richBlocks));
+            // Set timer to collapse the view details in DM
+            const dmTimerKey = `dm_dashboard_${userId}`;
+            clearMenuTimer(dmTimerKey);
+            resetMenuTimer(dmTimerKey, async (isCurrentTimer) => {
+              try {
+                if (!isCurrentTimer()) return;
+                await expireDmMessage(
+                  userId,
+                  userId,
+                  callbackSurface.messageId,
+                  isCurrentTimer
+                );
+                console.log(
+                  `[TIMER] DM view details message deleted: ${callbackSurface.messageId}`
+                );
+              } catch (err) {
+                console.error('Failed to auto-collapse DM view details:', err);
+              }
+            });
           }
         } else {
           await answerCallbackQuery(
