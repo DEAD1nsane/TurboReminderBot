@@ -1438,6 +1438,102 @@ function parseFlexibleDate(text, timeZone) {
   return null;
 }
 
+// ── Compact reminder list layout ───────────────────────────────────────────
+// The list packs up to three reminders per row so a busy day doesn't turn
+// into one row per reminder. Labels are sized for the space they get: full
+// text when a button owns its row, and a time prefix only when it fits
+// without squeezing the text out.
+const LIST_BUDGET_THREE = 14;
+const LIST_BUDGET_TWO = 30;
+
+function ellipsize(text, max) {
+  if (text.length <= max) return text;
+  if (max <= 1) return '…';
+  let cut = text.slice(0, max - 1);
+  // Never split an emoji (surrogate pair) across the cut.
+  const last = cut.charCodeAt(cut.length - 1);
+  if (last >= 0xd800 && last <= 0xdbff) cut = cut.slice(0, -1);
+  return `${cut}…`;
+}
+
+function listLabelParts(text, icon, timeLabel) {
+  const core = `${text}${icon}`;
+  const withTime = timeLabel ? `${timeLabel} · ${core}` : core;
+  return { core, withTime };
+}
+
+function listFitsBudget(text, icon, timeLabel, budget) {
+  const { core, withTime } = listLabelParts(text, icon, timeLabel);
+  return withTime.length <= budget || core.length <= budget;
+}
+
+function listButtonLabel(text, icon, timeLabel, budget) {
+  const { core, withTime } = listLabelParts(text, icon, timeLabel);
+  if (budget == null) return withTime;
+  if (withTime.length <= budget) return withTime;
+  if (core.length <= budget) return core;
+  const timeWidth = timeLabel ? timeLabel.length + 3 : 0;
+  const prefix = timeLabel && budget - timeWidth >= 8 ? `${timeLabel} · ` : '';
+  const body = ellipsize(text, budget - prefix.length - icon.length);
+  return `${prefix}${body}${icon}`;
+}
+
+// Greedy row packing: three across when every label fits the narrow budget,
+// otherwise two across (and never truncate a lone button, it owns the row).
+function packListRows(entries) {
+  const rows = [];
+  let row = [];
+  let threeWide = true;
+
+  for (const entry of entries) {
+    const fitsThree = listFitsBudget(
+      entry.text,
+      entry.icon,
+      entry.timeLabel,
+      LIST_BUDGET_THREE
+    );
+    if (row.length === 0) {
+      row = [entry];
+      threeWide = fitsThree;
+      continue;
+    }
+    if (threeWide && fitsThree && row.length < 3) {
+      row.push(entry);
+      continue;
+    }
+    if (threeWide && row.length === 1) {
+      threeWide = false;
+      row.push(entry);
+      continue;
+    }
+    if (!threeWide && row.length < 2) {
+      row.push(entry);
+      continue;
+    }
+    rows.push(row);
+    row = [entry];
+    threeWide = fitsThree;
+  }
+  if (row.length > 0) rows.push(row);
+
+  // 3 + 1 → 2 + 2, so a day never ends on a lonely full-width button.
+  if (rows.length >= 2) {
+    const last = rows[rows.length - 1];
+    const prev = rows[rows.length - 2];
+    if (last.length === 1 && prev.length === 3) {
+      last.unshift(prev.pop());
+    }
+  }
+
+  return rows;
+}
+
+function listRowBudget(row) {
+  if (row.length >= 3) return LIST_BUDGET_THREE;
+  if (row.length === 2) return LIST_BUDGET_TWO;
+  return null;
+}
+
 async function getRemindersDashboardData(userId, userTz, passedName = null) {
   try {
     let uName = passedName || 'Your';
@@ -1472,75 +1568,78 @@ async function getRemindersDashboardData(userId, userTz, passedName = null) {
       };
     }
 
-    const reminderButtons = [];
-    let lastDateLabel = null;
+    const groups = [];
+    let currentGroup = null;
     for (const r of res.rows) {
       const rDt = DateTime.fromJSDate(new Date(r.remind_at)).setZone(
         userTz || 'America/Chicago'
       );
       const dateLabel = rDt.toFormat('EEEE, MMM d');
-      if (dateLabel !== lastDateLabel) {
+      if (!currentGroup || currentGroup.dateLabel !== dateLabel) {
         const now = DateTime.now().setZone(userTz || 'America/Chicago');
-        const isToday = rDt.hasSame(now, 'day');
-        const isTomorrow = rDt.hasSame(now.plus({ days: 1 }), 'day');
-        const header = isToday
+        const header = rDt.hasSame(now, 'day')
           ? '📅 Today'
-          : isTomorrow
+          : rDt.hasSame(now.plus({ days: 1 }), 'day')
             ? '📅 Tomorrow'
             : `📅 ${dateLabel}`;
-        reminderButtons.push({
-          type: 'table',
-          cells: [[{ text: header, align: 'center', is_header: true }]],
-          is_bordered: false,
-        });
-        reminderButtons.push(richDivider());
-        lastDateLabel = dateLabel;
+        currentGroup = { dateLabel, header, entries: [] };
+        groups.push(currentGroup);
       }
-      let statusIcon = r.recurring
+      const statusIcon = r.recurring
         ? r.total_occurrences
           ? ' | 🔢'
           : ' | 🔄'
         : '';
-      reminderButtons.push(
-        richButtons([
-          richButton(
-            `${stripMarkdownLinks(r.text)}${statusIcon}`,
-            `view:${r.id}`,
-            'link'
-          ),
-        ])
+      currentGroup.entries.push({
+        id: r.id,
+        text: stripMarkdownLinks(r.text),
+        icon: statusIcon,
+        timeLabel: rDt.toFormat('h:mm a').replace(/\s/g, '').toLowerCase(),
+      });
+    }
+
+    const listBlocks = [];
+    const inlineRows = [];
+    for (const group of groups) {
+      listBlocks.push(
+        richHeading(`${group.header} (${group.entries.length})`, 4)
       );
+      for (const row of packListRows(group.entries)) {
+        const budget = listRowBudget(row);
+        const buttons = row.map((entry) =>
+          richButton(
+            listButtonLabel(entry.text, entry.icon, entry.timeLabel, budget),
+            `view:${entry.id}`,
+            'link'
+          )
+        );
+        listBlocks.push(richButtons(buttons));
+        inlineRows.push(
+          buttons.map((b) => ({ text: b.text, callback_data: b.callback_data }))
+        );
+      }
     }
 
     const richMessage = buildRichMessage([
       richHeading(`📋 ${titleName} Active Reminders`, 1),
       richDivider(),
-      ...reminderButtons,
+      ...listBlocks,
       richDivider(),
       richButtons([
         richButton('➕ New Reminder', 'wizard_new', 'success'),
         richButton('📅 Calendar', 'menu:calendar', 'primary'),
+        richButton('✖️ Close', 'surface_close', 'danger'),
       ]),
-      richButtons([richButton('✖️ Close', 'surface_close', 'danger')]),
     ]);
 
-    let buttons = res.rows.map((r) => {
-      let statusIcon = r.recurring
-        ? r.total_occurrences
-          ? ' | 🔢'
-          : ' | 🔄'
-        : '';
-      return [
-        {
-          text: `${stripMarkdownLinks(r.text)}${statusIcon}`,
-          callback_data: `view:${r.id}`,
-        },
-      ];
-    });
-    buttons.push([
-      { text: '➕ New Reminder', callback_data: 'wizard_new' },
-      { text: '✖️ Close', callback_data: 'surface_close' },
-    ]);
+    const buttons = [
+      ...inlineRows,
+      [
+        { text: '➕ New Reminder', callback_data: 'wizard_new' },
+        { text: '📅 Calendar', callback_data: 'menu:calendar' },
+        { text: '✖️ Close', callback_data: 'surface_close' },
+      ],
+    ];
 
     return {
       text: `📋 **${titleName} Active Reminders:**`,
@@ -3048,18 +3147,39 @@ app.post('/webhook', async (req, res) => {
             richHeading(`${res.rows.length} reminder(s):`, 1),
             richDivider(),
           ];
-          for (const r of res.rows) {
-            const time = DateTime.fromJSDate(new Date(r.remind_at))
-              .setZone(userTz || 'America/Chicago')
-              .toFormat('h:mm a');
+          const dayEntries = res.rows.map((r) => {
+            const rDt = DateTime.fromJSDate(new Date(r.remind_at)).setZone(
+              userTz || 'America/Chicago'
+            );
+            return {
+              id: r.id,
+              text: stripMarkdownLinks(r.text),
+              icon: r.recurring ? ' | 🔄' : '',
+              timeLabel: rDt
+                .toFormat('h:mm a')
+                .replace(/\s/g, '')
+                .toLowerCase(),
+            };
+          });
+          for (const row of packListRows(dayEntries)) {
+            // Full text, no clipping: a single day rarely has enough
+            // reminders to need it, and a wrapped label beats a clipped one.
+            const budget = null;
             blocks.push(
-              richButtons([
-                richButton(
-                  `${time} - ${stripMarkdownLinks(r.text)}`,
-                  `view:${r.id}`,
-                  'link'
-                ),
-              ])
+              richButtons(
+                row.map((entry) =>
+                  richButton(
+                    listButtonLabel(
+                      entry.text,
+                      entry.icon,
+                      entry.timeLabel,
+                      budget
+                    ),
+                    `view:${entry.id}`,
+                    'link'
+                  )
+                )
+              )
             );
           }
           blocks.push(richDivider());
@@ -3690,11 +3810,59 @@ app.post('/webhook', async (req, res) => {
             richParagraph('Example: tomorrow at 8am, 2h, or Aug 12 5pm'),
             richDivider(),
             richButtons([
+              richButton(
+                '⏩ +24h from now',
+                `settime24:${reminderId}`,
+                'success'
+              ),
               richButton('⬅️ Cancel', `edit:${reminderId}`, 'danger'),
             ]),
           ])
         );
         await answerCallbackQuery(callbackQuery.id);
+      } else if (data.startsWith('settime24:')) {
+        const reminderId = parseReminderId(data, 'settime24:');
+        if (!reminderId) return res.sendStatus(200);
+        const userTz = await getUserTimezone(userId);
+        const newTime = DateTime.now()
+          .setZone(userTz || 'America/Chicago')
+          .plus({ hours: 24 })
+          .toJSDate();
+        const updated = await pool.query(
+          'UPDATE reminders SET remind_at = $1 WHERE id = $2 AND user_id = $3',
+          [newTime, reminderId, userId]
+        );
+        if (!updated.rowCount) {
+          await answerCallbackQuery(
+            callbackQuery.id,
+            '⚠️ Reminder not found.',
+            true
+          );
+          return res.sendStatus(200);
+        }
+        await setPendingEdit(userId, null);
+        pendingEditSurfacesBounded.delete(userId);
+        await answerCallbackQuery(
+          callbackQuery.id,
+          '⏩ Moved +24 hours',
+          true
+        );
+        const dashData = await getRemindersDashboardData(
+          userId,
+          userTz,
+          userFirstName
+        );
+        if (callbackSurface) {
+          await editRichCallbackSurface(dashData.richMessage);
+        } else {
+          await sendOrUpdateDashboard(
+            userId,
+            dashData.text,
+            dashData.keyboard,
+            null,
+            dashData.richMessage
+          );
+        }
       } else if (data.startsWith('dowmenu:')) {
         const reminderId = data.replace('dowmenu:', '');
         const result = await pool.query(
