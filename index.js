@@ -3162,9 +3162,7 @@ app.post('/webhook', async (req, res) => {
             };
           });
           for (const row of packListRows(dayEntries)) {
-            // Full text, no clipping: a single day rarely has enough
-            // reminders to need it, and a wrapped label beats a clipped one.
-            const budget = null;
+            const budget = listRowBudget(row);
             blocks.push(
               richButtons(
                 row.map((entry) =>
