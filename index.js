@@ -131,6 +131,25 @@ function resetDmPromptTimer(userId, surface) {
   });
 }
 
+// Auto-dismiss the screen the user is on after the menu timeout, the same way
+// the dashboard does: inline messages collapse to "✅ Closed", DM messages
+// delete themselves. Call this right after rendering a callback surface.
+function scheduleSurfaceCollapse(userId, surface, inlineMsgId) {
+  if (inlineMsgId) {
+    const timerKey = `inline_${inlineMsgId}`;
+    clearMenuTimer(timerKey);
+    resetMenuTimer(timerKey, async () => {
+      try {
+        await collapseInlineMessage(inlineMsgId);
+      } catch (err) {
+        console.error('Failed to auto-collapse inline message:', err);
+      }
+    });
+    return;
+  }
+  if (surface) resetDmPromptTimer(userId, surface);
+}
+
 async function expireDmMessage(userId, chatId, messageId, isCurrentTimer) {
   if (!isCurrentTimer()) return;
   const activeMsgId = await getActiveMenuMsgId(userId);
@@ -3050,6 +3069,11 @@ app.post('/webhook', async (req, res) => {
         } else if (callbackQuery.inline_message_id) {
           await editInlineRichMessage(callbackQuery.inline_message_id, calRich);
         }
+        scheduleSurfaceCollapse(
+          userId,
+          callbackSurface,
+          callbackQuery.inline_message_id
+        );
       } else if (data.startsWith('calday:')) {
         await answerCallbackQuery(callbackQuery.id);
         const dateKey = data.replace('calday:', '');
@@ -3120,6 +3144,11 @@ app.post('/webhook', async (req, res) => {
               dayRich
             );
           }
+          scheduleSurfaceCollapse(
+            userId,
+            callbackSurface,
+            callbackQuery.inline_message_id
+          );
         } else {
           const blocks = [
             richHeading(`📅 ${dateLabel}`, 1),
@@ -3181,6 +3210,11 @@ app.post('/webhook', async (req, res) => {
               dayRich
             );
           }
+          scheduleSurfaceCollapse(
+            userId,
+            callbackSurface,
+            callbackQuery.inline_message_id
+          );
         }
       } else if (data.startsWith('calback:')) {
         await answerCallbackQuery(callbackQuery.id);
@@ -3209,6 +3243,11 @@ app.post('/webhook', async (req, res) => {
         } else if (callbackQuery.inline_message_id) {
           await editInlineRichMessage(callbackQuery.inline_message_id, calRich);
         }
+        scheduleSurfaceCollapse(
+          userId,
+          callbackSurface,
+          callbackQuery.inline_message_id
+        );
       } else if (data.startsWith('caladd:')) {
         await answerCallbackQuery(callbackQuery.id);
         const dateKey = data.replace('caladd:', '');
@@ -3334,27 +3373,6 @@ app.post('/webhook', async (req, res) => {
         await setPendingEdit(userId, null);
         pendingEditSurfacesBounded.delete(userId);
         clearUserPendingState(userId);
-        if (inlineMsgId) {
-          const inlineTimerKey = `inline_${inlineMsgId}`;
-          clearMenuTimer(inlineTimerKey);
-          resetMenuTimer(inlineTimerKey, async () => {
-            try {
-              await editInlineRichMessage(
-                inlineMsgId,
-                buildRichMessage([
-                  richParagraph([
-                    {
-                      type: 'bold',
-                      text: [{ type: 'subscript', text: '✅ Closed' }],
-                    },
-                  ]),
-                ])
-              );
-            } catch (err) {
-              console.error('Failed to auto-collapse inline list:', err);
-            }
-          });
-        }
         const dashData = await getRemindersDashboardData(
           userId,
           userTz,
@@ -3374,6 +3392,11 @@ app.post('/webhook', async (req, res) => {
             dashData.richMessage
           );
         }
+        // clearUserPendingState above just killed the dismissal timer armed at
+        // callback entry, so re-arm for whatever we rendered: the DM surface
+        // deletes itself and the inline one collapses (the send path arms its
+        // own timer inside sendOrUpdateDashboard).
+        scheduleSurfaceCollapse(userId, callbackSurface, inlineMsgId);
       } else if (data === 'menu:calendar') {
         await answerCallbackQuery(callbackQuery.id);
         const now = DateTime.now().setZone(userTz || 'America/Chicago');
@@ -3392,27 +3415,13 @@ app.post('/webhook', async (req, res) => {
         if (callbackSurface) {
           await editRichCallbackSurface(calRich);
         } else if (callbackQuery.inline_message_id) {
-          const inlineTimerKey = `inline_${callbackQuery.inline_message_id}`;
-          clearMenuTimer(inlineTimerKey);
           await editInlineRichMessage(callbackQuery.inline_message_id, calRich);
-          resetMenuTimer(inlineTimerKey, async () => {
-            try {
-              await editInlineRichMessage(
-                callbackQuery.inline_message_id,
-                buildRichMessage([
-                  richParagraph([
-                    {
-                      type: 'bold',
-                      text: [{ type: 'subscript', text: '✅ Closed' }],
-                    },
-                  ]),
-                ])
-              );
-            } catch (err) {
-              console.error('Failed to auto-collapse inline calendar:', err);
-            }
-          });
         }
+        scheduleSurfaceCollapse(
+          userId,
+          callbackSurface,
+          callbackQuery.inline_message_id
+        );
       } else if (data.startsWith('del:')) {
         const reminderId = parseReminderId(data, 'del:');
         if (!reminderId) return res.sendStatus(200);
