@@ -1288,10 +1288,13 @@ async function detectTimezoneFromLocation(lat, lon) {
 }
 
 async function getRemindersForMonth(userId, year, month) {
-  const start = DateTime.fromObject({ year, month, day: 1 }, { zone: 'utc' })
+  // Window the month in the user's zone as well: a UTC window drops the last
+  // evening of the month (6pm+ on the 30th/31st) from the day dot counts.
+  const zone = (await getUserTimezone(userId)) || 'America/Chicago';
+  const start = DateTime.fromObject({ year, month, day: 1 }, { zone })
     .startOf('month')
     .toJSDate();
-  const end = DateTime.fromObject({ year, month, day: 1 }, { zone: 'utc' })
+  const end = DateTime.fromObject({ year, month, day: 1 }, { zone })
     .endOf('month')
     .toJSDate();
   const res = await pool.query(
@@ -1441,8 +1444,8 @@ function parseFlexibleDate(text, timeZone) {
 // ── Compact reminder list layout ───────────────────────────────────────────
 // The list packs up to three reminders per row so a busy day doesn't turn
 // into one row per reminder. Labels are sized for the space they get: full
-// text when a button owns its row, and a time prefix only when it fits
-// without squeezing the text out.
+// text when a button owns its row, and clipped only when a half-width
+// button can't hold the text plus its recurrence icon.
 const LIST_BUDGET_THREE = 14;
 const LIST_BUDGET_TWO = 30;
 
@@ -1456,26 +1459,15 @@ function ellipsize(text, max) {
   return `${cut}…`;
 }
 
-function listLabelParts(text, icon, timeLabel) {
+function listFitsBudget(text, icon, budget) {
+  return `${text}${icon}`.length <= budget;
+}
+
+function listButtonLabel(text, icon, budget) {
   const core = `${text}${icon}`;
-  const withTime = timeLabel ? `${timeLabel} · ${core}` : core;
-  return { core, withTime };
-}
-
-function listFitsBudget(text, icon, timeLabel, budget) {
-  const { core, withTime } = listLabelParts(text, icon, timeLabel);
-  return withTime.length <= budget || core.length <= budget;
-}
-
-function listButtonLabel(text, icon, timeLabel, budget) {
-  const { core, withTime } = listLabelParts(text, icon, timeLabel);
-  if (budget == null) return withTime;
-  if (withTime.length <= budget) return withTime;
+  if (budget == null) return core;
   if (core.length <= budget) return core;
-  const timeWidth = timeLabel ? timeLabel.length + 3 : 0;
-  const prefix = timeLabel && budget - timeWidth >= 8 ? `${timeLabel} · ` : '';
-  const body = ellipsize(text, budget - prefix.length - icon.length);
-  return `${prefix}${body}${icon}`;
+  return `${ellipsize(text, budget - icon.length)}${icon}`;
 }
 
 // Greedy row packing: three across when every label fits the narrow budget,
@@ -1486,12 +1478,7 @@ function packListRows(entries) {
   let threeWide = true;
 
   for (const entry of entries) {
-    const fitsThree = listFitsBudget(
-      entry.text,
-      entry.icon,
-      entry.timeLabel,
-      LIST_BUDGET_THREE
-    );
+    const fitsThree = listFitsBudget(entry.text, entry.icon, LIST_BUDGET_THREE);
     if (row.length === 0) {
       row = [entry];
       threeWide = fitsThree;
@@ -1594,7 +1581,6 @@ async function getRemindersDashboardData(userId, userTz, passedName = null) {
         id: r.id,
         text: stripMarkdownLinks(r.text),
         icon: statusIcon,
-        timeLabel: rDt.toFormat('h:mm a').replace(/\s/g, '').toLowerCase(),
       });
     }
 
@@ -1608,7 +1594,7 @@ async function getRemindersDashboardData(userId, userTz, passedName = null) {
         const budget = listRowBudget(row);
         const buttons = row.map((entry) =>
           richButton(
-            listButtonLabel(entry.text, entry.icon, entry.timeLabel, budget),
+            listButtonLabel(entry.text, entry.icon, budget),
             `view:${entry.id}`,
             'link'
           )
@@ -2326,7 +2312,7 @@ app.post('/webhook', async (req, res) => {
           now.year,
           now.month
         );
-        const cal = buildCalendar(now.year, now.month, remindersOnDay);
+        const cal = buildCalendar(now.year, now.month, remindersOnDay, now);
         const calRich = buildRichMessage([
           richHeading(`📅 ${cal.monthName}`, 1),
           richParagraph('Tap a day to see reminders:'),
@@ -3047,7 +3033,12 @@ app.post('/webhook', async (req, res) => {
           calYear,
           calMonth
         );
-        const cal = buildCalendar(calYear, calMonth, remindersOnDay);
+        const cal = buildCalendar(
+          calYear,
+          calMonth,
+          remindersOnDay,
+          DateTime.now().setZone(userTz || 'America/Chicago')
+        );
         const calRich = buildRichMessage([
           richHeading(`📅 ${cal.monthName}`, 1),
           richParagraph('Tap a day to see reminders:'),
@@ -3074,7 +3065,13 @@ app.post('/webhook', async (req, res) => {
         ) {
           return res.sendStatus(200);
         }
-        const calDt = DateTime.local(calYear, calMonth, calDay);
+        // Resolve the day in the *user's* zone. Server-local (UTC) boundaries
+        // end the day at 6pm CT, so anything scheduled later today fell into
+        // "tomorrow" and tapping today reported no reminders.
+        const calDt = DateTime.fromObject(
+          { year: calYear, month: calMonth, day: calDay },
+          { zone: userTz || 'America/Chicago' }
+        );
         if (!calDt.isValid) return res.sendStatus(200);
         const dayStart = calDt.startOf('day').toJSDate();
         const dayEnd = calDt.endOf('day').toJSDate();
@@ -3082,15 +3079,9 @@ app.post('/webhook', async (req, res) => {
           'SELECT id, text, remind_at, recurring FROM reminders WHERE user_id = $1 AND sent = FALSE AND remind_at >= $2 AND remind_at < $3 ORDER BY remind_at ASC',
           [userId, dayStart, dayEnd]
         );
-        const dateLabel = DateTime.local(calYear, calMonth, calDay).toFormat(
-          'EEEE, MMM d'
-        );
-        const prevDay = DateTime.local(calYear, calMonth, calDay).minus({
-          days: 1,
-        });
-        const nextDay = DateTime.local(calYear, calMonth, calDay).plus({
-          days: 1,
-        });
+        const dateLabel = calDt.toFormat('EEEE, MMM d');
+        const prevDay = calDt.minus({ days: 1 });
+        const nextDay = calDt.plus({ days: 1 });
         const prevDayKey = prevDay.toFormat('yyyy-MM-dd');
         const nextDayKey = nextDay.toFormat('yyyy-MM-dd');
         if (res.rows.length === 0) {
@@ -3147,32 +3138,18 @@ app.post('/webhook', async (req, res) => {
             richHeading(`${res.rows.length} reminder(s):`, 1),
             richDivider(),
           ];
-          const dayEntries = res.rows.map((r) => {
-            const rDt = DateTime.fromJSDate(new Date(r.remind_at)).setZone(
-              userTz || 'America/Chicago'
-            );
-            return {
-              id: r.id,
-              text: stripMarkdownLinks(r.text),
-              icon: r.recurring ? ' | 🔄' : '',
-              timeLabel: rDt
-                .toFormat('h:mm a')
-                .replace(/\s/g, '')
-                .toLowerCase(),
-            };
-          });
+          const dayEntries = res.rows.map((r) => ({
+            id: r.id,
+            text: stripMarkdownLinks(r.text),
+            icon: r.recurring ? ' | 🔄' : '',
+          }));
           for (const row of packListRows(dayEntries)) {
             const budget = listRowBudget(row);
             blocks.push(
               richButtons(
                 row.map((entry) =>
                   richButton(
-                    listButtonLabel(
-                      entry.text,
-                      entry.icon,
-                      entry.timeLabel,
-                      budget
-                    ),
+                    listButtonLabel(entry.text, entry.icon, budget),
                     `view:${entry.id}`,
                     'link'
                   )
@@ -3215,7 +3192,12 @@ app.post('/webhook', async (req, res) => {
           calYear,
           calMonth
         );
-        const cal = buildCalendar(calYear, calMonth, remindersOnDay);
+        const cal = buildCalendar(
+          calYear,
+          calMonth,
+          remindersOnDay,
+          DateTime.now().setZone(userTz || 'America/Chicago')
+        );
         const calRich = buildRichMessage([
           richHeading(`📅 ${cal.monthName}`, 1),
           richParagraph('Tap a day to see reminders:'),
@@ -3400,7 +3382,7 @@ app.post('/webhook', async (req, res) => {
           now.year,
           now.month
         );
-        const cal = buildCalendar(now.year, now.month, remindersOnDay);
+        const cal = buildCalendar(now.year, now.month, remindersOnDay, now);
         const calRich = buildRichMessage([
           richHeading(`📅 ${cal.monthName}`, 1),
           richParagraph('Tap a day to see reminders:'),
@@ -4509,7 +4491,7 @@ app.post('/webhook', async (req, res) => {
           now.year,
           now.month
         );
-        const cal = buildCalendar(now.year, now.month, remindersOnDay);
+        const cal = buildCalendar(now.year, now.month, remindersOnDay, now);
         const calRich = buildRichMessage([
           richHeading(`📅 ${cal.monthName}`, 1),
           richParagraph('Tap a day to see reminders:'),

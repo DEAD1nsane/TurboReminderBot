@@ -24,11 +24,17 @@ function getTimezonePickerKeyboard() {
     };
 }
 
-function buildCalendar(year, month, remindersOnDay = {}) {
+// `now` is passed in so "today" reflects the user's timezone rather than the
+// server's (Railway runs UTC, which is already tomorrow for evening users).
+function buildCalendar(
+    year,
+    month,
+    remindersOnDay = {},
+    now = DateTime.local()
+) {
     const firstDay = DateTime.local(year, month, 1);
     const daysInMonth = firstDay.daysInMonth;
     const startWeekday = firstDay.weekday % 7;
-    const now = DateTime.now();
 
     const monthName = firstDay.toFormat('MMMM yyyy');
 
